@@ -1,0 +1,22 @@
+{
+  "name": "vietvoice-studio",
+  "version": "2.0.0",
+  "description": "Ứng dụng web chuyển đổi văn bản thành giọng nói (Text-to-Speech) đa chế độ - Tích hợp Cheap-TTS AI",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test-voice": "node -e \"import('./server.js')\""
+  },
+  "keywords": [
+    "tts",
+    "cheap-tts",
+    "speech-synthesis",
+    "vietnamese-voice"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@cheap-tts/node": "^0.2.0"
+  }
+}
