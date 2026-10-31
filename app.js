@@ -23,6 +23,7 @@ const btnScrollToAudiobook = document.getElementById('btnScrollToAudiobook');
 const audiobookCard = document.getElementById('audiobookCard');
 const abFoundChaptersCount = document.getElementById('abFoundChaptersCount');
 const wordsPerPartSelect = document.getElementById('wordsPerPartSelect');
+const splitModeSelect = document.getElementById('splitModeSelect');
 const btnStartBatch = document.getElementById('btnStartBatch');
 const btnStartBatchIcon = document.getElementById('btnStartBatchIcon');
 const btnStartBatchText = document.getElementById('btnStartBatchText');
@@ -178,58 +179,180 @@ function normalizeVietnameseText(text) {
 }
 
 /**
- * Detects chapters in large texts.
- * Searches for "Chương 1", "Hồi 1", "Phần 1", "Chapter 1", etc.
- * Falls back to 1,500-word sections if no chapter titles are found.
+ * Chia nội dung dài thành các phần nhỏ an toàn không vượt quá maxWords,
+ * ngắt câu tự nhiên theo dấu chấm hoặc xuống dòng (không cắt ngang câu).
  */
-function detectChapters(rawText, customWordsPerPart) {
+function splitContentByWordLimit(content, maxWords = 1000) {
+  if (!content) return [];
+  const words = content.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return [content.trim()];
+
+  // Tách văn bản thành các câu hoặc đoạn
+  const sentences = content.match(/[^.!?\n]+(?:[.!?]+|\n+)(?:\s+|$)|[^.!?\n]+$/g) || [content];
+  const parts = [];
+  let currentBuffer = '';
+  let currentWordsCount = 0;
+
+  for (const sent of sentences) {
+    const trimmed = sent.trim();
+    if (!trimmed) continue;
+    const sentWords = trimmed.split(/\s+/).filter(Boolean);
+
+    if (currentWordsCount + sentWords.length <= maxWords || currentWordsCount === 0) {
+      currentBuffer += (currentBuffer ? ' ' : '') + trimmed;
+      currentWordsCount += sentWords.length;
+    } else {
+      parts.push(currentBuffer.trim());
+      currentBuffer = trimmed;
+      currentWordsCount = sentWords.length;
+    }
+  }
+
+  if (currentBuffer.trim()) {
+    parts.push(currentBuffer.trim());
+  }
+
+  return parts;
+}
+
+/**
+ * Phát hiện và chia chương/phần truyện:
+ * - Nếu splitMode === 'words': Chia đều chuẩn theo số từ người dùng chọn (800, 1000, 1500 từ).
+ * - Nếu splitMode === 'auto': Nhận diện tiêu đề chương (Chương 1, Hồi 1, Phần 1...).
+ *   + Nếu chương ngắn (<= wordsPerPart): Giữ nguyên 1 chương.
+ *   + Nếu chương quá dài (> wordsPerPart, ví dụ 2000 từ): TỰ ĐỘNG TÁCH THÀNH CÁC PHẦN NHỎ
+ *     (Chương 1 Phần 1/2, Chương 1 Phần 2/2) để Cheap-TTS không bị quá tải hay báo lỗi!
+ */
+function detectChapters(rawText, customWordsPerPart, customSplitMode) {
   if (!rawText || rawText.trim().length === 0) return [];
 
   const text = normalizeVietnameseText(rawText);
   const defaultPartSize = wordsPerPartSelect ? parseInt(wordsPerPartSelect.value) : 1000;
   const wordsPerPart = customWordsPerPart || defaultPartSize || 1000;
+  const splitMode = customSplitMode || (splitModeSelect ? splitModeSelect.value : 'auto');
 
-  // Match chapter headings at start of line
-  const regex = /(?:^|\n)(Chương\s+\d+|Hồi\s+\d+|Phần\s+\d+|Quyển\s+\d+|Chapter\s+\d+)[^\n]*/gi;
-  const matches = [...text.matchAll(regex)];
+  const chapters = [];
+  let partId = 1;
 
-  if (matches.length >= 2) {
-    const chapters = [];
-    for (let i = 0; i < matches.length; i++) {
-      const start = matches[i].index + (matches[i][0].startsWith('\n') ? 1 : 0);
-      const end = (i < matches.length - 1) ? matches[i + 1].index : text.length;
-      const title = matches[i][0].trim();
-      const content = text.slice(start, end).trim();
-      const words = content.split(/\s+/).filter(Boolean).length;
+  // 1. Chế độ chia đều theo số từ (Bỏ qua tiêu đề chương)
+  if (splitMode === 'words') {
+    const rawParts = splitContentByWordLimit(text, wordsPerPart);
+    rawParts.forEach((partContent, idx) => {
+      const partWords = partContent.split(/\s+/).filter(Boolean).length;
       chapters.push({
-        id: i + 1,
-        title,
-        content,
-        words,
-        status: 'pending', // 'pending' | 'processing' | 'done' | 'error'
+        id: partId++,
+        title: `Phần ${idx + 1} (~${partWords.toLocaleString()} từ)`,
+        content: partContent,
+        words: partWords,
+        status: 'pending',
         blobUrl: null,
         blob: null,
         arrayBuffer: null,
         duration: null,
         durationSeconds: 0
       });
+    });
+    return chapters;
+  }
+
+  // 2. Chế độ theo chương: Tìm các tiêu đề chương
+  const regex = /(?:^|\n)(Chương\s+\d+|Hồi\s+\d+|Phần\s+\d+|Quyển\s+\d+|Chapter\s+\d+)[^\n]*/gi;
+  const matches = [...text.matchAll(regex)];
+
+  if (matches.length >= 1) {
+    // Nếu có đoạn mở đầu trước Chương 1
+    const firstIndex = matches[0].index + (matches[0][0].startsWith('\n') ? 1 : 0);
+    if (firstIndex > 0) {
+      const introContent = text.slice(0, firstIndex).trim();
+      const introWords = introContent.split(/\s+/).filter(Boolean).length;
+      if (introWords >= 30) {
+        if (introWords <= wordsPerPart) {
+          chapters.push({
+            id: partId++,
+            title: 'Lời Mở Đầu / Giới Thiệu',
+            content: introContent,
+            words: introWords,
+            status: 'pending',
+            blobUrl: null,
+            blob: null,
+            arrayBuffer: null,
+            duration: null,
+            durationSeconds: 0
+          });
+        } else {
+          const introSubs = splitContentByWordLimit(introContent, wordsPerPart);
+          introSubs.forEach((sub, sIdx) => {
+            const sw = sub.split(/\s+/).filter(Boolean).length;
+            chapters.push({
+              id: partId++,
+              title: `Lời Mở Đầu (Phần ${sIdx + 1}/${introSubs.length})`,
+              content: sub,
+              words: sw,
+              status: 'pending',
+              blobUrl: null,
+              blob: null,
+              arrayBuffer: null,
+              duration: null,
+              durationSeconds: 0
+            });
+          });
+        }
+      }
+    }
+
+    for (let i = 0; i < matches.length; i++) {
+      const start = matches[i].index + (matches[i][0].startsWith('\n') ? 1 : 0);
+      const end = (i < matches.length - 1) ? matches[i + 1].index : text.length;
+      const title = matches[i][0].trim();
+      const content = text.slice(start, end).trim();
+      const words = content.split(/\s+/).filter(Boolean).length;
+
+      // Nếu chương ngắn vừa vặn với giới hạn từ đã chọn
+      if (words <= wordsPerPart) {
+        chapters.push({
+          id: partId++,
+          title,
+          content,
+          words,
+          status: 'pending',
+          blobUrl: null,
+          blob: null,
+          arrayBuffer: null,
+          duration: null,
+          durationSeconds: 0
+        });
+      } else {
+        // TỰ ĐỘNG CHIA NHỎ CHƯƠNG DÀI THÀNH CÁC PHẦN AN TOÀN
+        const subParts = splitContentByWordLimit(content, wordsPerPart);
+        subParts.forEach((sub, sIdx) => {
+          const sw = sub.split(/\s+/).filter(Boolean).length;
+          chapters.push({
+            id: partId++,
+            title: `${title} (Phần ${sIdx + 1}/${subParts.length})`,
+            content: sub,
+            words: sw,
+            status: 'pending',
+            blobUrl: null,
+            blob: null,
+            arrayBuffer: null,
+            duration: null,
+            durationSeconds: 0
+          });
+        });
+      }
     }
     return chapters;
   }
 
-  // Fallback: Split by selected words per section (~800, 1000, 1500 words)
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  const parts = [];
-
-  for (let i = 0; i < words.length; i += wordsPerPart) {
-    const partWords = words.slice(i, i + wordsPerPart);
-    const partNum = Math.floor(i / wordsPerPart) + 1;
-    const content = partWords.join(' ');
-    parts.push({
-      id: partNum,
-      title: `Phần ${partNum} (Từ chữ ${i + 1} đến ${Math.min(i + wordsPerPart, words.length)})`,
-      content,
-      words: partWords.length,
+  // 3. Nếu không có tiêu đề chương, chia đều theo số từ
+  const fallbackParts = splitContentByWordLimit(text, wordsPerPart);
+  fallbackParts.forEach((partContent, idx) => {
+    const partWords = partContent.split(/\s+/).filter(Boolean).length;
+    chapters.push({
+      id: partId++,
+      title: `Phần ${idx + 1} (~${partWords.toLocaleString()} từ)`,
+      content: partContent,
+      words: partWords,
       status: 'pending',
       blobUrl: null,
       blob: null,
@@ -237,9 +360,9 @@ function detectChapters(rawText, customWordsPerPart) {
       duration: null,
       durationSeconds: 0
     });
-  }
+  });
 
-  return parts;
+  return chapters;
 }
 
 function renderChapterList() {
@@ -1178,7 +1301,8 @@ function updateStats() {
     const hasActiveOrCompleted = parsedChapters.some(c => c.status === 'done' || c.status === 'processing');
     if (!hasActiveOrCompleted) {
       const partSize = wordsPerPartSelect ? parseInt(wordsPerPartSelect.value) : 1000;
-      parsedChapters = detectChapters(text, partSize);
+      const splitMode = splitModeSelect ? splitModeSelect.value : 'auto';
+      parsedChapters = detectChapters(text, partSize, splitMode);
       renderChapterList();
     }
   } else {
@@ -1495,16 +1619,24 @@ function setupEventListeners() {
     });
   }
 
+  const reparseChapters = () => {
+    const text = textInput.value || '';
+    if (text.trim()) {
+      const size = wordsPerPartSelect ? parseInt(wordsPerPartSelect.value) || 1000 : 1000;
+      const mode = splitModeSelect ? splitModeSelect.value : 'auto';
+      parsedChapters = detectChapters(text, size, mode);
+      renderChapterList();
+      const modeText = mode === 'words' ? 'chia đều theo số từ' : 'chia theo chương';
+      showToast(`Đã chia lại văn bản (${modeText}, tối đa ${size.toLocaleString()} từ/phần)`, 'info');
+    }
+  };
+
   if (wordsPerPartSelect) {
-    wordsPerPartSelect.addEventListener('change', () => {
-      const text = textInput.value || '';
-      if (text.trim()) {
-        const size = parseInt(wordsPerPartSelect.value) || 1000;
-        parsedChapters = detectChapters(text, size);
-        renderChapterList();
-        showToast(`Đã chia lại văn bản thành các phần ~${size.toLocaleString()} từ`, 'info');
-      }
-    });
+    wordsPerPartSelect.addEventListener('change', reparseChapters);
+  }
+
+  if (splitModeSelect) {
+    splitModeSelect.addEventListener('change', reparseChapters);
   }
 
   // Audio Player Visualizer

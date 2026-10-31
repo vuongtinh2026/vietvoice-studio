@@ -365,13 +365,21 @@
           <!-- Chapter List Container -->
           <div class="mt-4">
             <div class="flex flex-wrap items-center justify-between text-xs text-slate-400 mb-2 gap-2">
-              <span>Danh sách các chương / phần đã tách:</span>
-              <div class="flex items-center gap-2">
-                <span class="text-slate-400">Độ dài mỗi phần:</span>
-                <select id="wordsPerPartSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-amber-300 focus:outline-none cursor-pointer">
-                  <option value="800">800 từ (~3.5 phút - Nhanh nhất)</option>
-                  <option value="1000" selected>1.000 từ (~4.5 phút - Chuẩn)</option>
-                  <option value="1500">1.500 từ (~7 phút - Tối đa)</option>
+              <span class="flex items-center gap-1.5 font-medium text-slate-300">
+                <i class="fa-solid fa-list-check text-amber-400"></i> Danh sách các chương / phần đã tách:
+              </span>
+              <div class="flex flex-wrap items-center gap-2">
+                <select id="splitModeSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-indigo-300 focus:outline-none cursor-pointer" title="Cách chia nhỏ truyện">
+                  <option value="auto" selected>Theo Chương (Tự tách nếu quá dài)</option>
+                  <option value="words">Chia đều theo số từ (Bỏ qua tiêu đề)</option>
+                </select>
+                <select id="wordsPerPartSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-amber-300 focus:outline-none cursor-pointer" title="Độ dài tối đa mỗi phần">
+                  <option value="600">600 từ (~2.5p - Siêu tốc)</option>
+                  <option value="800">800 từ (~3.5p - Nhanh)</option>
+                  <option value="1000" selected>1.000 từ (~4.5p - Chuẩn khuyên dùng)</option>
+                  <option value="1200">1.200 từ (~5.5p)</option>
+                  <option value="1500">1.500 từ (~7.0p)</option>
+                  <option value="2000">2.000 từ (~9.0p - Dài)</option>
                 </select>
               </div>
             </div>

@@ -232,12 +232,12 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // Allow up to 10,000 characters (~1,800 - 2,000 words per chapter)
-        if (text.length > 10000) {
+        // Allow up to 35,000 characters (~5,000 words per request)
+        if (text.length > 35000) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({
             success: false,
-            error: `Đoạn văn này quá dài (${text.length.toLocaleString()} ký tự). Cheap-TTS giới hạn an toàn tối đa 10.000 ký tự (~1.500 - 2.000 từ) cho một lần tạo để không bị ngắt kết nối. Bạn vui lòng sử dụng tính năng "Chia Chương / Phần" bên dưới để tạo từng phần mượt mà nhất!`,
+            error: `Đoạn văn này quá dài (${text.length.toLocaleString()} ký tự). Cheap-TTS giới hạn tối đa 35.000 ký tự (~5.000 từ) cho một lần tạo. Bạn vui lòng sử dụng tính năng "Chia Chương / Phần" bên dưới để chia nhỏ an toàn!`,
             code: 'payload_too_large'
           }));
           return;
