@@ -72,6 +72,23 @@ const btnPaste = document.getElementById('btnPaste');
 const btnNormalizeCaps = document.getElementById('btnNormalizeCaps');
 const btnImportTxt = document.getElementById('btnImportTxt');
 const fileTxtInput = document.getElementById('fileTxtInput');
+const btnBatchWord = document.getElementById('btnBatchWord');
+const fileBatchWordInput = document.getElementById('fileBatchWordInput');
+
+// Batch Word Queue Elements
+const batchWordCard = document.getElementById('batchWordCard');
+const batchWordCountBadge = document.getElementById('batchWordCountBadge');
+const btnStartWordBatch = document.getElementById('btnStartWordBatch');
+const btnStartWordBatchIcon = document.getElementById('btnStartWordBatchIcon');
+const btnStartWordBatchText = document.getElementById('btnStartWordBatchText');
+const btnStopWordBatch = document.getElementById('btnStopWordBatch');
+const btnClearWordBatch = document.getElementById('btnClearWordBatch');
+const batchWordProgressText = document.getElementById('batchWordProgressText');
+const batchWordProgressPercent = document.getElementById('batchWordProgressPercent');
+const batchWordProgressBar = document.getElementById('batchWordProgressBar');
+const batchWordCompletedStats = document.getElementById('batchWordCompletedStats');
+const batchWordFileList = document.getElementById('batchWordFileList');
+const btnAddMoreFiles = document.getElementById('btnAddMoreFiles');
 const btnTestVoice = document.getElementById('btnTestVoice');
 const btnResetSettings = document.getElementById('btnResetSettings');
 const btnClearHistory = document.getElementById('btnClearHistory');
@@ -116,6 +133,11 @@ let lastGeneratedAudioBlob = null;
 let parsedChapters = [];
 let isBatchRunning = false;
 let batchCancelRequested = false;
+
+// Batch Word / Multi-File State
+let batchFiles = [];
+let isWordBatchRunning = false;
+let wordBatchCancelRequested = false;
 
 // Preset sample texts (Vietnamese)
 const SAMPLES = {
@@ -1508,22 +1530,386 @@ function updateMp3BitrateUI(bitrate) {
   }
 }
 
-function loadTextFromFile(file) {
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    const content = event.target.result;
-    if (content) {
-      textInput.value = content;
+async function loadTextFromFile(file) {
+  try {
+    const isDocx = file.name.toLowerCase().endsWith('.docx');
+    const isOldDoc = file.name.toLowerCase().endsWith('.doc');
+
+    if (isOldDoc) {
+      showToast(`File "${file.name}" là định dạng .doc cũ. Vui lòng mở và lưu thành .docx hoặc .txt`, 'warning');
+      return;
+    }
+
+    showToast(`Đang đọc file "${file.name}"...`, 'info');
+
+    let content = '';
+    if (isDocx) {
+      const arrayBuffer = await file.arrayBuffer();
+      if (window.mammoth) {
+        const result = await window.mammoth.extractRawText({ arrayBuffer });
+        content = result.value;
+      } else {
+        throw new Error('Thư viện đọc file Word chưa tải xong. Vui lòng thử lại sau giây lát.');
+      }
+    } else {
+      content = await file.text();
+    }
+
+    if (content && content.trim()) {
+      textInput.value = normalizeVietnameseText(content);
       updateStats();
       const kb = (file.size / 1024).toFixed(1);
-      showToast(`Đã nạp file "${file.name}" (${kb} KB, ${content.length.toLocaleString()} ký tự)!`, 'success');
+      showToast(`Đã nạp file "${file.name}" (${kb} KB, ${textInput.value.length.toLocaleString()} ký tự)!`, 'success');
       textInput.focus();
+    } else {
+      showToast(`File "${file.name}" không có nội dung chữ!`, 'warning');
     }
-  };
-  reader.onerror = () => {
-    showToast('Lỗi khi đọc file văn bản!', 'error');
-  };
-  reader.readAsText(file, 'UTF-8');
+  } catch (err) {
+    console.error('Error loading file:', err);
+    showToast(`Lỗi khi đọc file "${file.name}": ${err.message}`, 'error');
+  }
+}
+
+// ==========================================
+// 9. BATCH MULTI-FILE WORD (.DOCX) PROCESSOR
+// ==========================================
+
+async function addFilesToBatch(fileList) {
+  if (!fileList || fileList.length === 0) return;
+  const newFiles = Array.from(fileList);
+  let addedCount = 0;
+
+  for (const f of newFiles) {
+    const isDocx = f.name.toLowerCase().endsWith('.docx');
+    const isTxt = f.name.toLowerCase().match(/\.(txt|md|text)$/i);
+    const isOldDoc = f.name.toLowerCase().endsWith('.doc');
+
+    if (isOldDoc) {
+      showToast(`File "${f.name}" là .doc cũ. Vui lòng chuyển sang .docx hoặc .txt`, 'warning');
+      continue;
+    }
+
+    if (!isDocx && !isTxt) {
+      showToast(`Bỏ qua "${f.name}" (chỉ hỗ trợ file Word .docx và Text .txt)`, 'info');
+      continue;
+    }
+
+    if (batchFiles.some(item => item.name === f.name && item.size === f.size)) {
+      continue;
+    }
+
+    batchFiles.push({
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      file: f,
+      name: f.name,
+      size: f.size,
+      text: null,
+      words: 0,
+      status: 'pending', // 'pending' | 'processing' | 'converting' | 'done' | 'error'
+      mp3Url: null,
+      errorMsg: null,
+      duration: null
+    });
+    addedCount++;
+  }
+
+  if (batchFiles.length > 0) {
+    batchWordCard.classList.remove('hidden');
+    batchWordCard.scrollIntoView({ behavior: 'smooth' });
+    renderBatchFileList();
+    updateWordBatchProgress(batchFiles.filter(f => f.status === 'done').length, batchFiles.length);
+    if (addedCount > 0) {
+      showToast(`Đã thêm ${addedCount} file vào hàng đợi tự động!`, 'success');
+    }
+  }
+}
+
+async function extractTextFromFileItem(item) {
+  if (item.text) return item.text;
+  const f = item.file;
+  if (f.name.toLowerCase().endsWith('.docx')) {
+    const arrayBuffer = await f.arrayBuffer();
+    if (window.mammoth) {
+      const result = await window.mammoth.extractRawText({ arrayBuffer });
+      item.text = normalizeVietnameseText(result.value);
+    } else {
+      throw new Error('Thư viện Mammoth chưa sẵn sàng');
+    }
+  } else {
+    const raw = await f.text();
+    item.text = normalizeVietnameseText(raw);
+  }
+  item.words = item.text.split(/\s+/).filter(Boolean).length;
+  return item.text;
+}
+
+function renderBatchFileList() {
+  batchWordFileList.innerHTML = '';
+  batchWordCountBadge.textContent = `${batchFiles.length} file`;
+
+  if (batchFiles.length === 0) {
+    batchWordFileList.innerHTML = '<p class="text-xs text-slate-500 italic py-2">Chưa có file nào trong hàng đợi.</p>';
+    return;
+  }
+
+  batchFiles.forEach((item, index) => {
+    const row = document.createElement('div');
+    row.id = `batch-file-${item.id}`;
+    row.className = 'flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-700/60 gap-2.5 transition';
+
+    const isDocx = item.name.toLowerCase().endsWith('.docx');
+    const fileIcon = isDocx ? 'fa-file-word text-blue-400' : 'fa-file-lines text-amber-400';
+    const sizeKB = (item.size / 1024).toFixed(1);
+
+    row.innerHTML = `
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <div class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+          <i class="fa-solid ${fileIcon}"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <h5 class="text-xs font-semibold text-slate-200 truncate" title="${escapeHtml(item.name)}">${index + 1}. ${escapeHtml(item.name)}</h5>
+            <span class="file-status-badge text-[10px] px-2 py-0.5 rounded-full font-medium ${getStatusBadgeClass(item.status)}">
+              ${getStatusBadgeText(item.status)}
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5 file-meta-info">
+            ${sizeKB} KB ${item.words > 0 ? `• ~${item.words.toLocaleString()} từ` : ''} ${item.duration ? `• Thời lượng: ${item.duration}` : ''}
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0 self-end sm:self-center">
+        ${item.status === 'done' && item.mp3Url ? `
+          <a href="${item.mp3Url}" download="${getCleanFileName(item.name)}.mp3" class="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-medium transition flex items-center gap-1">
+            <i class="fa-solid fa-cloud-arrow-down"></i> Tải lại .MP3
+          </a>
+        ` : ''}
+        ${item.status === 'pending' || item.status === 'error' ? `
+          <button class="btn-remove-batch-file p-1.5 hover:text-rose-400 text-slate-500 transition text-xs cursor-pointer" title="Xóa file khỏi hàng đợi">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+        ` : ''}
+      </div>
+    `;
+
+    const removeBtn = row.querySelector('.btn-remove-batch-file');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', () => {
+        removeBatchFileItem(item.id);
+      });
+    }
+
+    batchWordFileList.appendChild(row);
+  });
+}
+
+function renderBatchFileItem(item) {
+  const row = document.getElementById(`batch-file-${item.id}`);
+  if (!row) return;
+
+  const badge = row.querySelector('.file-status-badge');
+  if (badge) {
+    badge.className = `file-status-badge text-[10px] px-2 py-0.5 rounded-full font-medium ${getStatusBadgeClass(item.status)}`;
+    badge.innerHTML = getStatusBadgeText(item.status);
+  }
+
+  const meta = row.querySelector('.file-meta-info');
+  if (meta) {
+    const sizeKB = (item.size / 1024).toFixed(1);
+    meta.textContent = `${sizeKB} KB ${item.words > 0 ? `• ~${item.words.toLocaleString()} từ` : ''} ${item.duration ? `• Thời lượng: ${item.duration}` : ''}`;
+  }
+
+  if (item.status === 'done' && item.mp3Url) {
+    const actions = row.querySelector('.flex.items-center.gap-2.shrink-0');
+    if (actions) {
+      actions.innerHTML = `
+        <a href="${item.mp3Url}" download="${getCleanFileName(item.name)}.mp3" class="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-medium transition flex items-center gap-1">
+          <i class="fa-solid fa-cloud-arrow-down"></i> Tải lại .MP3
+        </a>
+      `;
+    }
+  }
+}
+
+function removeBatchFileItem(id) {
+  batchFiles = batchFiles.filter(item => item.id !== id);
+  renderBatchFileList();
+  updateWordBatchProgress(batchFiles.filter(f => f.status === 'done').length, batchFiles.length);
+  if (batchFiles.length === 0) {
+    batchWordCard.classList.add('hidden');
+  }
+}
+
+function getStatusBadgeClass(status) {
+  switch (status) {
+    case 'processing': return 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse';
+    case 'converting': return 'bg-purple-500/20 text-purple-300 border border-purple-500/40 animate-pulse';
+    case 'done': return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40';
+    case 'error': return 'bg-rose-500/20 text-rose-400 border border-rose-500/40';
+    default: return 'bg-slate-800 text-slate-400 border border-slate-700';
+  }
+}
+
+function getStatusBadgeText(status) {
+  switch (status) {
+    case 'processing': return '<i class="fa-solid fa-spinner fa-spin text-[9px] mr-1"></i> Đang tạo audio AI...';
+    case 'converting': return '<i class="fa-solid fa-file-zipper text-[9px] mr-1"></i> Đang nén .MP3...';
+    case 'done': return '<i class="fa-solid fa-check text-[9px] mr-1"></i> Đã xong & Đã tải về';
+    case 'error': return '<i class="fa-solid fa-xmark text-[9px] mr-1"></i> Bị lỗi';
+    default: return 'Chờ xử lý';
+  }
+}
+
+function updateWordBatchProgress(completed, total) {
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+  if (batchWordProgressPercent) batchWordProgressPercent.textContent = `${percent}%`;
+  if (batchWordProgressBar) batchWordProgressBar.style.width = `${percent}%`;
+  if (batchWordCompletedStats) {
+    batchWordCompletedStats.innerHTML = `<i class="fa-solid fa-check-double text-emerald-400 mr-1"></i> Đã tải về: <b class="text-emerald-400">${completed}</b> / ${total} file`;
+  }
+}
+
+async function startWordBatchQueue() {
+  if (batchFiles.length === 0) return;
+
+  isWordBatchRunning = true;
+  wordBatchCancelRequested = false;
+
+  btnStartWordBatch.disabled = true;
+  btnStartWordBatchIcon.className = 'fa-solid fa-spinner fa-spin';
+  btnStartWordBatchText.textContent = 'Đang tự động chạy hàng loạt...';
+  btnStopWordBatch.disabled = false;
+
+  let completedCount = batchFiles.filter(item => item.status === 'done').length;
+  updateWordBatchProgress(completedCount, batchFiles.length);
+
+  for (let i = 0; i < batchFiles.length; i++) {
+    if (wordBatchCancelRequested) {
+      showToast('Đã tạm dừng hàng đợi file Word', 'info');
+      break;
+    }
+
+    const item = batchFiles[i];
+    if (item.status === 'done') continue;
+
+    item.status = 'processing';
+    renderBatchFileItem(item);
+    batchWordProgressText.textContent = `Đang xử lý (${i + 1}/${batchFiles.length}): "${item.name}"...`;
+
+    const startTime = Date.now();
+    try {
+      // 1. Trích xuất văn bản từ file Word hoặc Text
+      batchWordProgressText.textContent = `Đang đọc văn bản từ "${item.name}"...`;
+      const text = await extractTextFromFileItem(item);
+      renderBatchFileItem(item);
+
+      if (!text || text.trim().length === 0) {
+        throw new Error('File không có nội dung chữ');
+      }
+
+      // 2. Tạo âm thanh AI
+      batchWordProgressText.textContent = `Đang tạo giọng AI cho "${item.name}" (${item.words.toLocaleString()} từ)...`;
+      const selectedVoice = voiceSelect ? (voiceSelect.value || 'vi-entertainment') : 'vi-entertainment';
+      const rate = parseFloat(rateRange?.value) || 1.0;
+      const pauseSec = parseFloat(pauseDurationRange?.value) || 0.4;
+      const key = cheapTtsKeyInput?.value.trim() || undefined;
+
+      const synthRes = await fetch('/api/cheap-tts/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          voice: selectedVoice,
+          rate,
+          key,
+          pauses: { sentence: pauseSec, paragraph: pauseSec * 1.5 }
+        })
+      });
+
+      if (!synthRes.ok) {
+        const errJson = await synthRes.json().catch(() => ({}));
+        throw new Error(errJson.error || `Lỗi HTTP ${synthRes.status}`);
+      }
+
+      const wavBlob = await synthRes.blob();
+      const secondsHeader = synthRes.headers.get('X-Audio-Seconds');
+      const durationSec = secondsHeader ? parseFloat(secondsHeader) : (wavBlob.size / 44100);
+      const mins = Math.floor(durationSec / 60);
+      const secs = Math.round(durationSec % 60);
+      item.duration = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+
+      // 3. Nén sang MP3 siêu nhẹ
+      item.status = 'converting';
+      renderBatchFileItem(item);
+      batchWordProgressText.textContent = `Đang nén MP3 cho "${item.name}"...`;
+
+      const selectedBitrate = mp3BitrateSelect ? mp3BitrateSelect.value : '48k';
+      const mp3Res = await fetch(`/api/audio/convert-to-mp3?bitrate=${selectedBitrate}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'audio/wav',
+          'X-Audio-Bitrate': selectedBitrate
+        },
+        body: wavBlob
+      });
+
+      if (!mp3Res.ok) {
+        const errJson = await mp3Res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Lỗi nén MP3');
+      }
+
+      const mp3Blob = await mp3Res.blob();
+      const mp3Url = URL.createObjectURL(mp3Blob);
+      item.mp3Url = mp3Url;
+
+      // 4. Kích hoạt tự động Tải file MP3 về máy
+      const cleanBaseName = item.name.replace(/\.[^/.]+$/, "");
+      const downloadFileName = `${cleanBaseName}.mp3`;
+      const a = document.createElement('a');
+      a.href = mp3Url;
+      a.download = downloadFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      item.status = 'done';
+      completedCount++;
+      renderBatchFileItem(item);
+      updateWordBatchProgress(completedCount, batchFiles.length);
+      showToast(`✓ Đã tạo và tự động tải về: "${downloadFileName}"!`, 'success');
+
+    } catch (err) {
+      console.error(`Error processing file ${item.name}:`, err);
+      item.status = 'error';
+      item.errorMsg = err.message;
+      renderBatchFileItem(item);
+      showToast(`Lỗi file "${item.name}": ${err.message}`, 'error');
+    }
+
+    // 5. Nghỉ hạ nhiệt API giữa các file (Rate-Limit Shield 3 RPM)
+    if (i < batchFiles.length - 1 && !wordBatchCancelRequested) {
+      const elapsedSec = (Date.now() - startTime) / 1000;
+      const waitSeconds = Math.max(3, Math.ceil(20 - elapsedSec));
+
+      for (let s = waitSeconds; s > 0; s--) {
+        if (wordBatchCancelRequested) break;
+        batchWordProgressText.textContent = `✓ Đã xong "${item.name}". Nghỉ làm mát API ${s}s trước khi xử lý file tiếp theo...`;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+  }
+
+  isWordBatchRunning = false;
+  btnStartWordBatch.disabled = false;
+  btnStartWordBatchIcon.className = 'fa-solid fa-play';
+  btnStartWordBatchText.textContent = 'Bắt đầu tạo & Tải về toàn bộ';
+  btnStopWordBatch.disabled = true;
+
+  if (completedCount === batchFiles.length) {
+    showToast('🎉 Hoàn tất toàn bộ các file Word và đã tải về máy tính của bạn!', 'success');
+    batchWordProgressText.textContent = `🎉 Hoàn tất toàn bộ ${batchFiles.length} file Word!`;
+  }
 }
 
 // ==========================================
@@ -1672,7 +2058,54 @@ function setupEventListeners() {
     pauseDurationValue.textContent = `${parseFloat(pauseDurationRange.value).toFixed(1)}s`;
   });
 
-  // Import TXT File
+  // Batch Word Multiple Files
+  if (btnBatchWord && fileBatchWordInput) {
+    btnBatchWord.addEventListener('click', () => {
+      fileBatchWordInput.click();
+    });
+
+    fileBatchWordInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        addFilesToBatch(e.target.files);
+        fileBatchWordInput.value = '';
+      }
+    });
+  }
+
+  if (btnAddMoreFiles && fileBatchWordInput) {
+    btnAddMoreFiles.addEventListener('click', () => {
+      fileBatchWordInput.click();
+    });
+  }
+
+  if (btnStartWordBatch) {
+    btnStartWordBatch.addEventListener('click', () => {
+      startWordBatchQueue();
+    });
+  }
+
+  if (btnStopWordBatch) {
+    btnStopWordBatch.addEventListener('click', () => {
+      wordBatchCancelRequested = true;
+      btnStopWordBatch.disabled = true;
+      showToast('Đang tạm dừng hàng đợi sau file hiện tại...', 'info');
+    });
+  }
+
+  if (btnClearWordBatch) {
+    btnClearWordBatch.addEventListener('click', () => {
+      if (isWordBatchRunning) {
+        showToast('Vui lòng dừng hàng đợi trước khi xóa danh sách!', 'warning');
+        return;
+      }
+      batchFiles = [];
+      renderBatchFileList();
+      batchWordCard.classList.add('hidden');
+      showToast('Đã xóa toàn bộ hàng đợi file Word', 'info');
+    });
+  }
+
+  // Import TXT or Single Word File
   if (btnImportTxt && fileTxtInput) {
     btnImportTxt.addEventListener('click', () => {
       fileTxtInput.click();
@@ -1686,7 +2119,7 @@ function setupEventListeners() {
     });
   }
 
-  // Drag and Drop text file on textarea
+  // Drag and Drop text/word file on textarea
   textInput.addEventListener('dragover', (e) => {
     e.preventDefault();
     textInput.classList.add('border-indigo-500', 'bg-indigo-950/20');
@@ -1697,11 +2130,11 @@ function setupEventListeners() {
   textInput.addEventListener('drop', (e) => {
     e.preventDefault();
     textInput.classList.remove('border-indigo-500', 'bg-indigo-950/20');
-    const file = e.dataTransfer?.files?.[0];
-    if (file && (file.type.includes('text') || file.name.match(/\.(txt|md|text)$/i))) {
-      loadTextFromFile(file);
-    } else if (file) {
-      showToast('Chỉ hỗ trợ nạp file văn bản (.txt, .md)', 'warning');
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 1) {
+      addFilesToBatch(files);
+    } else if (files && files.length === 1) {
+      loadTextFromFile(files[0]);
     }
   });
 

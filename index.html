@@ -136,9 +136,13 @@
               Nhập nội dung văn bản hoặc toàn bộ truyện
             </label>
             <div class="flex flex-wrap items-center gap-2">
-              <input type="file" id="fileTxtInput" accept=".txt,.text,.md" class="hidden">
-              <button id="btnImportTxt" class="text-xs px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Tải file .TXT hoặc .MD từ máy tính">
-                <i class="fa-solid fa-file-arrow-up"></i> Nhập file .txt
+              <input type="file" id="fileBatchWordInput" multiple accept=".docx,.txt,.md" class="hidden">
+              <button id="btnBatchWord" class="text-xs px-2.5 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Nạp nhiều file Word (.docx) hoặc Text (.txt) để tự động tạo và tải về máy tính">
+                <i class="fa-solid fa-file-word text-blue-400"></i> Nạp nhiều file Word (.docx)
+              </button>
+              <input type="file" id="fileTxtInput" accept=".docx,.txt,.text,.md" class="hidden">
+              <button id="btnImportTxt" class="text-xs px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Tải 1 file Word (.docx) hoặc .TXT từ máy tính vào ô soạn thảo">
+                <i class="fa-solid fa-file-arrow-up"></i> Đọc 1 file (.docx / .txt)
               </button>
               <button id="btnNormalizeCaps" class="text-xs px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Sửa lỗi chữ IN HOA bị AI đánh vần từng ký tự">
                 <i class="fa-solid fa-spell-check"></i> Sửa lỗi chữ in hoa
@@ -269,6 +273,80 @@
           <!-- HTML5 Audio Element -->
           <div class="mt-4 pt-3 border-t border-slate-700/60">
             <audio id="audioPlayer" controls class="w-full h-10 rounded-lg outline-none"></audio>
+          </div>
+        </div>
+
+        <!-- Batch Multi-File Word/Document Queue Card -->
+        <div id="batchWordCard" class="hidden bg-slate-800/90 border border-blue-500/50 rounded-2xl p-6 shadow-2xl relative">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-700/60">
+            <div>
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+                  <i class="fa-solid fa-file-word text-lg"></i>
+                </div>
+                <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+                  Xử Lý Hàng Loạt File Word & Text
+                  <span id="batchWordCountBadge" class="text-xs bg-blue-500/20 text-blue-300 px-2.5 py-0.5 rounded-full font-semibold border border-blue-500/30">0 file</span>
+                </h3>
+              </div>
+              <p class="text-xs text-slate-300 mt-1">
+                Tự động nạp từng file $\rightarrow$ tạo giọng AI $\rightarrow$ nén .MP3 $\rightarrow$ tự động tải về máy $\rightarrow$ chuyển tiếp sang file tiếp theo!
+              </p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                id="btnStartWordBatch"
+                class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-blue-500/25 transition flex items-center gap-2 active:scale-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+              >
+                <i id="btnStartWordBatchIcon" class="fa-solid fa-play"></i>
+                <span id="btnStartWordBatchText">Bắt đầu tạo & Tải về toàn bộ</span>
+              </button>
+              <button
+                id="btnStopWordBatch"
+                disabled
+                class="px-3.5 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 font-semibold text-xs transition flex items-center gap-2 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+              >
+                <i class="fa-solid fa-pause"></i> Dừng
+              </button>
+              <button
+                id="btnClearWordBatch"
+                class="px-3 py-2.5 rounded-xl bg-slate-700/60 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 text-xs transition cursor-pointer"
+                title="Xóa danh sách hàng đợi"
+              >
+                <i class="fa-regular fa-trash-can"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Batch Progress Bar & Status -->
+          <div id="batchWordProgressContainer" class="mt-4 p-4 rounded-xl bg-slate-900/80 border border-slate-700/60">
+            <div class="flex items-center justify-between text-xs mb-2">
+              <span id="batchWordProgressText" class="font-medium text-slate-200">
+                Sẵn sàng xử lý danh sách file Word...
+              </span>
+              <span id="batchWordProgressPercent" class="font-bold text-blue-400 font-mono">0%</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
+              <div id="batchWordProgressBar" class="bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-500 h-full w-0 transition-all duration-300"></div>
+            </div>
+            <div class="flex flex-wrap items-center justify-between text-[11px] text-slate-400 mt-2 gap-2">
+              <span id="batchWordCompletedStats"><i class="fa-solid fa-check-double text-emerald-400 mr-1"></i> Đã tải về: <b class="text-emerald-400">0</b> file</span>
+              <span class="text-amber-300/80"><i class="fa-solid fa-circle-info mr-1"></i> Trình duyệt sẽ tự động tải các file .MP3 về máy khi tạo xong</span>
+            </div>
+          </div>
+
+          <!-- File Queue List -->
+          <div class="mt-4">
+            <div class="flex items-center justify-between text-xs font-semibold text-slate-300 mb-2">
+              <span>Hàng đợi các file sẽ được xử lý lần lượt:</span>
+              <button id="btnAddMoreFiles" class="text-xs text-blue-400 hover:text-blue-300 transition flex items-center gap-1 cursor-pointer">
+                <i class="fa-solid fa-plus"></i> Thêm file khác...
+              </button>
+            </div>
+            <div id="batchWordFileList" class="flex flex-col gap-2 max-h-[360px] overflow-y-auto pr-1">
+              <!-- Dynamically populated files -->
+            </div>
           </div>
         </div>
 
@@ -583,6 +661,8 @@
     <span id="toastMsg" class="text-xs font-medium">Thông báo</span>
   </div>
 
+  <!-- Mammoth.js for client-side Word (.docx) document parsing -->
+  <script src="/mammoth.browser.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
