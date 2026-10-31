@@ -1540,7 +1540,7 @@ async function loadTextFromFile(file) {
       return;
     }
 
-    showToast(`Đang đọc file "${file.name}"...`, 'info');
+    showToast(`Đang đọc nội dung file "${file.name}"...`, 'info');
 
     let content = '';
     if (isDocx) {
@@ -1549,17 +1549,26 @@ async function loadTextFromFile(file) {
         const result = await window.mammoth.extractRawText({ arrayBuffer });
         content = result.value;
       } else {
-        throw new Error('Thư viện đọc file Word chưa tải xong. Vui lòng thử lại sau giây lát.');
+        throw new Error('Thư viện đọc file Word chưa tải xong. Vui lòng tải lại trang (F5).');
       }
     } else {
       content = await file.text();
     }
 
     if (content && content.trim()) {
+      showToast(`Đang chuẩn hóa và chia chương tự động...`, 'info');
       textInput.value = normalizeVietnameseText(content);
       updateStats();
+
+      const words = textInput.value.split(/\s+/).filter(Boolean).length;
       const kb = (file.size / 1024).toFixed(1);
-      showToast(`Đã nạp file "${file.name}" (${kb} KB, ${textInput.value.length.toLocaleString()} ký tự)!`, 'success');
+
+      if (words >= 2500) {
+        showToast(`Đã nạp file "${file.name}" (${words.toLocaleString()} từ)! Tự động chia thành ${parsedChapters.length} phần bên dưới.`, 'success');
+        audiobookCard.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        showToast(`Đã nạp file "${file.name}" (${kb} KB, ${words.toLocaleString()} từ)!`, 'success');
+      }
       textInput.focus();
     } else {
       showToast(`File "${file.name}" không có nội dung chữ!`, 'warning');
@@ -1808,50 +1817,86 @@ async function startWordBatchQueue() {
         throw new Error('File không có nội dung chữ');
       }
 
-      // 2. Tạo âm thanh AI
-      batchWordProgressText.textContent = `Đang tạo giọng AI cho "${item.name}" (${item.words.toLocaleString()} từ)...`;
       const selectedVoice = voiceSelect ? (voiceSelect.value || 'vi-entertainment') : 'vi-entertainment';
       const rate = parseFloat(rateRange?.value) || 1.0;
       const pauseSec = parseFloat(pauseDurationRange?.value) || 0.4;
       const key = cheapTtsKeyInput?.value.trim() || undefined;
+      const selectedBitrate = mp3BitrateSelect ? mp3BitrateSelect.value : '48k';
 
-      const synthRes = await fetch('/api/cheap-tts/synthesize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          voice: selectedVoice,
-          rate,
-          key,
-          pauses: { sentence: pauseSec, paragraph: pauseSec * 1.5 }
-        })
-      });
+      // 2. Tự động chia nhỏ an toàn (xử lý hoàn hảo từ file ngắn đến file 70.000+ từ)
+      const parts = detectChapters(text, 1000, 'auto');
+      const itemWavBuffers = [];
+      let itemTotalDurationSec = 0;
 
-      if (!synthRes.ok) {
-        const errJson = await synthRes.json().catch(() => ({}));
-        throw new Error(errJson.error || `Lỗi HTTP ${synthRes.status}`);
+      for (let pIdx = 0; pIdx < parts.length; pIdx++) {
+        if (wordBatchCancelRequested) break;
+
+        const part = parts[pIdx];
+        if (parts.length > 1) {
+          batchWordProgressText.textContent = `Đang xử lý "${item.name}": Phần ${pIdx + 1}/${parts.length} (~${part.words.toLocaleString()} từ)...`;
+        } else {
+          batchWordProgressText.textContent = `Đang tạo giọng AI cho "${item.name}" (~${part.words.toLocaleString()} từ)...`;
+        }
+
+        const partStartTime = Date.now();
+        const synthRes = await fetch('/api/cheap-tts/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: part.content,
+            voice: selectedVoice,
+            rate,
+            key,
+            pauses: { sentence: pauseSec, paragraph: pauseSec * 1.5 }
+          })
+        });
+
+        if (!synthRes.ok) {
+          const errJson = await synthRes.json().catch(() => ({}));
+          throw new Error(errJson.error || `Lỗi HTTP ${synthRes.status}`);
+        }
+
+        const wavBlob = await synthRes.blob();
+        const arrayBuf = await wavBlob.arrayBuffer();
+        itemWavBuffers.push(arrayBuf);
+
+        const secondsHeader = synthRes.headers.get('X-Audio-Seconds');
+        const durationSec = secondsHeader ? parseFloat(secondsHeader) : (wavBlob.size / 44100);
+        itemTotalDurationSec += durationSec;
+
+        // Nghỉ làm mát API giữa các phần của file dài
+        if (pIdx < parts.length - 1 && !wordBatchCancelRequested) {
+          const elapsedSec = (Date.now() - partStartTime) / 1000;
+          const waitSeconds = Math.max(2, Math.ceil(20 - elapsedSec));
+          for (let s = waitSeconds; s > 0; s--) {
+            if (wordBatchCancelRequested) break;
+            batchWordProgressText.textContent = `✓ Xong phần ${pIdx + 1}/${parts.length} của "${item.name}". Nghỉ hạ nhiệt API ${s}s...`;
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
       }
 
-      const wavBlob = await synthRes.blob();
-      const secondsHeader = synthRes.headers.get('X-Audio-Seconds');
-      const durationSec = secondsHeader ? parseFloat(secondsHeader) : (wavBlob.size / 44100);
-      const mins = Math.floor(durationSec / 60);
-      const secs = Math.round(durationSec % 60);
+      if (wordBatchCancelRequested) break;
+
+      // 3. Gộp toàn bộ các phần thành 1 file MP3 hoàn chỉnh cho file Word này
+      const mins = Math.floor(itemTotalDurationSec / 60);
+      const secs = Math.round(itemTotalDurationSec % 60);
       item.duration = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 
-      // 3. Nén sang MP3 siêu nhẹ
       item.status = 'converting';
       renderBatchFileItem(item);
-      batchWordProgressText.textContent = `Đang nén MP3 cho "${item.name}"...`;
+      batchWordProgressText.textContent = `Đang nén toàn bộ âm thanh của "${item.name}" sang .MP3 (${selectedBitrate})...`;
 
-      const selectedBitrate = mp3BitrateSelect ? mp3BitrateSelect.value : '48k';
+      const mergedWavBlob = mergeWavBuffersClient(itemWavBuffers, 0.35, 22050);
+      if (!mergedWavBlob) throw new Error('Không thể gộp âm thanh');
+
       const mp3Res = await fetch(`/api/audio/convert-to-mp3?bitrate=${selectedBitrate}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'audio/wav',
           'X-Audio-Bitrate': selectedBitrate
         },
-        body: wavBlob
+        body: mergedWavBlob
       });
 
       if (!mp3Res.ok) {
@@ -1877,7 +1922,7 @@ async function startWordBatchQueue() {
       completedCount++;
       renderBatchFileItem(item);
       updateWordBatchProgress(completedCount, batchFiles.length);
-      showToast(`✓ Đã tạo và tự động tải về: "${downloadFileName}"!`, 'success');
+      showToast(`✓ Đã tạo và tự động tải về: "${downloadFileName}" (${item.duration})!`, 'success');
 
     } catch (err) {
       console.error(`Error processing file ${item.name}:`, err);
