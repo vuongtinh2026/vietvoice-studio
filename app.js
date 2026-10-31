@@ -68,6 +68,7 @@ const pauseText = document.getElementById('pauseText');
 const btnStop = document.getElementById('btnStop');
 const btnClear = document.getElementById('btnClear');
 const btnPaste = document.getElementById('btnPaste');
+const btnNormalizeCaps = document.getElementById('btnNormalizeCaps');
 const btnTestVoice = document.getElementById('btnTestVoice');
 const btnResetSettings = document.getElementById('btnResetSettings');
 const btnClearHistory = document.getElementById('btnClearHistory');
@@ -140,16 +141,45 @@ async function init() {
 }
 
 // ==========================================
-// 2. CHAPTER DETECTION & AUDIOBOOK STUDIO
+// 2. TEXT NORMALIZATION & CHAPTER DETECTION
 // ==========================================
+/**
+ * Chuẩn hóa văn bản tiếng Việt & loại bỏ triệt để lỗi AI đánh vần từng chữ IN HOA:
+ * - Chuyển từ VIẾT HOA TOÀN BỘ (ALL CAPS >= 2 ký tự) thành Viết hoa chữ đầu (Titlecase).
+ * - Xóa ký tự rác ẩn, non-breaking space (\xa0), zero-width space.
+ * - Chuẩn hóa dấu câu để ngắt câu tự nhiên.
+ */
+function normalizeVietnameseText(text) {
+  if (!text) return '';
+  let clean = text
+    .normalize('NFC')
+    .replace(/[\u00a0\u200b\u200e\u200f\ufeff]/g, ' ')
+    .replace(/\r\n/g, '\n');
+
+  // Chuyển từ IN HOA toàn bộ (ví dụ: TIÊU VIÊM, QUYẾT ĐỊNH, CHƯƠNG) thành Tiêu Viêm, Quyết Định, Chương
+  // để AI không đọc tách/đánh vần từng ký tự
+  clean = clean.replace(/(?:(?<=[\s,.:;!?"'\(\)\[\]«»“”‘’—\-\n…\/~]|^))(\p{Lu}{2,})(?=(?:[\s,.:;!?"'\(\)\[\]«»“”‘’—\-\n…\/~]|$))/gu, (match) => {
+    return match.charAt(0) + match.slice(1).toLowerCase();
+  });
+
+  // Tách biệt tiêu đề chương để không bị dính vào câu đầu
+  clean = clean.replace(/(Chương\s+\d+[^:\n]*):(?!\s)/gi, '$1: ');
+
+  // Chuẩn hóa khoảng trắng thừa
+  clean = clean.replace(/[ \t]+/g, ' ');
+
+  return clean.trim();
+}
+
 /**
  * Detects chapters in large texts.
  * Searches for "Chương 1", "Hồi 1", "Phần 1", "Chapter 1", etc.
  * Falls back to 1,500-word sections if no chapter titles are found.
  */
-function detectChapters(text, customWordsPerPart) {
-  if (!text || text.trim().length === 0) return [];
+function detectChapters(rawText, customWordsPerPart) {
+  if (!rawText || rawText.trim().length === 0) return [];
 
+  const text = normalizeVietnameseText(rawText);
   const defaultPartSize = wordsPerPartSelect ? parseInt(wordsPerPartSelect.value) : 1000;
   const wordsPerPart = customWordsPerPart || defaultPartSize || 1000;
 
@@ -354,7 +384,7 @@ async function synthesizeSingleChapter(chap) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: chap.content,
+        text: normalizeVietnameseText(chap.content),
         voice: selectedVoice,
         rate,
         key: key || undefined,
@@ -1066,13 +1096,15 @@ function switchEngine(engine) {
 // 6. UI CONTROLS & STATS
 // ==========================================
 async function handleSpeakAction() {
-  const text = textInput.value.trim();
-  if (!text) {
+  const rawText = textInput.value.trim();
+  if (!rawText) {
     showToast('Vui lòng nhập văn bản cần đọc!', 'warning');
     textInput.focus();
     return;
   }
 
+  // Tự động chuẩn hóa văn bản & sửa triệt để lỗi chữ IN HOA bị AI đánh vần từng ký tự
+  const text = normalizeVietnameseText(rawText);
   saveToHistory(text);
 
   if (currentEngine === 'cheaptts') {
@@ -1456,6 +1488,20 @@ function setupEventListeners() {
   pauseDurationRange.addEventListener('input', () => {
     pauseDurationValue.textContent = `${parseFloat(pauseDurationRange.value).toFixed(1)}s`;
   });
+
+  // Normalize Caps Button (Sửa lỗi chữ IN HOA bị AI đánh vần)
+  if (btnNormalizeCaps) {
+    btnNormalizeCaps.addEventListener('click', () => {
+      const current = textInput.value;
+      if (current && current.trim()) {
+        textInput.value = normalizeVietnameseText(current);
+        updateStats();
+        showToast('Đã sửa toàn bộ chữ IN HOA thành chữ viết hoa đầu từ tự nhiên!', 'success');
+      } else {
+        showToast('Chưa có văn bản để sửa lỗi chữ in hoa!', 'warning');
+      }
+    });
+  }
 
   btnClear.addEventListener('click', () => {
     if (textInput.value) {

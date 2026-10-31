@@ -37,6 +37,35 @@ let lastRequestTime = 0;
 const MIN_GAP_BETWEEN_REQUESTS_MS = 20000; // 20s gap between multi-chunk requests
 
 /**
+ * Chuẩn hóa văn bản tiếng Việt & sửa triệt để lỗi AI đánh vần từng ký tự IN HOA:
+ * - Chuyển từ VIẾT HOA TOÀN BỘ (ALL CAPS >= 2 ký tự) thành Viết hoa chữ đầu (Titlecase).
+ *   (Tránh trường hợp AI hiểu nhầm là từ viết tắt như VTV, TPHCM nên tách từng chữ ra đọc).
+ * - Xóa ký tự rác ẩn, non-breaking spaces (\xa0), zero-width spaces.
+ * - Chuẩn hóa dấu câu để ngắt câu tự nhiên.
+ */
+function normalizeVietnameseText(text) {
+  if (!text) return '';
+  let clean = text
+    .normalize('NFC')
+    .replace(/[\u00a0\u200b\u200e\u200f\ufeff]/g, ' ')
+    .replace(/\r\n/g, '\n');
+
+  // Chuyển từ IN HOA toàn bộ (ví dụ: TIÊU VIÊM, QUYẾT ĐỊNH, CHƯƠNG) thành Tiêu Viêm, Quyết Định, Chương
+  // để AI không đánh vần từng chữ một (T - I - Ê - U)
+  clean = clean.replace(/(?:(?<=[\s,.:;!?"'\(\)\[\]«»“”‘’—\-\n…\/~]|^))(\p{Lu}{2,})(?=(?:[\s,.:;!?"'\(\)\[\]«»“”‘’—\-\n…\/~]|$))/gu, (match) => {
+    return match.charAt(0) + match.slice(1).toLowerCase();
+  });
+
+  // Tách biệt tiêu đề chương để AI ngắt nghỉ đúng chỗ
+  clean = clean.replace(/(Chương\s+\d+[^:\n]*):(?!\s)/gi, '$1: ');
+
+  // Chuẩn hóa khoảng trắng thừa
+  clean = clean.replace(/[ \t]+/g, ' ');
+
+  return clean.trim();
+}
+
+/**
  * Splits text into large safe chunks (up to 4,800 characters)
  * Cheap-TTS supports up to 5,000 characters per single call in ~6-7 seconds!
  * - Up to 1,000 words (~4,800 chars) = EXACTLY 1 call (ZERO sleep delay, 5-7s total!)
@@ -190,7 +219,8 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const payload = JSON.parse(body || '{}');
-        const text = payload.text?.trim();
+        const rawText = payload.text?.trim();
+        const text = normalizeVietnameseText(rawText);
         const voice = payload.voice || 'vi-entertainment';
         const rate = parseFloat(payload.rate) || 1.0;
         const pauses = payload.pauses;
