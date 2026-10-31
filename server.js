@@ -361,9 +361,9 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`=======================================================`);
-  console.log(`🎙️  VietVoice Studio đang chạy tại: http://localhost:${PORT}`);
+  console.log(`🎙️  VietVoice Studio đang chạy tại: http://0.0.0.0:${PORT}`);
   console.log(`⚡ Cơ chế Rate-Limit Shield (Bảo vệ chống lỗi 429 Cheap-TTS)`);
   console.log(`=======================================================`);
 });

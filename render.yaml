@@ -4,6 +4,3 @@ services:
     env: docker
     plan: free
     region: singapore
-    envVars:
-      - key: PORT
-        value: 3000
