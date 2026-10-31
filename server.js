@@ -37,12 +37,12 @@ let lastRequestTime = 0;
 const MIN_GAP_BETWEEN_REQUESTS_MS = 20000; // 20s gap between multi-chunk requests
 
 /**
- * Splits text into large safe chunks (up to 1,800 characters)
- * This minimizes the number of API calls:
- * - 1,500 chars = 1 call
- * - 3,000 chars = 2 calls
+ * Splits text into large safe chunks (up to 4,800 characters)
+ * Cheap-TTS supports up to 5,000 characters per single call in ~6-7 seconds!
+ * - Up to 1,000 words (~4,800 chars) = EXACTLY 1 call (ZERO sleep delay, 5-7s total!)
+ * - 2,000 words = 2 calls
  */
-function splitTextIntoSafeChunks(text, maxChars = 1800) {
+function splitTextIntoSafeChunks(text, maxChars = 4800) {
   if (!text) return [];
   if (text.length <= maxChars) return [text.trim()];
 
@@ -66,7 +66,7 @@ function splitTextIntoSafeChunks(text, maxChars = 1800) {
         if (currentChunk) chunks.push(currentChunk);
 
         if (sentence.length > maxChars) {
-          const subSentences = sentence.match(/.{1,1500}(\s|$)/g) || [sentence];
+          const subSentences = sentence.match(/.{1,4500}(\s|$)/g) || [sentence];
           for (const sub of subSentences) {
             if (sub.trim()) chunks.push(sub.trim());
           }
@@ -123,12 +123,12 @@ async function synthesizeWithRateLimit(tts, options) {
     try {
       return await tts.synthesize(options);
     } catch (err) {
-      const isRateLimit = err.code === 'rate_limited' || err.status === 429;
+      const errStr = (err.message || '').toLowerCase();
+      const isRateLimit = err.code === 'rate_limited' || err.status === 429 || errStr.includes('too many requests') || errStr.includes('rate_limited');
       if (isRateLimit) {
-        // Wait 25 seconds if rate limited before retrying
-        console.warn(`[Cheap-TTS] Rate limited (attempt ${attempt}/${maxRetries}). Waiting 25s for cooldown...`);
+        console.warn(`[Cheap-TTS] Rate limited (attempt ${attempt}/${maxRetries}). Waiting 20s for cooldown...`);
         if (attempt < maxRetries) {
-          await sleep(25000);
+          await sleep(20000);
           continue;
         }
       }
@@ -215,8 +215,8 @@ const server = http.createServer(async (req, res) => {
 
         const tts = getTtsClient(key);
 
-        // Split text into chunks up to 1,800 chars (1 request per ~350 words)
-        const chunks = splitTextIntoSafeChunks(text, 1800);
+        // Split text into chunks up to 4,800 chars (1 request for up to ~1,000 words in 5-7s!)
+        const chunks = splitTextIntoSafeChunks(text, 4800);
         console.log(`[Cheap-TTS] Synthesizing ${text.length} chars in ${chunks.length} chunk(s) (Voice: ${voice})...`);
 
         const wavBuffers = [];
@@ -241,8 +241,8 @@ const server = http.createServer(async (req, res) => {
           voiceInfo = result.voice;
 
           if (i < chunks.length - 1) {
-            console.log(`[Cheap-TTS] Waiting 20s between chunks to stay under 3 RPM limit...`);
-            await sleep(20000);
+            console.log(`[Cheap-TTS] Waiting 15s between large sub-chunks to stay within rate limit...`);
+            await sleep(15000);
           }
         }
 

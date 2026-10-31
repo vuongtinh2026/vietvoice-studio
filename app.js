@@ -682,15 +682,24 @@ async function startBatchChapters() {
 
     batchProgressText.textContent = `Đang xử lý: ${chap.title} (${i + 1}/${parsedChapters.length})...`;
 
+    const startTime = Date.now();
     const success = await synthesizeSingleChapter(chap);
     if (success) {
       completedCount++;
       updateBatchProgress(completedCount, parsedChapters.length);
     }
 
-    // Pacing delay between chapters (1.2 seconds) to guarantee no rate limits
+    // Pacing delay between chapters: Cheap-TTS allows 3 RPM (~20s per request).
+    // Subtract synthesis time from 20s so we only wait the minimal cooldown needed.
     if (i < parsedChapters.length - 1 && !batchCancelRequested) {
-      await new Promise(r => setTimeout(r, 1200));
+      const elapsedSec = (Date.now() - startTime) / 1000;
+      const waitSeconds = Math.max(2, Math.ceil(20 - elapsedSec));
+
+      for (let s = waitSeconds; s > 0; s--) {
+        if (batchCancelRequested) break;
+        batchProgressText.textContent = `✓ Đã xong ${chap.title}. Nghỉ hạ nhiệt API ${s}s trước chương tiếp theo...`;
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
   }
 
@@ -794,15 +803,15 @@ async function startCheapTtsSynthesis(text) {
   const pauseSec = parseFloat(pauseDurationRange.value) || 0.4;
   const key = cheapTtsKeyInput.value.trim();
 
-  const isLong = text.length > 700;
-  const estChunks = Math.ceil(text.length / 650);
+  const isLong = text.length > 4800;
+  const estChunks = Math.ceil(text.length / 4800);
 
   btnSpeak.disabled = true;
   btnSpeakIcon.className = 'fa-solid fa-spinner fa-spin text-sm';
-  btnSpeakText.textContent = isLong ? `Đang xử lý ${estChunks} đoạn...` : 'Đang tạo âm thanh AI...';
+  btnSpeakText.textContent = isLong ? `Đang xử lý ${estChunks} đoạn lớn...` : 'Đang tạo âm thanh AI siêu tốc...';
   btnStop.disabled = false;
 
-  showToast(isLong ? `Văn bản dài (~${estChunks} đoạn). Đang tự động ghép nối âm thanh...` : 'Đang tạo âm thanh AI...', 'info');
+  showToast(isLong ? `Văn bản rất dài (~${estChunks} đoạn lớn). Đang tự động ghép nối...` : 'Đang tạo âm thanh AI (chỉ ~5-7 giây)...', 'info');
 
   try {
     const response = await fetch('/api/cheap-tts/synthesize', {
