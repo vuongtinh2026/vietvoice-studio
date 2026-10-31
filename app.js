@@ -69,6 +69,8 @@ const btnStop = document.getElementById('btnStop');
 const btnClear = document.getElementById('btnClear');
 const btnPaste = document.getElementById('btnPaste');
 const btnNormalizeCaps = document.getElementById('btnNormalizeCaps');
+const btnImportTxt = document.getElementById('btnImportTxt');
+const fileTxtInput = document.getElementById('fileTxtInput');
 const btnTestVoice = document.getElementById('btnTestVoice');
 const btnResetSettings = document.getElementById('btnResetSettings');
 const btnClearHistory = document.getElementById('btnClearHistory');
@@ -77,6 +79,10 @@ const audioOutputCard = document.getElementById('audioOutputCard');
 const audioPlayer = document.getElementById('audioPlayer');
 const btnDownloadAudio = document.getElementById('btnDownloadAudio');
 const btnDownloadAudioMp3 = document.getElementById('btnDownloadAudioMp3');
+const singleMp3Text = document.getElementById('singleMp3Text');
+const mp3BitrateSelect = document.getElementById('mp3BitrateSelect');
+const mp3QualityBadge = document.getElementById('mp3QualityBadge');
+const mergedFormatText = document.getElementById('mergedFormatText');
 const audioDurationBadge = document.getElementById('audioDurationBadge');
 const audioVoiceInfo = document.getElementById('audioVoiceInfo');
 
@@ -567,13 +573,17 @@ async function mergeAndDownloadFullAudiobook() {
     }
 
     const wavSizeMB = (mergedWavBlob.size / (1024 * 1024)).toFixed(2);
-    if (btnMergeText) btnMergeText.textContent = `Đang nén sang .MP3 siêu nhẹ (${wavSizeMB} MB)...`;
-    showToast(`Đã gộp ${readyChapters.length} phần! Đang nén sang định dạng .MP3...`, 'info');
+    const selectedBitrate = mp3BitrateSelect ? mp3BitrateSelect.value : '48k';
+    if (btnMergeText) btnMergeText.textContent = `Đang nén sang .MP3 (${selectedBitrate})...`;
+    showToast(`Đã gộp ${readyChapters.length} phần! Đang nén sang định dạng .MP3 (${selectedBitrate} siêu nhẹ)...`, 'info');
 
     // 3. Send merged WAV to backend FFmpeg converter
-    const res = await fetch('/api/audio/convert-to-mp3', {
+    const res = await fetch(`/api/audio/convert-to-mp3?bitrate=${selectedBitrate}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'audio/wav' },
+      headers: {
+        'Content-Type': 'audio/wav',
+        'X-Audio-Bitrate': selectedBitrate
+      },
       body: mergedWavBlob
     });
 
@@ -589,7 +599,7 @@ async function mergeAndDownloadFullAudiobook() {
     const mp3Url = URL.createObjectURL(mp3Blob);
 
     // 4. Trigger auto-download
-    const filename = `vietvoice-tron-bo-${readyChapters.length}-phan.mp3`;
+    const filename = `voiceviet-tron-bo-${readyChapters.length}-phan-${selectedBitrate}.mp3`;
     const a = document.createElement('a');
     a.href = mp3Url;
     a.download = filename;
@@ -651,10 +661,14 @@ async function downloadSingleChapterAsMp3(chap, btnEl) {
   }
 
   try {
-    showToast(`Đang nén "${chap.title}" sang file .MP3...`, 'info');
-    const res = await fetch('/api/audio/convert-to-mp3', {
+    const selectedBitrate = mp3BitrateSelect ? mp3BitrateSelect.value : '48k';
+    showToast(`Đang nén "${chap.title}" sang file .MP3 (${selectedBitrate})...`, 'info');
+    const res = await fetch(`/api/audio/convert-to-mp3?bitrate=${selectedBitrate}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'audio/wav' },
+      headers: {
+        'Content-Type': 'audio/wav',
+        'X-Audio-Bitrate': selectedBitrate
+      },
       body: blob
     });
 
@@ -1355,6 +1369,39 @@ function escapeHtml(string) {
     .replace(/'/g, '&#039;');
 }
 
+function updateMp3BitrateUI(bitrate) {
+  if (mp3QualityBadge) {
+    mp3QualityBadge.textContent = `${bitrate} Mono`;
+  }
+  if (mergedFormatText) {
+    const label = bitrate === '48k' ? 'MP3 (48 kbps Siêu nhẹ)' :
+                  bitrate === '64k' ? 'MP3 (64 kbps Tiêu chuẩn)' :
+                  bitrate === '32k' ? 'MP3 (32 kbps Cực nhẹ)' : `MP3 (${bitrate})`;
+    mergedFormatText.textContent = label;
+  }
+  if (singleMp3Text) {
+    singleMp3Text.textContent = (bitrate === '48k' || bitrate === '32k') ? `Tải .MP3 (${bitrate})` : 'Tải .MP3';
+  }
+}
+
+function loadTextFromFile(file) {
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const content = event.target.result;
+    if (content) {
+      textInput.value = content;
+      updateStats();
+      const kb = (file.size / 1024).toFixed(1);
+      showToast(`Đã nạp file "${file.name}" (${kb} KB, ${content.length.toLocaleString()} ký tự)!`, 'success');
+      textInput.focus();
+    }
+  };
+  reader.onerror = () => {
+    showToast('Lỗi khi đọc file văn bản!', 'error');
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
 // ==========================================
 // 10. EVENT LISTENERS
 // ==========================================
@@ -1408,11 +1455,15 @@ function setupEventListeners() {
       try {
         btnDownloadAudioMp3.disabled = true;
         btnDownloadAudioMp3.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-sm"></i> Đang nén...';
-        showToast('Đang nén file sang định dạng .MP3...', 'info');
+        const selectedBitrate = mp3BitrateSelect ? mp3BitrateSelect.value : '48k';
+        showToast(`Đang nén file sang định dạng .MP3 (${selectedBitrate} siêu nhẹ)...`, 'info');
 
-        const res = await fetch('/api/audio/convert-to-mp3', {
+        const res = await fetch(`/api/audio/convert-to-mp3?bitrate=${selectedBitrate}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'audio/wav' },
+          headers: {
+            'Content-Type': 'audio/wav',
+            'X-Audio-Bitrate': selectedBitrate
+          },
           body: lastGeneratedAudioBlob
         });
 
@@ -1488,6 +1539,53 @@ function setupEventListeners() {
   pauseDurationRange.addEventListener('input', () => {
     pauseDurationValue.textContent = `${parseFloat(pauseDurationRange.value).toFixed(1)}s`;
   });
+
+  // Import TXT File
+  if (btnImportTxt && fileTxtInput) {
+    btnImportTxt.addEventListener('click', () => {
+      fileTxtInput.click();
+    });
+
+    fileTxtInput.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      loadTextFromFile(file);
+      fileTxtInput.value = '';
+    });
+  }
+
+  // Drag and Drop text file on textarea
+  textInput.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    textInput.classList.add('border-indigo-500', 'bg-indigo-950/20');
+  });
+  textInput.addEventListener('dragleave', () => {
+    textInput.classList.remove('border-indigo-500', 'bg-indigo-950/20');
+  });
+  textInput.addEventListener('drop', (e) => {
+    e.preventDefault();
+    textInput.classList.remove('border-indigo-500', 'bg-indigo-950/20');
+    const file = e.dataTransfer?.files?.[0];
+    if (file && (file.type.includes('text') || file.name.match(/\.(txt|md|text)$/i))) {
+      loadTextFromFile(file);
+    } else if (file) {
+      showToast('Chỉ hỗ trợ nạp file văn bản (.txt, .md)', 'warning');
+    }
+  });
+
+  // MP3 Bitrate compression selector
+  if (mp3BitrateSelect) {
+    const savedBitrate = localStorage.getItem('voiceviet_mp3_bitrate') || '48k';
+    mp3BitrateSelect.value = savedBitrate;
+    updateMp3BitrateUI(savedBitrate);
+
+    mp3BitrateSelect.addEventListener('change', () => {
+      const val = mp3BitrateSelect.value;
+      localStorage.setItem('voiceviet_mp3_bitrate', val);
+      updateMp3BitrateUI(val);
+      showToast(`Đã chọn mức nén MP3: ${val} Mono (Siêu nhẹ)`, 'info');
+    });
+  }
 
   // Normalize Caps Button (Sửa lỗi chữ IN HOA bị AI đánh vần)
   if (btnNormalizeCaps) {

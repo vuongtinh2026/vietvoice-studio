@@ -135,7 +135,11 @@
               <i class="fa-regular fa-file-lines text-amber-400"></i>
               Nhập nội dung văn bản hoặc toàn bộ truyện
             </label>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <input type="file" id="fileTxtInput" accept=".txt,.text,.md" class="hidden">
+              <button id="btnImportTxt" class="text-xs px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Tải file .TXT hoặc .MD từ máy tính">
+                <i class="fa-solid fa-file-arrow-up"></i> Nhập file .txt
+              </button>
               <button id="btnNormalizeCaps" class="text-xs px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Sửa lỗi chữ IN HOA bị AI đánh vần từng ký tự">
                 <i class="fa-solid fa-spell-check"></i> Sửa lỗi chữ in hoa
               </button>
@@ -257,7 +261,7 @@
                 class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-purple-500/20 transition flex items-center gap-2 cursor-pointer active:scale-95"
                 title="Tải file định dạng .MP3 siêu nhẹ"
               >
-                <i class="fa-solid fa-file-audio text-sm"></i> Tải .MP3 (Nhẹ)
+                <i class="fa-solid fa-file-audio text-sm"></i> <span id="singleMp3Text">Tải .MP3 (Siêu nhẹ)</span>
               </button>
             </div>
           </div>
@@ -332,7 +336,7 @@
                   <div class="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 mt-1.5">
                     <span><i class="fa-solid fa-layer-group text-purple-400 mr-1"></i> Đã có: <b id="mergedReadyCount" class="text-amber-400 font-mono">0</b> phần</span>
                     <span><i class="fa-regular fa-clock text-indigo-400 mr-1"></i> Thời lượng: <b id="mergedTotalTime" class="text-indigo-300 font-mono">0s</b></span>
-                    <span><i class="fa-solid fa-file-audio text-emerald-400 mr-1"></i> Định dạng: <b class="text-emerald-300">MP3 (128 kbps)</b></span>
+                    <span><i class="fa-solid fa-file-audio text-emerald-400 mr-1"></i> Định dạng: <b id="mergedFormatText" class="text-emerald-300">MP3 (48 kbps Siêu nhẹ)</b></span>
                   </div>
                 </div>
               </div>
@@ -501,6 +505,28 @@
               value="1"
               class="w-full accent-amber-500 bg-slate-700 rounded-lg cursor-pointer h-2"
             >
+          </div>
+
+          <!-- MP3 Compression Settings -->
+          <div class="flex flex-col gap-2 pt-2 border-t border-slate-700/60">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-medium text-slate-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-file-zipper text-purple-400"></i> Nén file MP3 xuất ra
+              </span>
+              <span id="mp3QualityBadge" class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-mono font-semibold">48 kbps</span>
+            </div>
+            <select
+              id="mp3BitrateSelect"
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50 cursor-pointer"
+            >
+              <option value="48k" selected>Siêu nhẹ (48 kbps Mono - Giảm ~65% dung lượng, khuyên dùng)</option>
+              <option value="64k">Cân bằng (64 kbps Mono - Giảm ~50% dung lượng, nét cao)</option>
+              <option value="32k">Cực nhẹ (32 kbps Mono - Tiết kiệm dung lượng tối đa)</option>
+              <option value="128k">Gốc tiêu chuẩn (128 kbps)</option>
+            </select>
+            <p class="text-[10px] text-slate-500 leading-tight">
+              Tối ưu âm thanh Mono chuyên cho giọng đọc, giúp file MP3 nhẹ hơn gấp 2 đến 3 lần để nghe trên điện thoại và chia sẻ dễ dàng.
+            </p>
           </div>
 
           <!-- Voice test button -->
