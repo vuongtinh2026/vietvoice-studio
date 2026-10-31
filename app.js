@@ -1,5 +1,5 @@
 /**
- * VietVoice Studio - Text-to-Speech Application
+ * VoiceViet - Text-to-Speech Application
  * Features:
  * - Hybrid Engine (Cheap-TTS + Web Speech API)
  * - Audiobook & Novel Chapter Manager for massive texts (e.g. 49,000 words)
@@ -111,7 +111,7 @@ let batchCancelRequested = false;
 
 // Preset sample texts (Vietnamese)
 const SAMPLES = {
-  intro: "Xin chào các bạn! Chào mừng bạn đến với VietVoice Studio. Ứng dụng đã kết nối trực tiếp tài khoản Cheap-TTS với các giọng đọc AI tự nhiên như Ngọc Huyền, Minh Quân, Mạnh Dũng.",
+  intro: "Xin chào các bạn! Chào mừng bạn đến với VoiceViet. Ứng dụng đã kết nối trực tiếp tài khoản Cheap-TTS với các giọng đọc AI tự nhiên như Ngọc Huyền, Minh Quân, Mạnh Dũng.",
   news: "Trí tuệ nhân tạo đang thay đổi cách con người làm việc và giao tiếp hàng ngày. Các công nghệ tổng hợp giọng nói ngày càng trở nên tự nhiên, mang đến trải nghiệm sống động và tiện lợi cho mọi người.",
   novel: `Chương 1: Khởi Đầu Mới
 Đáy sâu của vực thẳm dường như bị bao phủ bởi một làn sương mù dày đặc màu xám tro. Tiêu Viêm đứng trên mỏm đá cao, ánh mắt sắc bén nhìn về phía trước. Hắn cảm nhận được một luồng khí tức cực kỳ cường hãn đang từ từ thức tỉnh.

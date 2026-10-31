@@ -9,8 +9,12 @@ if ! lsof -i :3000 > /dev/null 2>&1; then
   sleep 1.5
 fi
 
-# 2. Chạy Cloudflare Tunnel
+# 2. Vòng lặp tự động duy trì kết nối liên tục cho voiceviet.loca.lt
 echo "=========================================================="
-echo "🌐 Đang tạo đường link chia sẻ online ra toàn thế giới..."
+echo "🌐 Đang mở đường link rút gọn: https://voiceviet.loca.lt"
+echo "⚡ Tự động duy trì và phục hồi kết nối nếu mạng ngắt"
 echo "=========================================================="
-/opt/homebrew/bin/cloudflared tunnel --url http://localhost:3000
+while true; do
+  ./node_modules/.bin/lt --port 3000 --subdomain voiceviet
+  sleep 2
+done

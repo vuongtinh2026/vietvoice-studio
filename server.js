@@ -1,5 +1,5 @@
 /**
- * VietVoice Studio - Local Server with Cheap-TTS Backend & Rate-Limit Shield
+ * VoiceViet - Local Server with Cheap-TTS Backend & Rate-Limit Shield
  */
 
 import http from 'node:http';
@@ -363,7 +363,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`=======================================================`);
-  console.log(`🎙️  VietVoice Studio đang chạy tại: http://0.0.0.0:${PORT}`);
+  console.log(`🎙️  VoiceViet đang chạy tại: http://0.0.0.0:${PORT}`);
   console.log(`⚡ Cơ chế Rate-Limit Shield (Bảo vệ chống lỗi 429 Cheap-TTS)`);
   console.log(`=======================================================`);
 });

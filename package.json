@@ -17,6 +17,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@cheap-tts/node": "^0.2.0"
+    "@cheap-tts/node": "^0.2.0",
+    "localtunnel": "^2.0.2"
   }
 }
