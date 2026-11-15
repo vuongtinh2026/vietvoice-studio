@@ -183,7 +183,7 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
           }
         } else {
           // Default to speaker C (narrator)
-          let voice = dialogueVoiceC ? dialogueVoiceC.value : 'vi-commercial';
+          let voice = dialogueVoiceC ? dialogueVoiceC.value : 'vi-advertising';
           parsedLines.push({ speaker: 'C', text: line, voice });
         }
       }
