@@ -3,213 +3,302 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VoiceViet - Chuyển Văn Bản & Sách Truyện Dài Thành Giọng Nói AI</title>
+  <title>VoiceViet Studio Pro - Chuyển Văn Bản & Sách Truyện Thành Giọng Nói AI</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Font Awesome Icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <!-- Google Fonts Inter & Be Vietnam Pro -->
+  <!-- Font Awesome Icons 6.5 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- Google Fonts: Be Vietnam Pro & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen font-['Be_Vietnam_Pro'] antialiased">
-  <!-- Background decoration glow -->
+<body class="bg-[#0a0e17] text-slate-100 min-h-screen font-['Be_Vietnam_Pro'] antialiased flex flex-col">
+
+  <!-- Background Ambient Glows -->
   <div class="fixed inset-0 overflow-hidden pointer-events-none -z-10">
-    <div class="absolute -top-40 -right-40 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl"></div>
-    <div class="absolute top-1/3 -left-40 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl"></div>
-    <div class="absolute -bottom-40 right-1/4 w-96 h-96 bg-amber-600/10 rounded-full blur-3xl"></div>
+    <div class="absolute -top-40 -right-40 w-[500px] h-[500px] bg-purple-600/15 rounded-full blur-[120px]"></div>
+    <div class="absolute top-1/3 -left-40 w-[450px] h-[450px] bg-indigo-600/15 rounded-full blur-[120px]"></div>
+    <div class="absolute -bottom-40 right-1/4 w-[400px] h-[400px] bg-amber-500/10 rounded-full blur-[100px]"></div>
   </div>
 
-  <div class="max-w-6xl mx-auto px-4 py-8">
-    <!-- Header -->
-    <header class="flex flex-col md:flex-row items-center justify-between gap-4 pb-6 border-b border-slate-800">
-      <div class="flex items-center gap-3">
-        <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-          <i class="fa-solid fa-waveform-lines text-2xl text-white"></i>
-        </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="text-2xl font-bold bg-gradient-to-r from-white via-slate-100 to-amber-300 bg-clip-text text-transparent">
-              VoiceViet
-            </h1>
-            <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              Audiobook & Cheap-TTS Ready
-            </span>
-          </div>
-          <p class="text-xs text-slate-400">Chuyển văn bản & sách truyện dài hàng vạn từ thành giọng nói AI mượt mà</p>
-        </div>
+  <!-- Top Navigation Header -->
+  <header class="h-16 border-b border-slate-800/80 bg-[#0f1523]/80 backdrop-blur-xl sticky top-0 z-30 px-4 lg:px-6 flex items-center justify-between">
+    <!-- Brand / Logo -->
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-amber-500 flex items-center justify-center shadow-lg shadow-purple-500/25">
+        <i class="fa-solid fa-waveform-lines text-xl text-white"></i>
       </div>
-      
-      <!-- Engine Selector Tabs -->
-      <div class="flex items-center bg-slate-800/90 p-1.5 rounded-2xl border border-slate-700/80 shadow-inner">
-        <button
-          id="tabCheapTts"
-          class="engine-tab active cheap-tts-active px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition"
-        >
-          <i class="fa-solid fa-bolt-lightning text-amber-400 text-sm"></i>
-          <span>Cheap-TTS Cloud AI</span>
-          <span class="text-[9px] bg-gradient-to-r from-amber-500 to-orange-500 text-slate-900 font-extrabold px-1.5 py-0.2 rounded-full uppercase">104 Giọng</span>
-        </button>
-        <button
-          id="tabWebSpeech"
-          class="engine-tab px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition text-slate-400 hover:text-white"
-        >
-          <i class="fa-solid fa-laptop text-sm"></i>
-          <span>Trình duyệt (Web Speech)</span>
-        </button>
-      </div>
-    </header>
-
-    <!-- Cheap-TTS Config Banner -->
-    <div id="cheapTtsConfigCard" class="mt-6 bg-gradient-to-r from-slate-800/90 via-amber-950/20 to-slate-800/90 border border-amber-500/40 rounded-2xl p-4 shadow-xl transition-all">
-      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div class="flex items-center gap-2.5">
-          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          <div>
-            <h2 class="text-xs font-semibold text-slate-200">Tài khoản Cheap-TTS: <span class="text-emerald-400 font-mono">Đã kích hoạt</span> (Khóa sk_live_I_cohe...)</h2>
-            <p class="text-[11px] text-slate-400">Các giọng đọc AI: Ngọc Huyền (Kể chuyện), Minh Quân (Bình luận), Mạnh Dũng (Quảng cáo), Adam (TikTok).</p>
-          </div>
-        </div>
+      <div>
         <div class="flex items-center gap-2">
-          <button id="btnToggleKeyEdit" class="text-xs px-2.5 py-1.5 rounded-xl bg-slate-700/80 hover:bg-slate-700 text-slate-300 transition flex items-center gap-1.5">
-            <i class="fa-solid fa-key text-[10px]"></i> Đổi Key
-          </button>
+          <span class="text-lg font-bold text-gradient-purple tracking-tight">VoiceViet</span>
+          <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">Studio Pro</span>
         </div>
-      </div>
-
-      <!-- Key Edit Box -->
-      <div id="keyEditBox" class="hidden grid grid-cols-1 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-slate-700/60 items-center">
-        <div class="md:col-span-3">
-          <input
-            type="text"
-            id="cheapTtsKeyInput"
-            value="sk_live_I_cohehhbgkJqZjJiB-JifshNNcIgSCumq07SIpMsIQ"
-            placeholder="Nhập Key Cheap-TTS"
-            class="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono"
-          />
-        </div>
-        <div>
-          <button
-            id="btnSaveCheapTtsKey"
-            class="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 text-slate-950 font-semibold text-xs transition"
-          >
-            Lưu thay đổi
-          </button>
-        </div>
+        <p class="text-[11px] text-slate-400 hidden sm:block">Chuyển văn bản & sách truyện hàng vạn từ thành giọng nói AI</p>
       </div>
     </div>
 
-    <!-- Long Text / Audiobook Detected Notification Banner -->
-    <div id="audiobookBanner" class="hidden mt-6 bg-gradient-to-r from-indigo-950/80 via-purple-950/60 to-slate-800/80 border border-indigo-500/40 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-3 animate-fade-in">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
-          <i class="fa-solid fa-book-open text-lg"></i>
-        </div>
-        <div>
-          <h3 class="text-sm font-semibold text-slate-100 flex items-center gap-2">
-            <span>Phát hiện nội dung truyện / sách dài (<span id="bannerWordCount">49.000</span> từ)</span>
-            <span class="text-[10px] bg-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full font-semibold uppercase">Audiobook Mode</span>
-          </h3>
-          <p class="text-xs text-slate-400 mt-0.5">
-            Văn bản dài tương đương <span id="bannerHours">~5.4 giờ đọc</span>. Hệ thống đã tự động kích hoạt tính năng <b>Chia Chương & Hàng Đợi Audiobook</b> bên dưới để không bị ngắt kết nối.
-          </p>
-        </div>
-      </div>
-      <button id="btnScrollToAudiobook" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition flex items-center gap-2 shrink-0">
-        <i class="fa-solid fa-list-check"></i> Xem danh sách chương
+    <!-- Header Center: Engine Switcher -->
+    <div class="flex items-center bg-slate-900/90 p-1 rounded-xl border border-slate-700/80 shadow-inner">
+      <button
+        id="tabCheapTts"
+        class="engine-tab active cheap-tts-active px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition cursor-pointer"
+      >
+        <i class="fa-solid fa-bolt-lightning text-amber-400 text-xs"></i>
+        <span>Cheap-TTS Cloud</span>
+        <span class="text-[9px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.2 rounded-full uppercase">104 Giọng</span>
+      </button>
+      <button
+        id="tabWebSpeech"
+        class="engine-tab px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition text-slate-400 hover:text-white cursor-pointer"
+      >
+        <i class="fa-solid fa-laptop text-xs"></i>
+        <span>Web Speech</span>
       </button>
     </div>
 
-    <!-- Main Grid -->
-    <main class="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-6">
-      <!-- Left Column: Input and Highlighting (2 Cols) -->
-      <div class="lg:col-span-2 flex flex-col gap-6">
+    <!-- Header Right: User Points & Quick Status -->
+    <div class="flex items-center gap-3">
+      <!-- Balance / Points -->
+      <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs">
+        <i class="fa-solid fa-coins text-amber-400"></i>
+        <span class="text-slate-300">Điểm:</span>
+        <span id="userPointsDisplay" class="font-bold text-amber-300 font-mono">500.000</span>
+        <span class="text-[10px] text-purple-300">ký tự</span>
+      </div>
+
+      <button
+        id="btnHeaderPricing"
+        class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 text-slate-950 font-bold text-xs shadow-md shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer"
+      >
+        <i class="fa-solid fa-crown text-xs"></i>
+        <span>Nâng Cấp VIP</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main App Layout (3 Columns: Sidebar - Center Workspace - Right Panel) -->
+  <div class="flex-1 flex w-full max-w-[1720px] mx-auto overflow-hidden">
+
+    <!-- Column 1: Left Navigation Sidebar -->
+    <aside class="w-64 border-r border-slate-800/80 bg-[#0f1523]/50 p-4 hidden md:flex flex-col justify-between shrink-0">
+      <div class="flex flex-col gap-1.5">
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-2">Không Gian Làm Việc</div>
+
+        <button class="nav-tab active" data-view="viewStudio">
+          <i class="fa-solid fa-wand-magic-sparkles text-sm text-purple-400 w-5"></i>
+          <span>Studio Soạn Thảo</span>
+        </button>
+
+        <button class="nav-tab" data-view="viewDialogue">
+          <i class="fa-solid fa-comments text-sm text-cyan-400 w-5"></i>
+          <span>Hội Thoại Đa Giọng</span>
+          <span class="text-[9px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded-md ml-auto font-semibold">Mới</span>
+        </button>
+
+        <button class="nav-tab" data-view="viewBatchWord">
+          <i class="fa-solid fa-file-word text-sm text-blue-400 w-5"></i>
+          <span>Hàng Đợi File Word</span>
+          <span class="text-[9px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1.5 py-0.5 rounded-md ml-auto font-semibold">>70k từ</span>
+        </button>
+
+        <button class="nav-tab" data-view="viewVoices">
+          <i class="fa-solid fa-music text-sm text-emerald-400 w-5"></i>
+          <span>Thư Viện Giọng Đọc</span>
+        </button>
+
+        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-3 mt-6 mb-2">Thương Mại & Quota</div>
+
+        <button class="nav-tab" data-view="viewPricing">
+          <i class="fa-solid fa-cart-shopping text-sm text-amber-400 w-5"></i>
+          <span>Bảng Giá & Gói Cước</span>
+          <span class="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded-md ml-auto font-semibold">VietQR</span>
+        </button>
+      </div>
+
+      <!-- Sidebar Bottom: Quota & System Status Widget -->
+      <div class="flex flex-col gap-3 pt-4 border-t border-slate-800/80">
+        <!-- Quota Progress Card -->
+        <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+          <div class="flex items-center justify-between text-xs mb-1.5">
+            <span class="text-slate-400">Hạn mức tháng:</span>
+            <span class="text-emerald-400 font-semibold font-mono text-[11px]">100%</span>
+          </div>
+          <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+            <div class="bg-gradient-to-r from-purple-500 to-emerald-400 h-full w-full"></div>
+          </div>
+          <div class="flex items-center justify-between text-[10px] text-slate-500 mt-1.5">
+            <span>Còn lại: <b>500.000</b> ký tự</span>
+            <span class="text-amber-400/90 cursor-pointer hover:underline" id="btnSidebarUpgrade">Mua thêm</span>
+          </div>
+        </div>
+
+        <!-- System Connection Status -->
+        <div class="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900/60 border border-slate-800/80 text-[11px] text-slate-400">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="truncate">Cheap-TTS: <span class="text-emerald-400 font-mono">sk_live_...</span></span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Column 2: Center Workspace (Main Content) -->
+    <main class="flex-1 p-4 lg:p-6 overflow-y-auto max-h-[calc(100vh-4rem)] flex flex-col gap-6">
+
+      <!-- ================= VIEW 1: STUDIO SOẠN THẢO CHÍNH ================= -->
+      <div id="viewStudio" class="content-view flex flex-col gap-6">
         
-        <!-- Text Area Card -->
-        <div class="bg-slate-800/60 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-xl relative">
-          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <label for="textInput" class="text-sm font-semibold text-slate-200 flex items-center gap-2">
-              <i class="fa-regular fa-file-lines text-amber-400"></i>
-              Nhập nội dung văn bản hoặc toàn bộ truyện
-            </label>
+        <!-- Cheap-TTS Config Banner (Collapsible) -->
+        <div id="cheapTtsConfigCard" class="bg-gradient-to-r from-slate-900/90 via-purple-950/20 to-slate-900/90 border border-purple-500/30 rounded-2xl p-4 shadow-xl">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <div>
+                <h2 class="text-xs font-semibold text-slate-200">
+                  Hệ thống AI Engine: <span class="text-emerald-400 font-mono">Đã sẵn sàng</span>
+                </h2>
+                <p class="text-[11px] text-slate-400">Tốc độ sinh âm thanh siêu tốc (~5 giây cho 1.000 từ). Hỗ trợ chuẩn nén MP3 Mono 48k siêu nhẹ.</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="btnToggleKeyEdit" class="text-xs px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center gap-1.5 border border-slate-700 cursor-pointer">
+                <i class="fa-solid fa-key text-[10px]"></i> Đổi Key
+              </button>
+            </div>
+          </div>
+
+          <!-- Key Edit Box -->
+          <div id="keyEditBox" class="hidden grid grid-cols-1 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-slate-700/60 items-center">
+            <div class="md:col-span-3">
+              <input
+                type="text"
+                id="cheapTtsKeyInput"
+                value="sk_live_I_cohehhbgkJqZjJiB-JifshNNcIgSCumq07SIpMsIQ"
+                placeholder="Nhập Key Cheap-TTS"
+                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 font-mono"
+              />
+            </div>
+            <div>
+              <button
+                id="btnSaveCheapTtsKey"
+                class="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 text-white font-semibold text-xs transition cursor-pointer"
+              >
+                Lưu thay đổi
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Long Text / Audiobook Detected Notification Banner -->
+        <div id="audiobookBanner" class="hidden bg-gradient-to-r from-indigo-950/80 via-purple-950/60 to-slate-900 border border-indigo-500/40 rounded-2xl p-4 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+              <i class="fa-solid fa-book-open text-lg"></i>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-slate-100 flex items-center gap-2">
+                <span>Phát hiện sách truyện dài (<span id="bannerWordCount">49.000</span> từ)</span>
+                <span class="text-[10px] bg-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full font-semibold uppercase">Audiobook Mode</span>
+              </h3>
+              <p class="text-xs text-slate-400 mt-0.5">
+                Tương đương <span id="bannerHours">~5.4 giờ đọc</span>. Đã kích hoạt <b>Tự động Chia Chương & Gộp MP3 Hoàn Chỉnh</b> bên dưới.
+              </p>
+            </div>
+          </div>
+          <button id="btnScrollToAudiobook" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition flex items-center gap-2 shrink-0 cursor-pointer">
+            <i class="fa-solid fa-list-check"></i> Xem danh sách chương
+          </button>
+        </div>
+
+        <!-- Main Studio Editor Card -->
+        <div class="glass-panel rounded-2xl p-5 lg:p-6 flex flex-col gap-4">
+          <!-- Textarea Header Toolbar -->
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
+              <span class="text-sm font-bold text-slate-200">Soạn Thảo Văn Bản / Truyện Chữ</span>
+            </div>
+
+            <!-- Action buttons -->
             <div class="flex flex-wrap items-center gap-2">
               <input type="file" id="fileBatchWordInput" multiple accept=".docx,.txt,.md" class="hidden">
-              <button id="btnBatchWord" class="text-xs px-2.5 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Nạp nhiều file Word (.docx) hoặc Text (.txt) để tự động tạo và tải về máy tính">
-                <i class="fa-solid fa-file-word text-blue-400"></i> Nạp nhiều file Word (.docx)
+              <button id="btnBatchWord" class="text-xs px-2.5 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Nạp nhiều file Word (.docx) để tạo hàng loạt">
+                <i class="fa-solid fa-file-word text-blue-400"></i> Nạp nhiều file Word
               </button>
+
               <input type="file" id="fileTxtInput" accept=".docx,.txt,.text,.md" class="hidden">
-              <button id="btnImportTxt" class="text-xs px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Tải 1 file Word (.docx) hoặc .TXT từ máy tính vào ô soạn thảo">
+              <button id="btnImportTxt" class="text-xs px-2.5 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Nạp 1 file Word hoặc TXT">
                 <i class="fa-solid fa-file-arrow-up"></i> Đọc 1 file (.docx / .txt)
               </button>
-              <button id="btnNormalizeCaps" class="text-xs px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Sửa lỗi chữ IN HOA bị AI đánh vần từng ký tự">
-                <i class="fa-solid fa-spell-check"></i> Sửa lỗi chữ in hoa
+
+              <button id="btnNormalizeCaps" class="text-xs px-2.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Sửa lỗi chữ IN HOA bị đánh vần">
+                <i class="fa-solid fa-spell-check"></i> Sửa từ in hoa
               </button>
-              <button id="btnPaste" class="text-xs px-2.5 py-1 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 transition flex items-center gap-1.5 cursor-pointer" title="Dán từ Clipboard">
+
+              <button id="btnPaste" class="text-xs px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Dán nội dung">
                 <i class="fa-regular fa-paste"></i> Dán
               </button>
-              <button id="btnClear" class="text-xs px-2.5 py-1 bg-slate-700 hover:bg-rose-500/20 hover:text-rose-400 rounded-lg text-slate-300 transition flex items-center gap-1.5 cursor-pointer" title="Xóa nội dung">
+
+              <button id="btnClear" class="text-xs px-2.5 py-1.5 bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 border border-slate-700 rounded-lg transition flex items-center gap-1.5 cursor-pointer" title="Xóa nội dung">
                 <i class="fa-regular fa-trash-can"></i> Xóa
               </button>
             </div>
           </div>
 
-          <!-- Textarea Container -->
+          <!-- Main Textarea -->
           <div class="relative">
             <textarea
               id="textInput"
-              rows="8"
-              placeholder="Nhập hoặc dán nội dung văn bản, bài báo, hoặc toàn bộ truyện chữ (hàng vạn từ) vào đây..."
-              class="w-full bg-slate-900/80 border border-slate-700 rounded-xl p-4 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition resize-y text-base leading-relaxed"
+              rows="9"
+              placeholder="Nhập hoặc dán nội dung văn bản, kịch bản, bài báo, hoặc toàn bộ truyện dài (hàng vạn từ) vào đây..."
+              class="w-full bg-[#0a0e17]/90 border border-slate-800 rounded-xl p-4 text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition resize-y text-base leading-relaxed font-normal"
             ></textarea>
           </div>
 
           <!-- Stats & Preset samples -->
-          <div class="flex flex-wrap items-center justify-between text-xs text-slate-400 mt-3 pt-3 border-t border-slate-700/50 gap-2">
+          <div class="flex flex-wrap items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-800 gap-2">
             <div class="flex items-center gap-4">
-              <span><i class="fa-regular fa-keyboard mr-1"></i> <span id="charCount">0</span> ký tự</span>
-              <span><i class="fa-solid fa-font mr-1"></i> <span id="wordCount">0</span> từ</span>
-              <span><i class="fa-regular fa-clock mr-1"></i> ~<span id="estTime">0s</span> đọc</span>
+              <span><i class="fa-regular fa-keyboard mr-1 text-purple-400"></i> <b id="charCount" class="text-slate-200">0</b> ký tự</span>
+              <span><i class="fa-solid fa-font mr-1 text-cyan-400"></i> <b id="wordCount" class="text-slate-200">0</b> từ</span>
+              <span><i class="fa-regular fa-clock mr-1 text-amber-400"></i> ~<b id="estTime" class="text-slate-200">0s</b> đọc</span>
             </div>
             
             <div class="flex items-center gap-1.5">
-              <span class="text-slate-500">Mẫu:</span>
-              <button class="sample-btn px-2 py-0.5 rounded bg-slate-700/60 hover:bg-amber-600/30 hover:text-amber-300 transition" data-sample="intro">Lời chào</button>
-              <button class="sample-btn px-2 py-0.5 rounded bg-slate-700/60 hover:bg-amber-600/30 hover:text-amber-300 transition" data-sample="novel">Mẫu truyện (3 chương)</button>
-              <button class="sample-btn px-2 py-0.5 rounded bg-slate-700/60 hover:bg-amber-600/30 hover:text-amber-300 transition" data-sample="news">Tin tức</button>
+              <span class="text-slate-500">Mẫu sẵn:</span>
+              <button class="sample-btn px-2 py-0.5 rounded bg-slate-800 hover:bg-purple-600/30 hover:text-purple-300 transition text-[11px] cursor-pointer" data-sample="intro">Lời chào</button>
+              <button class="sample-btn px-2 py-0.5 rounded bg-slate-800 hover:bg-purple-600/30 hover:text-purple-300 transition text-[11px] cursor-pointer" data-sample="novel">Truyện (3 chương)</button>
+              <button class="sample-btn px-2 py-0.5 rounded bg-slate-800 hover:bg-purple-600/30 hover:text-purple-300 transition text-[11px] cursor-pointer" data-sample="news">Tin tức</button>
             </div>
           </div>
         </div>
 
-        <!-- Waveform Visualizer & Action Bar -->
-        <div class="bg-slate-800/60 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
-          <!-- Audio Wave Animation Canvas -->
-          <div class="relative w-full h-16 bg-slate-900/90 rounded-xl overflow-hidden flex items-center justify-center border border-slate-700/60">
+        <!-- Waveform Visualizer & Speak Action Bar -->
+        <div class="glass-panel rounded-2xl p-5 flex flex-col gap-4">
+          <!-- Audio Wave Canvas -->
+          <div class="relative w-full h-16 bg-[#0a0e17] rounded-xl overflow-hidden flex items-center justify-center border border-slate-800">
             <canvas id="visualizer" class="w-full h-full"></canvas>
             <div id="idleWaveMsg" class="absolute inset-0 flex items-center justify-center text-xs text-slate-500 gap-2">
-              <i class="fa-solid fa-microphone-lines"></i> Sóng âm sẽ hiển thị khi đang phát giọng nói
+              <i class="fa-solid fa-microphone-lines text-purple-400"></i> Sóng âm AI hiển thị tại đây khi đang phát âm thanh
             </div>
           </div>
 
-          <!-- Playback Controls -->
+          <!-- Playback & Action Controls -->
           <div class="flex flex-wrap items-center justify-between gap-4">
             <div class="flex items-center gap-3">
-              <!-- Play / Speak Button -->
+              <!-- Primary Speak Button -->
               <button
                 id="btnSpeak"
-                class="px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-slate-950 font-bold shadow-lg shadow-amber-500/25 active:scale-95 transition flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
+                class="px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold shadow-lg shadow-purple-500/30 active:scale-95 transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 <i id="btnSpeakIcon" class="fa-solid fa-play text-sm"></i>
-                <span id="btnSpeakText">Tạo giọng nói AI</span>
+                <span id="btnSpeakText">Tạo Giọng Nói AI</span>
               </button>
 
               <!-- Pause Button (Web Speech) -->
               <button
                 id="btnPause"
                 disabled
-                class="hidden px-4 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none flex items-center gap-2"
+                class="hidden px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none flex items-center gap-2 cursor-pointer"
                 title="Tạm dừng / Tiếp tục"
               >
                 <i id="pauseIcon" class="fa-solid fa-pause"></i>
@@ -220,7 +309,7 @@
               <button
                 id="btnStop"
                 disabled
-                class="px-4 py-3 rounded-xl bg-slate-700 hover:bg-rose-600/20 hover:text-rose-300 text-slate-200 font-medium transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none flex items-center gap-2"
+                class="px-4 py-3 rounded-xl bg-slate-800 hover:bg-rose-600/20 hover:text-rose-300 text-slate-200 font-medium transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none flex items-center gap-2 cursor-pointer"
                 title="Dừng phát"
               >
                 <i class="fa-solid fa-stop"></i>
@@ -230,23 +319,23 @@
 
             <!-- Hint text -->
             <div class="text-xs text-slate-400 flex items-center gap-1.5">
-              <span class="px-2 py-0.5 bg-slate-700/80 rounded border border-slate-600 text-slate-300">Ctrl + Enter</span>
+              <span class="px-2 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300">Ctrl + Enter</span>
               để tạo nhanh
             </div>
           </div>
         </div>
 
         <!-- Generated Audio Result Card (Cheap-TTS Output & Download) -->
-        <div id="audioOutputCard" class="hidden bg-slate-800/90 border border-amber-500/50 rounded-2xl p-5 shadow-2xl">
+        <div id="audioOutputCard" class="hidden glass-panel border-purple-500/50 rounded-2xl p-5 shadow-2xl">
           <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div class="flex items-center gap-3">
-              <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-amber-500/20 to-orange-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+              <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-purple-500/20 to-indigo-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
                 <i class="fa-solid fa-file-audio text-2xl"></i>
               </div>
               <div>
                 <h4 class="text-sm font-semibold text-slate-100 flex items-center gap-2">
                   <span>File âm thanh AI (Cheap-TTS)</span>
-                  <span id="audioDurationBadge" class="text-[10px] bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-full font-mono">0.0s</span>
+                  <span id="audioDurationBadge" class="text-[10px] bg-purple-500/20 text-purple-300 px-2.5 py-0.5 rounded-full font-mono">0.0s</span>
                 </h4>
                 <p id="audioVoiceInfo" class="text-xs text-slate-400 mt-0.5">Giọng đọc: Ngọc Huyền (vi-entertainment)</p>
               </div>
@@ -256,7 +345,7 @@
               <a
                 id="btnDownloadAudio"
                 download="cheap-tts-voice.wav"
-                class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold text-xs shadow-lg shadow-emerald-500/20 transition flex items-center gap-2 cursor-pointer active:scale-95"
+                class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition flex items-center gap-2 cursor-pointer active:scale-95"
               >
                 <i class="fa-solid fa-cloud-arrow-down text-sm"></i> Tải .WAV
               </a>
@@ -276,83 +365,9 @@
           </div>
         </div>
 
-        <!-- Batch Multi-File Word/Document Queue Card -->
-        <div id="batchWordCard" class="hidden bg-slate-800/90 border border-blue-500/50 rounded-2xl p-6 shadow-2xl relative">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-700/60">
-            <div>
-              <div class="flex items-center gap-2">
-                <div class="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
-                  <i class="fa-solid fa-file-word text-lg"></i>
-                </div>
-                <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
-                  Xử Lý Hàng Loạt File Word & Text
-                  <span id="batchWordCountBadge" class="text-xs bg-blue-500/20 text-blue-300 px-2.5 py-0.5 rounded-full font-semibold border border-blue-500/30">0 file</span>
-                </h3>
-              </div>
-              <p class="text-xs text-slate-300 mt-1">
-                Tự động nạp từng file $\rightarrow$ tạo giọng AI $\rightarrow$ nén .MP3 $\rightarrow$ tự động tải về máy $\rightarrow$ chuyển tiếp sang file tiếp theo!
-              </p>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-2 shrink-0">
-              <button
-                id="btnStartWordBatch"
-                class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-blue-500/25 transition flex items-center gap-2 active:scale-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
-              >
-                <i id="btnStartWordBatchIcon" class="fa-solid fa-play"></i>
-                <span id="btnStartWordBatchText">Bắt đầu tạo & Tải về toàn bộ</span>
-              </button>
-              <button
-                id="btnStopWordBatch"
-                disabled
-                class="px-3.5 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 font-semibold text-xs transition flex items-center gap-2 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
-              >
-                <i class="fa-solid fa-pause"></i> Dừng
-              </button>
-              <button
-                id="btnClearWordBatch"
-                class="px-3 py-2.5 rounded-xl bg-slate-700/60 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 text-xs transition cursor-pointer"
-                title="Xóa danh sách hàng đợi"
-              >
-                <i class="fa-regular fa-trash-can"></i>
-              </button>
-            </div>
-          </div>
-
-          <!-- Batch Progress Bar & Status -->
-          <div id="batchWordProgressContainer" class="mt-4 p-4 rounded-xl bg-slate-900/80 border border-slate-700/60">
-            <div class="flex items-center justify-between text-xs mb-2">
-              <span id="batchWordProgressText" class="font-medium text-slate-200">
-                Sẵn sàng xử lý danh sách file Word...
-              </span>
-              <span id="batchWordProgressPercent" class="font-bold text-blue-400 font-mono">0%</span>
-            </div>
-            <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
-              <div id="batchWordProgressBar" class="bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-500 h-full w-0 transition-all duration-300"></div>
-            </div>
-            <div class="flex flex-wrap items-center justify-between text-[11px] text-slate-400 mt-2 gap-2">
-              <span id="batchWordCompletedStats"><i class="fa-solid fa-check-double text-emerald-400 mr-1"></i> Đã tải về: <b class="text-emerald-400">0</b> file</span>
-              <span class="text-amber-300/80"><i class="fa-solid fa-circle-info mr-1"></i> Trình duyệt sẽ tự động tải các file .MP3 về máy khi tạo xong</span>
-            </div>
-          </div>
-
-          <!-- File Queue List -->
-          <div class="mt-4">
-            <div class="flex items-center justify-between text-xs font-semibold text-slate-300 mb-2">
-              <span>Hàng đợi các file sẽ được xử lý lần lượt:</span>
-              <button id="btnAddMoreFiles" class="text-xs text-blue-400 hover:text-blue-300 transition flex items-center gap-1 cursor-pointer">
-                <i class="fa-solid fa-plus"></i> Thêm file khác...
-              </button>
-            </div>
-            <div id="batchWordFileList" class="flex flex-col gap-2 max-h-[360px] overflow-y-auto pr-1">
-              <!-- Dynamically populated files -->
-            </div>
-          </div>
-        </div>
-
         <!-- Audiobook / Chapter Manager Card -->
-        <div id="audiobookCard" class="hidden bg-slate-800/80 border border-indigo-500/50 rounded-2xl p-6 shadow-2xl">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-700/60">
+        <div id="audiobookCard" class="hidden glass-panel border-indigo-500/50 rounded-2xl p-6 shadow-2xl">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div>
               <div class="flex items-center gap-2">
                 <div class="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
@@ -361,7 +376,7 @@
                 <h3 class="text-base font-bold text-slate-100">Quản Lý Chương & Tự Động Tạo Audiobook</h3>
               </div>
               <p class="text-xs text-slate-400 mt-1">
-                Tìm thấy <span id="abFoundChaptersCount" class="text-amber-400 font-semibold">0</span> chương. Bạn có thể tạo từng chương riêng biệt hoặc tạo tự động lần lượt toàn bộ.
+                Tìm thấy <span id="abFoundChaptersCount" class="text-amber-400 font-semibold">0</span> chương. Bạn có thể tạo từng chương hoặc tạo tự động lần lượt toàn bộ.
               </p>
             </div>
 
@@ -369,7 +384,7 @@
             <div class="flex items-center gap-2">
               <button
                 id="btnStartBatch"
-                class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-semibold text-xs shadow-lg shadow-indigo-500/25 transition flex items-center gap-1.5 active:scale-95"
+                class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 text-white font-semibold text-xs shadow-lg shadow-indigo-500/25 transition flex items-center gap-1.5 active:scale-95 cursor-pointer"
               >
                 <i id="btnStartBatchIcon" class="fa-solid fa-play"></i>
                 <span id="btnStartBatchText">Tự động tạo tất cả các chương</span>
@@ -377,7 +392,7 @@
               <button
                 id="btnStopBatch"
                 disabled
-                class="px-3 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs transition disabled:opacity-40 disabled:pointer-events-none"
+                class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
                 title="Dừng hàng đợi"
               >
                 <i class="fa-solid fa-pause"></i> Dừng
@@ -386,7 +401,7 @@
           </div>
 
           <!-- Overall Batch Progress Bar -->
-          <div id="batchProgressContainer" class="mt-4 p-3 bg-slate-900/60 rounded-xl border border-slate-700/60">
+          <div id="batchProgressContainer" class="mt-4 p-3 bg-slate-900/60 rounded-xl border border-slate-800">
             <div class="flex items-center justify-between text-xs mb-1.5">
               <span id="batchProgressText" class="text-slate-300 font-medium">Tiến độ tổng thể: Chưa bắt đầu</span>
               <span id="batchProgressPercent" class="text-indigo-400 font-semibold font-mono">0%</span>
@@ -397,7 +412,7 @@
           </div>
 
           <!-- Merged Full Audiobook MP3 Card -->
-          <div id="mergedAudiobookCard" class="mt-4 p-4 sm:p-5 bg-gradient-to-r from-purple-950/60 via-indigo-950/50 to-slate-900 border border-purple-500/50 rounded-2xl shadow-xl">
+          <div id="mergedAudiobookCard" class="mt-4 p-5 bg-gradient-to-r from-purple-950/60 via-indigo-950/50 to-slate-900 border border-purple-500/50 rounded-2xl shadow-xl">
             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div class="flex items-center gap-3.5">
                 <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/30 shrink-0">
@@ -409,7 +424,7 @@
                     <span id="mergedBadge" class="text-[10px] bg-purple-500/20 text-purple-300 px-2.5 py-0.5 rounded-full font-semibold border border-purple-500/30">Chờ hoàn tất các phần</span>
                   </div>
                   <p class="text-xs text-slate-300 mt-0.5">
-                    Tự động gộp tất cả các phần đã tạo thành <b>1 file duy nhất dạng .MP3</b> siêu nhẹ (giảm ~70% dung lượng) để bạn tải về nghe trên điện thoại.
+                    Tự động gộp tất cả các phần đã tạo thành <b>1 file duy nhất dạng .MP3</b> siêu nhẹ (giảm ~70% dung lượng) để tải về điện thoại.
                   </p>
                   <div class="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 mt-1.5">
                     <span><i class="fa-solid fa-layer-group text-purple-400 mr-1"></i> Đã có: <b id="mergedReadyCount" class="text-amber-400 font-mono">0</b> phần</span>
@@ -422,7 +437,7 @@
               <div class="flex items-center gap-2 shrink-0">
                 <button
                   id="btnMergeAndDownloadMp3"
-                  class="w-full sm:w-auto px-5 py-3 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-500/30 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+                  class="w-full sm:w-auto px-5 py-3 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 text-white font-bold text-xs shadow-lg shadow-purple-500/30 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
                 >
                   <i id="btnMergeIcon" class="fa-solid fa-cloud-arrow-down text-sm"></i>
                   <span id="btnMergeText">Gộp & Tải Toàn Bộ .MP3</span>
@@ -467,202 +482,521 @@
           </div>
         </div>
 
-        <!-- History Card -->
-        <div class="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-5">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-semibold text-slate-300 flex items-center gap-2">
-              <i class="fa-solid fa-clock-rotate-left text-amber-400"></i>
-              Lịch sử gần đây
-            </h3>
-            <button id="btnClearHistory" class="text-xs text-slate-500 hover:text-slate-300 transition">Xóa lịch sử</button>
-          </div>
-          <div id="historyList" class="flex flex-col gap-2 max-h-40 overflow-y-auto pr-1">
-            <p class="text-xs text-slate-500 italic py-2">Chưa có đoạn văn bản nào trong lịch sử.</p>
-          </div>
-        </div>
-
       </div>
 
-      <!-- Right Column: Settings & Voices (1 Col) -->
-      <div class="flex flex-col gap-6">
-        
-        <!-- Voice Settings Card -->
-        <div class="bg-slate-800/60 backdrop-blur-xl border border-slate-700/80 rounded-2xl p-6 shadow-xl flex flex-col gap-6">
-          <div class="flex items-center justify-between pb-3 border-b border-slate-700/60">
-            <h2 class="font-semibold text-slate-200 flex items-center gap-2">
-              <i class="fa-solid fa-sliders text-amber-400"></i> Cài đặt giọng đọc
-            </h2>
-            <button id="btnResetSettings" class="text-xs text-slate-400 hover:text-amber-400 transition" title="Đặt lại mặc định">
-              <i class="fa-solid fa-rotate-left"></i> Đặt lại
-            </button>
+      <!-- ================= VIEW 2: HỘI THOẠI ĐA GIỌNG (MULTI-SPEAKER) ================= -->
+      <div id="viewDialogue" class="content-view hidden flex flex-col gap-6">
+        <div class="glass-panel rounded-2xl p-6 flex flex-col gap-4">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div>
+              <h2 class="text-base font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-comments text-cyan-400"></i> Hội Thoại Đa Giọng (Multi-Speaker Studio)
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5">Tạo kịch bản đối đáp nhiều nhân vật và xuất 1 file audio hoàn chỉnh duy nhất.</p>
+            </div>
+            <span class="text-xs px-2.5 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-full font-semibold">VoiceViet Exclusive</span>
           </div>
 
-          <!-- Voice Selection -->
-          <div class="flex flex-col gap-2">
-            <label for="voiceSelect" class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center justify-between">
-              <span>Giọng đọc AI</span>
-              <span id="voiceCountBadge" class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-normal">104 giọng</span>
-            </label>
-            <div class="relative">
-              <select
-                id="voiceSelect"
-                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/50 appearance-none pr-9 cursor-pointer"
-              >
-                <option value="">Đang nạp danh sách giọng đọc...</option>
-              </select>
-              <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                <i class="fa-solid fa-chevron-down text-xs"></i>
+          <!-- Character Configuration -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <!-- Speaker A -->
+            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-purple-500/30 flex flex-col gap-2">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-bold text-purple-400 flex items-center gap-1.5"><i class="fa-solid fa-user"></i> Nhân vật A</span>
+                <span class="text-[10px] text-slate-500">Ký hiệu `A:`</span>
               </div>
+              <select id="dialogueVoiceA" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
+                <option value="vi-entertainment" selected>Ngọc Huyền (Nữ - Truyền cảm)</option>
+                <option value="vi-commentary">Minh Quân (Nam - Trầm ấm)</option>
+                <option value="vi-commercial">Mạnh Dũng (Nam - Dõng dạc)</option>
+                <option value="vi-social-clip">Adam (Nam - TikTok)</option>
+              </select>
             </div>
-            <p id="voiceNoteText" class="text-[11px] text-slate-400 leading-tight">
-              Giọng AI Cheap-TTS tự nhiên chuyên dùng cho Kể chuyện, Review phim, Tiểu thuyết.
-            </p>
+
+            <!-- Speaker B -->
+            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-cyan-500/30 flex flex-col gap-2">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-bold text-cyan-400 flex items-center gap-1.5"><i class="fa-solid fa-user"></i> Nhân vật B</span>
+                <span class="text-[10px] text-slate-500">Ký hiệu `B:`</span>
+              </div>
+              <select id="dialogueVoiceB" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
+                <option value="vi-commentary" selected>Minh Quân (Nam - Trầm ấm)</option>
+                <option value="vi-entertainment">Ngọc Huyền (Nữ - Truyền cảm)</option>
+                <option value="vi-commercial">Mạnh Dũng (Nam - Dõng dạc)</option>
+                <option value="vi-social-clip">Adam (Nam - TikTok)</option>
+              </select>
+            </div>
+
+            <!-- Speaker C -->
+            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-amber-500/30 flex flex-col gap-2">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-bold text-amber-400 flex items-center gap-1.5"><i class="fa-solid fa-user"></i> Người dẫn chuyện (C)</span>
+                <span class="text-[10px] text-slate-500">Ký hiệu `C:`</span>
+              </div>
+              <select id="dialogueVoiceC" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
+                <option value="vi-commercial" selected>Mạnh Dũng (Nam - Dõng dạc)</option>
+                <option value="vi-entertainment">Ngọc Huyền (Nữ - Truyền cảm)</option>
+                <option value="vi-commentary">Minh Quân (Nam - Trầm ấm)</option>
+              </select>
+            </div>
           </div>
 
-          <!-- Speed / Rate Slider -->
+          <!-- Dialogue Script Textarea -->
           <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between text-xs">
-              <span class="font-medium text-slate-300">Tốc độ đọc (Speed)</span>
-              <span id="rateValue" class="text-amber-400 font-semibold bg-amber-950/40 px-2 py-0.5 rounded border border-amber-900/50">1.0x</span>
+            <div class="flex items-center justify-between text-xs text-slate-400">
+              <span>Kịch bản đối thoại (Viết theo định dạng <code>A: lời thoại</code>, <code>B: lời thoại</code>):</span>
+              <button id="btnLoadDialogueSample" class="text-cyan-400 hover:underline cursor-pointer">Nạp kịch bản mẫu</button>
             </div>
-            <input
-              type="range"
-              id="rateRange"
-              min="0.5"
-              max="2"
-              step="0.1"
-              value="1"
-              class="w-full accent-amber-500 bg-slate-700 rounded-lg cursor-pointer h-2"
+            <textarea
+              id="dialogueScriptInput"
+              rows="8"
+              class="w-full bg-[#0a0e17] border border-slate-800 rounded-xl p-4 text-xs sm:text-sm font-mono text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 leading-relaxed"
+              placeholder="C: Buổi sáng tại quán cà phê cổ phố, hai người bạn gặp lại nhau sau mười năm xa cách.
+A: Chào Quân! Đã lâu quá rồi chúng ta mới có dịp ngồi lại cùng nhau thế này.
+B: Chào Huyền! Trông cậu vẫn rạng rỡ như ngày xưa vậy, thời gian dường như bỏ quên cậu rồi.
+A: Cậu khéo miệng quá! Nghe nói gần đây cậu đang phát triển một dự án sách nói AI rất thành công?"
+            ></textarea>
+          </div>
+
+          <!-- Dialogue Generate Button & Output -->
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
+            <button
+              id="btnGenerateDialogue"
+              class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/25 transition flex items-center gap-2 cursor-pointer active:scale-95"
             >
-            <div class="flex justify-between text-[10px] text-slate-500">
-              <span>Chậm (0.5x)</span>
-              <span>Chuẩn (1.0x)</span>
-              <span>Nhanh (2.0x)</span>
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span>Ghép & Tạo File Hội Thoại MP3</span>
+            </button>
+            <div id="dialogueStatus" class="text-xs text-slate-400">Sẵn sàng tạo file đối thoại...</div>
+          </div>
+
+          <!-- Dialogue Audio Player Container -->
+          <div id="dialogueOutputContainer" class="hidden p-4 rounded-xl bg-slate-900 border border-cyan-500/40 flex flex-col gap-3">
+            <div class="flex items-center justify-between text-xs text-cyan-300">
+              <span class="font-semibold flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-400"></i> File hội thoại hoàn chỉnh đã sẵn sàng!</span>
+              <a id="btnDownloadDialogueMp3" download="hoi-thoai-voiceviet.mp3" class="px-3 py-1 bg-cyan-500 text-slate-950 font-bold rounded-lg hover:bg-cyan-400 cursor-pointer flex items-center gap-1">
+                <i class="fa-solid fa-download"></i> Tải MP3
+              </a>
+            </div>
+            <audio id="dialogueAudioPlayer" controls class="w-full h-10 outline-none"></audio>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= VIEW 3: HÀNG ĐỢI FILE WORD (BATCH QUEUE) ================= -->
+      <div id="viewBatchWord" class="content-view hidden flex flex-col gap-6">
+        <!-- Batch Multi-File Word/Document Queue Card -->
+        <div id="batchWordCard" class="glass-panel border-blue-500/40 rounded-2xl p-6 shadow-2xl relative flex flex-col gap-4">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div>
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+                  <i class="fa-solid fa-file-word text-lg"></i>
+                </div>
+                <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+                  Xử Lý Hàng Loạt File Word & Text (Hỗ Trợ >70.000 từ)
+                  <span id="batchWordCountBadge" class="text-xs bg-blue-500/20 text-blue-300 px-2.5 py-0.5 rounded-full font-semibold border border-blue-500/30">0 file</span>
+                </h3>
+              </div>
+              <p class="text-xs text-slate-400 mt-1">
+                Hệ thống tự động nạp từng file $\rightarrow$ tạo giọng AI $\rightarrow$ nén .MP3 siêu nhẹ $\rightarrow$ tự động tải về máy $\rightarrow$ lặp lại cho tới khi hết!
+              </p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                id="btnStartWordBatch"
+                class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 hover:from-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-500/25 transition flex items-center gap-2 active:scale-95 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+              >
+                <i id="btnStartWordBatchIcon" class="fa-solid fa-play"></i>
+                <span id="btnStartWordBatchText">Bắt đầu tạo & Tải về toàn bộ</span>
+              </button>
+              <button
+                id="btnStopWordBatch"
+                disabled
+                class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition flex items-center gap-2 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+              >
+                <i class="fa-solid fa-pause"></i> Dừng
+              </button>
+              <button
+                id="btnClearWordBatch"
+                class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 text-xs transition cursor-pointer"
+                title="Xóa danh sách hàng đợi"
+              >
+                <i class="fa-regular fa-trash-can"></i>
+              </button>
             </div>
           </div>
 
-          <!-- Pitch Slider (Visible for Web Speech) -->
-          <div id="pitchControlGroup" class="hidden flex-col gap-2">
-            <div class="flex items-center justify-between text-xs">
-              <span class="font-medium text-slate-300">Cao độ giọng (Pitch)</span>
-              <span id="pitchValue" class="text-indigo-400 font-semibold bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-900/50">1.0</span>
-            </div>
-            <input
-              type="range"
-              id="pitchRange"
-              min="0.5"
-              max="1.5"
-              step="0.1"
-              value="1"
-              class="w-full accent-indigo-500 bg-slate-700 rounded-lg cursor-pointer h-2"
-            >
-          </div>
-
-          <!-- Pause settings (for Cheap-TTS) -->
-          <div id="cheapTtsPauseGroup" class="flex flex-col gap-2 pt-2 border-t border-slate-700/60">
-            <div class="flex items-center justify-between text-xs">
-              <span class="font-medium text-slate-300">Khoảng nghỉ ngắt câu (Pauses)</span>
-              <span id="pauseDurationValue" class="text-amber-400 font-semibold bg-amber-950/40 px-2 py-0.5 rounded border border-amber-900/50">0.4s</span>
-            </div>
-            <input
-              type="range"
-              id="pauseDurationRange"
-              min="0"
-              max="1.5"
-              step="0.1"
-              value="0.4"
-              class="w-full accent-amber-500 bg-slate-700 rounded-lg cursor-pointer h-2"
-            >
-            <p class="text-[10px] text-slate-500">Thời gian nghỉ tự nhiên sau dấu chấm và dấu phẩy.</p>
-          </div>
-
-          <!-- Volume Slider -->
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between text-xs">
-              <span class="font-medium text-slate-300">Âm lượng (Volume)</span>
-              <span id="volumeValue" class="text-amber-400 font-semibold bg-amber-950/40 px-2 py-0.5 rounded border border-amber-900/50">100%</span>
-            </div>
-            <input
-              type="range"
-              id="volumeRange"
-              min="0"
-              max="1"
-              step="0.05"
-              value="1"
-              class="w-full accent-amber-500 bg-slate-700 rounded-lg cursor-pointer h-2"
-            >
-          </div>
-
-          <!-- MP3 Compression Settings -->
-          <div class="flex flex-col gap-2 pt-2 border-t border-slate-700/60">
-            <div class="flex items-center justify-between text-xs">
-              <span class="font-medium text-slate-300 flex items-center gap-1.5">
-                <i class="fa-solid fa-file-zipper text-purple-400"></i> Nén file MP3 xuất ra
+          <!-- Batch Progress Bar & Status -->
+          <div id="batchWordProgressContainer" class="p-4 rounded-xl bg-slate-900 border border-slate-800">
+            <div class="flex items-center justify-between text-xs mb-2">
+              <span id="batchWordProgressText" class="font-medium text-slate-200">
+                Sẵn sàng xử lý danh sách file Word...
               </span>
-              <span id="mp3QualityBadge" class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-mono font-semibold">48 kbps</span>
+              <span id="batchWordProgressPercent" class="font-bold text-blue-400 font-mono">0%</span>
             </div>
-            <select
-              id="mp3BitrateSelect"
-              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50 cursor-pointer"
-            >
-              <option value="48k" selected>Siêu nhẹ (48 kbps Mono - Giảm ~65% dung lượng, khuyên dùng)</option>
-              <option value="64k">Cân bằng (64 kbps Mono - Giảm ~50% dung lượng, nét cao)</option>
-              <option value="32k">Cực nhẹ (32 kbps Mono - Tiết kiệm dung lượng tối đa)</option>
-              <option value="128k">Gốc tiêu chuẩn (128 kbps)</option>
-            </select>
-            <p class="text-[10px] text-slate-500 leading-tight">
-              Tối ưu âm thanh Mono chuyên cho giọng đọc, giúp file MP3 nhẹ hơn gấp 2 đến 3 lần để nghe trên điện thoại và chia sẻ dễ dàng.
-            </p>
+            <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
+              <div id="batchWordProgressBar" class="bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-500 h-full w-0 transition-all duration-300"></div>
+            </div>
+            <div class="flex flex-wrap items-center justify-between text-[11px] text-slate-400 mt-2 gap-2">
+              <span id="batchWordCompletedStats"><i class="fa-solid fa-check-double text-emerald-400 mr-1"></i> Đã tải về: <b class="text-emerald-400">0</b> file</span>
+              <span class="text-amber-300/80"><i class="fa-solid fa-circle-info mr-1"></i> Trình duyệt sẽ tự động tải các file .MP3 về máy khi tạo xong</span>
+            </div>
           </div>
 
-          <!-- Voice test button -->
-          <button id="btnTestVoice" class="w-full py-2.5 bg-slate-700/60 hover:bg-slate-700 border border-slate-600/60 rounded-xl text-xs font-medium text-slate-200 transition flex items-center justify-center gap-2">
-            <i class="fa-solid fa-volume-high text-amber-400"></i> Nghe thử giọng đọc đã chọn
+          <!-- File Queue List -->
+          <div>
+            <div class="flex items-center justify-between text-xs font-semibold text-slate-300 mb-2">
+              <span>Hàng đợi các file sẽ được xử lý lần lượt:</span>
+              <button id="btnAddMoreFiles" class="text-xs text-blue-400 hover:text-blue-300 transition flex items-center gap-1 cursor-pointer">
+                <i class="fa-solid fa-plus"></i> Thêm file khác...
+              </button>
+            </div>
+            <div id="batchWordFileList" class="flex flex-col gap-2 max-h-[420px] overflow-y-auto pr-1">
+              <!-- Dynamically populated files -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= VIEW 4: THƯ VIỆN GIỌNG ĐỌC ================= -->
+      <div id="viewVoices" class="content-view hidden flex flex-col gap-6">
+        <div class="glass-panel rounded-2xl p-6 flex flex-col gap-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+            <div>
+              <h2 class="text-base font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-music text-emerald-400"></i> Thư Viện 104 Giọng Đọc AI Cao Cấp
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5">Lựa chọn giọng đọc truyền cảm tối ưu nhất cho kênh YouTube, TikTok, và Sách nói.</p>
+            </div>
+            <!-- Search & Gender Filter -->
+            <div class="flex items-center gap-2">
+              <input type="text" id="voiceSearchInput" placeholder="Tìm theo tên giọng..." class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-48">
+            </div>
+          </div>
+
+          <!-- Voice Catalog Grid (Sample Cards) -->
+          <div id="voiceCatalogGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            <!-- Sample 1: Ngoc Huyen -->
+            <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-purple-500/50 transition flex flex-col justify-between gap-3">
+              <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-full bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 font-bold shrink-0">NH</div>
+                <div>
+                  <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
+                    Ngọc Huyền
+                    <span class="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.2 rounded font-normal">Nữ</span>
+                  </h4>
+                  <p class="text-[11px] text-slate-400 mt-0.5">Giọng Bắc kể chuyện, tiểu thuyết đêm khuya, diễn cảm sâu lắng.</p>
+                </div>
+              </div>
+              <button class="select-voice-quick-btn w-full py-1.5 bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white rounded-lg text-xs font-semibold transition" data-voice-id="vi-entertainment">
+                Chọn Giọng Này
+              </button>
+            </div>
+
+            <!-- Sample 2: Minh Quan -->
+            <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-indigo-500/50 transition flex flex-col justify-between gap-3">
+              <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 font-bold shrink-0">MQ</div>
+                <div>
+                  <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
+                    Minh Quân
+                    <span class="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.2 rounded font-normal">Nam</span>
+                  </h4>
+                  <p class="text-[11px] text-slate-400 mt-0.5">Giọng Nam trầm ấm, cực chuẩn cho bình luận phim, tin tức thế giới.</p>
+                </div>
+              </div>
+              <button class="select-voice-quick-btn w-full py-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded-lg text-xs font-semibold transition" data-voice-id="vi-commentary">
+                Chọn Giọng Này
+              </button>
+            </div>
+
+            <!-- Sample 3: Manh Dung -->
+            <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-emerald-500/50 transition flex flex-col justify-between gap-3">
+              <div class="flex items-start gap-3">
+                <div class="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold shrink-0">MD</div>
+                <div>
+                  <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
+                    Mạnh Dũng
+                    <span class="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded font-normal">Nam</span>
+                  </h4>
+                  <p class="text-[11px] text-slate-400 mt-0.5">Giọng đọc dõng dạc, nội lực, chuyên quảng cáo TVC, khoá học.</p>
+                </div>
+              </div>
+              <button class="select-voice-quick-btn w-full py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-lg text-xs font-semibold transition" data-voice-id="vi-commercial">
+                Chọn Giọng Này
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= VIEW 5: BẢNG GIÁ & NÂNG CẤP VIP ================= -->
+      <div id="viewPricing" class="content-view hidden flex flex-col gap-6">
+        <div class="glass-panel rounded-2xl p-6 flex flex-col gap-6">
+          <div class="text-center max-w-xl mx-auto flex flex-col gap-2">
+            <h2 class="text-xl font-extrabold text-white">Bảng Giá Gói Cước VoiceViet Studio</h2>
+            <p class="text-xs text-slate-400">Chọn gói cước phù hợp để đọc không giới hạn ký tự và kích hoạt API tự động qua VietQR.</p>
+          </div>
+
+          <!-- Pricing Grid 3 Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <!-- Tier 1: Free Trial -->
+            <div class="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-4">
+              <div>
+                <span class="text-[11px] font-bold text-slate-400 uppercase">Dùng Thử</span>
+                <div class="text-2xl font-black text-white mt-1">0 <span class="text-xs font-normal text-slate-400">VNĐ</span></div>
+                <p class="text-[11px] text-slate-400 mt-2">Dành cho người mới trải nghiệm chất lượng giọng đọc.</p>
+                <ul class="text-xs text-slate-300 space-y-2 mt-4">
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> 6.000 ký tự / ngày</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Các giọng đọc cơ bản</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Xuất file MP3 chuẩn</li>
+                </ul>
+              </div>
+              <button class="w-full py-2 bg-slate-800 text-slate-400 rounded-xl text-xs font-semibold cursor-default">
+                Gói Hiện Tại
+              </button>
+            </div>
+
+            <!-- Tier 2: VIP Gold (Most Popular) -->
+            <div class="p-5 rounded-2xl bg-gradient-to-b from-purple-950/40 via-slate-900 to-slate-900 border-2 border-purple-500 shadow-xl shadow-purple-500/10 flex flex-col justify-between gap-4 relative">
+              <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-[10px] font-extrabold px-3 py-0.5 rounded-full uppercase">Phổ Biến Nhất</div>
+              <div>
+                <span class="text-[11px] font-bold text-purple-400 uppercase">Gói VIP Tháng</span>
+                <div class="text-2xl font-black text-white mt-1">25.000 <span class="text-xs font-normal text-slate-400">VNĐ/tháng</span></div>
+                <p class="text-[11px] text-slate-400 mt-2">Dành cho người làm kênh YouTube, TikTok truyện dài.</p>
+                <ul class="text-xs text-slate-300 space-y-2 mt-4">
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> <b>8.000.000</b> ký tự / tháng</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Toàn bộ 104 giọng Studio</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Tự động băm nhỏ file >70.000 từ</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Xuất MP3 Mono 48k siêu nhẹ</li>
+                </ul>
+              </div>
+              <button class="btn-buy-plan w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 text-white font-bold rounded-xl text-xs transition shadow-lg shadow-purple-500/20 cursor-pointer" data-plan="VIP Tháng (25.000đ)" data-amount="25000">
+                Kích Hoạt Ngay Qua VietQR
+              </button>
+            </div>
+
+            <!-- Tier 3: Lifetime 500M -->
+            <div class="p-5 rounded-2xl bg-slate-900/80 border border-amber-500/50 flex flex-col justify-between gap-4">
+              <div>
+                <span class="text-[11px] font-bold text-amber-400 uppercase">Trọn Đời (Lifetime)</span>
+                <div class="text-2xl font-black text-amber-300 mt-1">318.000 <span class="text-xs font-normal text-slate-400">VNĐ (Mua 1 lần)</span></div>
+                <p class="text-[11px] text-slate-400 mt-2">Dành cho dân chuyên nghiệp, không giới hạn thời gian.</p>
+                <ul class="text-xs text-slate-300 space-y-2 mt-4">
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> <b>500.000.000</b> ký tự vĩnh viễn</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Không bị hết hạn, cộng dồn điểm</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Hàng đợi nhiều file Word không giới hạn</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Hỗ trợ kỹ thuật 24/7</li>
+                </ul>
+              </div>
+              <button class="btn-buy-plan w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-amber-500/20 cursor-pointer" data-plan="Trọn Đời (318.000đ)" data-amount="318000">
+                Mua Gói Trọn Đời
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Column 3: Right Settings & Audio History Panel -->
+    <aside class="w-80 border-l border-slate-800/80 bg-[#0f1523]/50 p-4 hidden xl:flex flex-col gap-5 overflow-y-auto max-h-[calc(100vh-4rem)] shrink-0">
+      
+      <!-- Voice Settings Card -->
+      <div class="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-4">
+        <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+          <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+            <i class="fa-solid fa-sliders text-purple-400"></i> Cài Đặt Giọng Đọc
+          </span>
+          <button id="btnResetSettings" class="text-[11px] text-slate-400 hover:text-purple-400 transition cursor-pointer" title="Đặt lại mặc định">
+            <i class="fa-solid fa-rotate-left"></i> Đặt lại
           </button>
         </div>
 
-        <!-- Featured Vietnamese Voices Card -->
-        <div class="bg-gradient-to-br from-amber-950/30 via-slate-800/50 to-slate-800/30 border border-amber-500/20 rounded-2xl p-5">
-          <h3 class="text-sm font-semibold text-amber-300 flex items-center gap-2 mb-3">
-            <i class="fa-solid fa-star text-amber-400"></i> 4 Giọng Việt Nam Nổi Bật
-          </h3>
-          <ul class="text-xs text-slate-300 space-y-2.5 leading-relaxed">
-            <li class="flex items-center justify-between bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
-              <span class="font-medium text-slate-200">Ngọc Huyền</span>
-              <span class="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">Giải trí / Kể chuyện</span>
-            </li>
-            <li class="flex items-center justify-between bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
-              <span class="font-medium text-slate-200">Minh Quân</span>
-              <span class="text-[10px] text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded">Bình luận phim</span>
-            </li>
-            <li class="flex items-center justify-between bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
-              <span class="font-medium text-slate-200">Mạnh Dũng</span>
-              <span class="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">Quảng cáo / TVC</span>
-            </li>
-            <li class="flex items-center justify-between bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
-              <span class="font-medium text-slate-200">Adam</span>
-              <span class="text-[10px] text-pink-400 bg-pink-500/10 px-2 py-0.5 rounded">TikTok clip ngắn</span>
-            </li>
-          </ul>
+        <!-- Voice Selection -->
+        <div class="flex flex-col gap-1.5">
+          <label for="voiceSelect" class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+            <span>Giọng đọc AI</span>
+            <span id="voiceCountBadge" class="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.2 rounded-full font-mono">104 giọng</span>
+          </label>
+          <div class="relative">
+            <select
+              id="voiceSelect"
+              class="w-full bg-[#0a0e17] border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-500 appearance-none pr-8 cursor-pointer"
+            >
+              <option value="">Đang nạp danh sách giọng đọc...</option>
+            </select>
+            <div class="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500 text-[10px]">
+              <i class="fa-solid fa-chevron-down"></i>
+            </div>
+          </div>
+          <p id="voiceNoteText" class="text-[10px] text-slate-500 leading-tight">
+            Giọng AI Cheap-TTS tự nhiên chuyên dùng cho Kể chuyện, Review phim, Tiểu thuyết.
+          </p>
         </div>
 
-      </div>
-    </main>
+        <!-- Speed / Rate Slider -->
+        <div class="flex flex-col gap-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-400 text-[11px]">Tốc độ (Speed)</span>
+            <span id="rateValue" class="text-purple-300 font-semibold font-mono text-[11px] bg-purple-950/60 px-1.5 py-0.2 rounded border border-purple-800/40">1.0x</span>
+          </div>
+          <input
+            type="range"
+            id="rateRange"
+            min="0.5"
+            max="2"
+            step="0.1"
+            value="1"
+            class="w-full bg-slate-800 rounded-lg cursor-pointer h-1.5"
+          >
+          <div class="flex justify-between text-[9px] text-slate-600 font-mono">
+            <span>0.5x</span>
+            <span>1.0x</span>
+            <span>2.0x</span>
+          </div>
+        </div>
 
-    <!-- Footer -->
-    <footer class="mt-12 pt-6 border-t border-slate-800 text-center text-xs text-slate-500">
-      <p>VoiceViet • Hỗ trợ cả Web Speech API & Cheap-TTS Cloud AI • Chuyên biệt cho Sách & Truyện chữ.</p>
-    </footer>
+        <!-- Pitch Slider (Visible for Web Speech) -->
+        <div id="pitchControlGroup" class="hidden flex-col gap-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-400 text-[11px]">Cao độ (Pitch)</span>
+            <span id="pitchValue" class="text-indigo-400 font-mono text-[11px]">1.0</span>
+          </div>
+          <input
+            type="range"
+            id="pitchRange"
+            min="0.5"
+            max="1.5"
+            step="0.1"
+            value="1"
+            class="w-full bg-slate-800 rounded-lg cursor-pointer h-1.5"
+          >
+        </div>
+
+        <!-- Pause settings (for Cheap-TTS) -->
+        <div id="cheapTtsPauseGroup" class="flex flex-col gap-1.5 pt-2 border-t border-slate-800">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-400 text-[11px]">Ngắt nghỉ câu (Pauses)</span>
+            <span id="pauseDurationValue" class="text-amber-400 font-mono text-[11px] bg-amber-950/40 px-1.5 py-0.2 rounded border border-amber-800/40">0.4s</span>
+          </div>
+          <input
+            type="range"
+            id="pauseDurationRange"
+            min="0"
+            max="1.5"
+            step="0.1"
+            value="0.4"
+            class="w-full bg-slate-800 rounded-lg cursor-pointer h-1.5"
+          >
+        </div>
+
+        <!-- Volume Slider -->
+        <div class="flex flex-col gap-1.5">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-400 text-[11px]">Âm lượng (Volume)</span>
+            <span id="volumeValue" class="text-purple-300 font-mono text-[11px]">100%</span>
+          </div>
+          <input
+            type="range"
+            id="volumeRange"
+            min="0"
+            max="1"
+            step="0.05"
+            value="1"
+            class="w-full bg-slate-800 rounded-lg cursor-pointer h-1.5"
+          >
+        </div>
+
+        <!-- MP3 Compression Settings -->
+        <div class="flex flex-col gap-1.5 pt-2 border-t border-slate-800">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-400 text-[11px] flex items-center gap-1">
+              <i class="fa-solid fa-file-zipper text-purple-400"></i> Nén file MP3
+            </span>
+            <span id="mp3QualityBadge" class="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.2 rounded font-mono font-semibold">48 kbps</span>
+          </div>
+          <select
+            id="mp3BitrateSelect"
+            class="w-full bg-[#0a0e17] border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
+          >
+            <option value="48k" selected>Siêu nhẹ (48 kbps Mono - Giảm 65%)</option>
+            <option value="64k">Cân bằng (64 kbps Mono - Nét cao)</option>
+            <option value="32k">Cực nhẹ (32 kbps Mono - Tiết kiệm nhất)</option>
+            <option value="128k">Gốc tiêu chuẩn (128 kbps)</option>
+          </select>
+        </div>
+
+        <!-- Voice test button -->
+        <button id="btnTestVoice" class="w-full py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-medium text-slate-200 transition flex items-center justify-center gap-2 cursor-pointer">
+          <i class="fa-solid fa-volume-high text-purple-400"></i> Nghe thử giọng đã chọn
+        </button>
+      </div>
+
+      <!-- Recent Audio History Card -->
+      <div class="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-3">
+        <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+          <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+            <i class="fa-solid fa-clock-rotate-left text-amber-400"></i> Lịch Sử Audio Vừa Tạo
+          </span>
+          <button id="btnClearHistory" class="text-[10px] text-slate-500 hover:text-slate-300 transition cursor-pointer">Xóa hết</button>
+        </div>
+        <div id="historyList" class="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1">
+          <p class="text-xs text-slate-500 italic py-2 text-center">Chưa có file audio nào.</p>
+        </div>
+      </div>
+
+    </aside>
+
+  </div>
+
+  <!-- VietQR Payment Modal (SePay Automated Simulation) -->
+  <div id="vietqrModal" class="fixed inset-0 z-50 modal-backdrop hidden flex items-center justify-center p-4">
+    <div class="glass-panel border-purple-500/40 rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 relative animate-fade-in">
+      <button id="btnCloseVietqrModal" class="absolute top-4 right-4 text-slate-400 hover:text-white text-base cursor-pointer">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <div class="text-center flex flex-col items-center gap-1">
+        <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white text-xl shadow-lg shadow-purple-500/25 mb-1">
+          <i class="fa-solid fa-qrcode"></i>
+        </div>
+        <h3 class="text-base font-bold text-white">Quét Mã VietQR Tự Động</h3>
+        <p class="text-xs text-slate-400">Mở ứng dụng ngân hàng bất kỳ để quét mã thanh toán</p>
+      </div>
+
+      <!-- QR Code Display Box -->
+      <div class="bg-white p-4 rounded-2xl flex flex-col items-center justify-center shadow-inner mx-auto">
+        <img id="vietqrImage" src="https://img.vietqr.io/image/MB-0359888888-compact2.png?amount=25000&addInfo=VOICEVIET%20VIP&accountName=VOICEVIET" alt="Mã VietQR" class="w-56 h-56 object-contain rounded-lg">
+      </div>
+
+      <!-- Bank info & Amount -->
+      <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs flex flex-col gap-1.5">
+        <div class="flex justify-between"><span class="text-slate-400">Gói đăng ký:</span> <b id="vietqrPlanName" class="text-purple-300">VIP Tháng</b></div>
+        <div class="flex justify-between"><span class="text-slate-400">Số tiền:</span> <b id="vietqrAmount" class="text-amber-400 font-mono text-sm">25.000 VNĐ</b></div>
+        <div class="flex justify-between"><span class="text-slate-400">Nội dung CK:</span> <b id="vietqrMemo" class="text-emerald-400 font-mono">VOICEVIET 8888</b></div>
+      </div>
+
+      <div class="text-center text-[11px] text-slate-400 flex items-center justify-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        Hệ thống SePay tự động kích hoạt tài khoản trong 3 giây sau khi chuyển!
+      </div>
+    </div>
   </div>
 
   <!-- Toast Notification Container -->
-  <div id="toast" class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 bg-slate-800 text-slate-100 border border-slate-700 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 z-50 pointer-events-none">
+  <div id="toast" class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 bg-slate-900 text-slate-100 border border-purple-500/40 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 z-50 pointer-events-none">
     <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
     <span id="toastMsg" class="text-xs font-medium">Thông báo</span>
   </div>
 
-  <!-- Mammoth.js for client-side Word (.docx) document parsing -->
+  <!-- Mammoth.js for Word (.docx) document parsing -->
   <script src="/mammoth.browser.min.js"></script>
+  <!-- Main Logic -->
   <script src="app.js"></script>
+  <!-- Pro Studio Extensions (Navigation tabs, Multi-speaker dialogue, VietQR modal) -->
+  <script src="studio_pro.js"></script>
 </body>
 </html>
