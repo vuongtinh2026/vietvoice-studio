@@ -134,10 +134,11 @@
     });
   }
 
-  // 5. Multi-Speaker Dialogue Feature
+  // 5. Multi-Speaker Dialogue Feature with Rate-Limit Shield
   const btnLoadDialogueSample = document.getElementById('btnLoadDialogueSample');
   const dialogueScriptInput = document.getElementById('dialogueScriptInput');
   const btnGenerateDialogue = document.getElementById('btnGenerateDialogue');
+  const btnStopDialogue = document.getElementById('btnStopDialogue');
   const dialogueStatus = document.getElementById('dialogueStatus');
   const dialogueOutputContainer = document.getElementById('dialogueOutputContainer');
   const dialogueAudioPlayer = document.getElementById('dialogueAudioPlayer');
@@ -145,6 +146,18 @@
   const dialogueVoiceA = document.getElementById('dialogueVoiceA');
   const dialogueVoiceB = document.getElementById('dialogueVoiceB');
   const dialogueVoiceC = document.getElementById('dialogueVoiceC');
+
+  let dialogueCancelRequested = false;
+
+  if (btnStopDialogue) {
+    btnStopDialogue.addEventListener('click', () => {
+      dialogueCancelRequested = true;
+      btnStopDialogue.disabled = true;
+      if (dialogueStatus) {
+        dialogueStatus.innerHTML = '<span class="text-amber-400 font-semibold"><i class="fa-solid fa-hand mr-1"></i> Đang dừng tiến trình đối thoại...</span>';
+      }
+    });
+  }
 
   if (btnLoadDialogueSample && dialogueScriptInput) {
     btnLoadDialogueSample.addEventListener('click', () => {
@@ -166,8 +179,9 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
         return;
       }
 
+      dialogueCancelRequested = false;
       const lines = script.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      const parsedLines = [];
+      const rawParsedLines = [];
 
       for (const line of lines) {
         const match = line.match(/^([ABCabc]):\s*(.*)$/);
@@ -179,12 +193,22 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
             if (speaker === 'A' && dialogueVoiceA) voice = dialogueVoiceA.value;
             if (speaker === 'B' && dialogueVoiceB) voice = dialogueVoiceB.value;
             if (speaker === 'C' && dialogueVoiceC) voice = dialogueVoiceC.value;
-            parsedLines.push({ speaker, text, voice });
+            rawParsedLines.push({ speaker, text, voice });
           }
         } else {
           // Default to speaker C (narrator)
           let voice = dialogueVoiceC ? dialogueVoiceC.value : 'vi-advertising';
-          parsedLines.push({ speaker: 'C', text: line, voice });
+          rawParsedLines.push({ speaker: 'C', text: line, voice });
+        }
+      }
+
+      // Merge adjacent lines of the same speaker & voice to save API calls
+      const parsedLines = [];
+      for (const item of rawParsedLines) {
+        if (parsedLines.length > 0 && parsedLines[parsedLines.length - 1].speaker === item.speaker && parsedLines[parsedLines.length - 1].voice === item.voice) {
+          parsedLines[parsedLines.length - 1].text += ' ' + item.text;
+        } else {
+          parsedLines.push({ ...item });
         }
       }
 
@@ -194,44 +218,86 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
       }
 
       btnGenerateDialogue.disabled = true;
-      if (dialogueStatus) dialogueStatus.innerHTML = `<span class="text-cyan-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang xử lý ${parsedLines.length} câu thoại...</span>`;
+      if (btnStopDialogue) btnStopDialogue.disabled = false;
+      if (dialogueStatus) dialogueStatus.innerHTML = `<span class="text-cyan-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Bắt đầu xử lý ${parsedLines.length} câu thoại...</span>`;
 
       try {
         const audioBuffers = [];
 
         for (let i = 0; i < parsedLines.length; i++) {
+          if (dialogueCancelRequested) {
+            throw new Error('Đã hủy theo yêu cầu người dùng.');
+          }
+
           const item = parsedLines[i];
           if (dialogueStatus) {
-            dialogueStatus.innerHTML = `<span class="text-cyan-400"><i class="fa-solid fa-spinner fa-spin mr-1"></i> [${i + 1}/${parsedLines.length}] Đang đọc lời thoại ${item.speaker}...</span>`;
+            dialogueStatus.innerHTML = `<span class="text-cyan-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> [${i + 1}/${parsedLines.length}] Đang đọc câu thoại ${item.speaker}...</span>`;
           }
 
-          const res = await fetch('/api/cheap-tts/synthesize', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: item.text,
-              voice: item.voice,
-              rate: 1.0,
-              pauses: { sentence: 0.3 }
-            })
-          });
+          // Retry logic with countdown if hitting 429
+          let lineBuffer = null;
+          const maxRetries = 3;
 
-          if (!res.ok) {
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            if (dialogueCancelRequested) throw new Error('Đã hủy theo yêu cầu người dùng.');
+
+            const res = await fetch('/api/cheap-tts/synthesize', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text: item.text,
+                voice: item.voice,
+                rate: 1.0,
+                pauses: { sentence: 0.3 }
+              })
+            });
+
+            if (res.ok) {
+              lineBuffer = await res.arrayBuffer();
+              break;
+            }
+
+            if (res.status === 429) {
+              console.warn(`[Dialogue] 429 Rate limited. Cooling down...`);
+              for (let s = 22; s > 0; s--) {
+                if (dialogueCancelRequested) throw new Error('Đã hủy theo yêu cầu người dùng.');
+                if (dialogueStatus) {
+                  dialogueStatus.innerHTML = `<span class="text-amber-400 font-semibold"><i class="fa-solid fa-hourglass-half fa-spin mr-1"></i> API đang hạ nhiệt tần suất (${s}s)... Tự động tiếp tục câu ${i + 1}</span>`;
+                }
+                await new Promise(r => setTimeout(r, 1000));
+              }
+              continue;
+            }
+
             const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.error || `Lỗi câu ${i + 1}`);
+            throw new Error(errData.error || `Lỗi HTTP ${res.status}`);
           }
 
-          const buf = await res.arrayBuffer();
-          audioBuffers.push(buf);
+          if (!lineBuffer) {
+            throw new Error(`Không thể tạo câu thoại ${i + 1} sau các lần thử.`);
+          }
 
-          // Small gap between calls
-          if (i < parsedLines.length - 1) {
-            await new Promise(r => setTimeout(r, 600));
+          audioBuffers.push(lineBuffer);
+
+          // Pacing delay between speaker turns to avoid 429
+          if (i < parsedLines.length - 1 && !dialogueCancelRequested) {
+            const waitSec = 15;
+            for (let s = waitSec; s > 0; s--) {
+              if (dialogueCancelRequested) break;
+              if (dialogueStatus) {
+                dialogueStatus.innerHTML = `<span class="text-slate-300">✓ Đã xong câu ${i + 1}/${parsedLines.length} (${item.speaker}). Nghỉ hạ nhiệt API <b class="text-cyan-400 font-mono">${s}s</b> trước câu tiếp...</span>`;
+              }
+              await new Promise(r => setTimeout(r, 1000));
+            }
           }
         }
 
+        if (dialogueCancelRequested) {
+          throw new Error('Đã hủy theo yêu cầu người dùng.');
+        }
+
         if (dialogueStatus) {
-          dialogueStatus.innerHTML = `<span class="text-purple-400"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang ghép nối âm thanh đối thoại...</span>`;
+          dialogueStatus.innerHTML = `<span class="text-purple-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang ghép nối âm thanh đối thoại...</span>`;
         }
 
         // Merge buffers using client WAV merger
@@ -239,11 +305,11 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
           throw new Error('Hệ thống ghép WAV chưa sẵn sàng.');
         }
 
-        const mergedWavBlob = mergeWavBuffersClient(audioBuffers, 0.4, 22050);
+        const mergedWavBlob = mergeWavBuffersClient(audioBuffers, 0.45, 22050);
 
         // Convert to lightweight MP3
         if (dialogueStatus) {
-          dialogueStatus.innerHTML = `<span class="text-emerald-400"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang nén file MP3 siêu nhẹ...</span>`;
+          dialogueStatus.innerHTML = `<span class="text-emerald-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang nén sang MP3 siêu nhẹ (48 kbps)...</span>`;
         }
 
         const mp3Res = await fetch('/api/audio/convert-to-mp3?bitrate=48k', {
@@ -273,15 +339,16 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
         }
 
         if (dialogueStatus) {
-          dialogueStatus.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check mr-1"></i> Hoàn thành! Đã tạo file đối thoại ${isMp3 ? 'MP3' : 'WAV'}.</span>`;
+          dialogueStatus.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check mr-1"></i> Hoàn thành! Đã tạo file đối thoại ${isMp3 ? 'MP3 siêu nhẹ' : 'WAV'}.</span>`;
         }
       } catch (err) {
         console.error('Dialogue error:', err);
         if (dialogueStatus) {
-          dialogueStatus.innerHTML = `<span class="text-rose-400"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Lỗi: ${err.message}</span>`;
+          dialogueStatus.innerHTML = `<span class="text-rose-400 font-medium"><i class="fa-solid fa-triangle-exclamation mr-1"></i> ${err.message}</span>`;
         }
       } finally {
         btnGenerateDialogue.disabled = false;
+        if (btnStopDialogue) btnStopDialogue.disabled = true;
       }
     });
   }

@@ -561,13 +561,22 @@ A: Cậu khéo miệng quá! Nghe nói gần đây cậu đang phát triển m�
 
           <!-- Dialogue Generate Button & Output -->
           <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
-            <button
-              id="btnGenerateDialogue"
-              class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/25 transition flex items-center gap-2 cursor-pointer active:scale-95"
-            >
-              <i class="fa-solid fa-wand-magic-sparkles"></i>
-              <span>Ghép & Tạo File Hội Thoại MP3</span>
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                id="btnGenerateDialogue"
+                class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/25 transition flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                <i id="btnGenerateDialogueIcon" class="fa-solid fa-wand-magic-sparkles"></i>
+                <span id="btnGenerateDialogueText">Ghép & Tạo File Hội Thoại MP3</span>
+              </button>
+              <button
+                id="btnStopDialogue"
+                disabled
+                class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition flex items-center gap-1.5 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+              >
+                <i class="fa-solid fa-pause"></i> Dừng
+              </button>
+            </div>
             <div id="dialogueStatus" class="text-xs text-slate-400">Sẵn sàng tạo file đối thoại...</div>
           </div>
 
