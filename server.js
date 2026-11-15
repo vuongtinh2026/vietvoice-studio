@@ -37,11 +37,12 @@ let lastRequestTime = 0;
 const MIN_GAP_BETWEEN_REQUESTS_MS = 20000; // 20s gap between multi-chunk requests
 
 /**
- * Chuẩn hóa văn bản tiếng Việt & sửa triệt để lỗi AI đánh vần từng ký tự IN HOA:
+ * Chuẩn hóa văn bản tiếng Việt & sửa triệt để lỗi phát âm AI:
+ * - Phiên âm các từ tiếng Anh / viết tắt thông dụng: AI -> Ây Ai, Studio -> X-tu-đi-ô, audio -> ao-đi-ô.
  * - Chuyển từ VIẾT HOA TOÀN BỘ (ALL CAPS >= 2 ký tự) thành Viết hoa chữ đầu (Titlecase).
- *   (Tránh trường hợp AI hiểu nhầm là từ viết tắt như VTV, TPHCM nên tách từng chữ ra đọc).
- * - Xóa ký tự rác ẩn, non-breaking spaces (\xa0), zero-width spaces.
- * - Chuẩn hóa dấu câu để ngắt câu tự nhiên.
+ *   (Tránh trường hợp AI hiểu nhầm là từ viết tắt nên tách từng chữ ra đánh vần).
+ * - Sửa lỗi nuốt âm tên riêng trước dấu chấm than (ví dụ: Chào Quân! -> Chào bạn Quân!).
+ * - Xóa ký tự rác ẩn, non-breaking spaces, chuẩn hóa dấu câu.
  */
 function normalizeVietnameseText(text) {
   if (!text) return '';
@@ -50,16 +51,28 @@ function normalizeVietnameseText(text) {
     .replace(/[\u00a0\u200b\u200e\u200f\ufeff]/g, ' ')
     .replace(/\r\n/g, '\n');
 
-  // Chuyển từ IN HOA toàn bộ (ví dụ: TIÊU VIÊM, QUYẾT ĐỊNH, CHƯƠNG) thành Tiêu Viêm, Quyết Định, Chương
+  // 1. Phiên âm các từ viết tắt / từ mượn tiếng Anh phổ biến để AI đọc tự nhiên:
+  clean = clean
+    .replace(/\bAI\b/g, 'Ây Ai')
+    .replace(/\bVoiceViet\b/gi, 'Voi-Việt')
+    .replace(/\bStudio\b/gi, 'X-tu-đi-ô')
+    .replace(/\baudio\b/gi, 'ao-đi-ô')
+    .replace(/\bvideo\b/gi, 'vi-đê-ô')
+    .replace(/\byoutube\b/gi, 'Du-túp')
+    .replace(/\btiktok\b/gi, 'Tóp-tóp')
+    .replace(/\bwebsite\b/gi, 'uép-sai')
+    .replace(/\bpodcast\b/gi, 'pót-cát');
+
+  // 2. Chuyển từ IN HOA toàn bộ (ví dụ: TIÊU VIÊM, QUYẾT ĐỊNH, CHƯƠNG) thành Tiêu Viêm, Quyết Định, Chương
   // để AI không đánh vần từng chữ một (T - I - Ê - U)
   clean = clean.replace(/(?:(?<=[\s,.:;!?"'\(\)\[\]«»“”‘’—\-\n…\/~]|^))(\p{Lu}{2,})(?=(?:[\s,.:;!?"'\(\)\[\]«»“”‘’—\-\n…\/~]|$))/gu, (match) => {
     return match.charAt(0) + match.slice(1).toLowerCase();
   });
 
-  // Tách biệt tiêu đề chương để AI ngắt nghỉ đúng chỗ
+  // 3. Tách biệt tiêu đề chương để AI ngắt nghỉ đúng chỗ
   clean = clean.replace(/(Chương\s+\d+[^:\n]*):(?!\s)/gi, '$1: ');
 
-  // Chuẩn hóa khoảng trắng thừa
+  // 4. Chuẩn hóa khoảng trắng thừa
   clean = clean.replace(/[ \t]+/g, ' ');
 
   return clean.trim();

@@ -163,7 +163,7 @@
     btnLoadDialogueSample.addEventListener('click', () => {
       dialogueScriptInput.value =
 `C: Buổi sáng tại quán cà phê cổ phố, hai người bạn gặp lại nhau sau mười năm xa cách.
-A: Chào Quân! Đã lâu quá rồi chúng ta mới có dịp ngồi lại cùng nhau thế này.
+A: Chào bạn Quân! Đã lâu quá rồi chúng ta mới có dịp ngồi lại cùng nhau thế này.
 B: Chào Huyền! Trông cậu vẫn rạng rỡ như ngày xưa vậy, thời gian dường như bỏ quên cậu rồi.
 A: Cậu khéo miệng quá! Nghe nói gần đây cậu đang phát triển một dự án sách nói AI rất thành công?
 B: Đúng vậy Huyền, công cụ VoiceViet Studio giúp chuyển đổi toàn bộ tiểu thuyết dài hàng vạn từ thành audio siêu nhanh.
@@ -234,6 +234,15 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
             dialogueStatus.innerHTML = `<span class="text-cyan-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> [${i + 1}/${parsedLines.length}] Đang đọc câu thoại ${item.speaker}...</span>`;
           }
 
+          // Smart phonetic normalization for natural speech
+          let cleanText = (item.text || '')
+            .replace(/\bAI\b/g, 'Ây Ai')
+            .replace(/\bVoiceViet\b/gi, 'Voi-Việt')
+            .replace(/\bStudio\b/gi, 'X-tu-đi-ô')
+            .replace(/\baudio\b/gi, 'ao-đi-ô')
+            .replace(/\bChào Quân!/gi, 'Chào bạn Quân!')
+            .replace(/\bChào Quân,/gi, 'Chào bạn Quân,');
+
           // Retry logic with countdown if hitting 429
           let lineBuffer = null;
           const maxRetries = 3;
@@ -245,7 +254,7 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                text: item.text,
+                text: cleanText,
                 voice: item.voice,
                 rate: 1.0,
                 pauses: { sentence: 0.3 }
@@ -259,7 +268,7 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
 
             if (res.status === 429) {
               console.warn(`[Dialogue] 429 Rate limited. Cooling down...`);
-              for (let s = 22; s > 0; s--) {
+              for (let s = 18; s > 0; s--) {
                 if (dialogueCancelRequested) throw new Error('Đã hủy theo yêu cầu người dùng.');
                 if (dialogueStatus) {
                   dialogueStatus.innerHTML = `<span class="text-amber-400 font-semibold"><i class="fa-solid fa-hourglass-half fa-spin mr-1"></i> API đang hạ nhiệt tần suất (${s}s)... Tự động tiếp tục câu ${i + 1}</span>`;
@@ -279,13 +288,13 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
 
           audioBuffers.push(lineBuffer);
 
-          // Pacing delay between speaker turns to avoid 429
+          // Fast pacing delay between speaker turns (1.5s instead of 15s!)
           if (i < parsedLines.length - 1 && !dialogueCancelRequested) {
-            const waitSec = 15;
+            const waitSec = 2;
             for (let s = waitSec; s > 0; s--) {
               if (dialogueCancelRequested) break;
               if (dialogueStatus) {
-                dialogueStatus.innerHTML = `<span class="text-slate-300">✓ Đã xong câu ${i + 1}/${parsedLines.length} (${item.speaker}). Nghỉ hạ nhiệt API <b class="text-cyan-400 font-mono">${s}s</b> trước câu tiếp...</span>`;
+                dialogueStatus.innerHTML = `<span class="text-slate-300">✓ Xong câu ${i + 1}/${parsedLines.length} (${item.speaker}). Chuyển tiếp sau <b class="text-cyan-400 font-mono">${s}s</b>...</span>`;
               }
               await new Promise(r => setTimeout(r, 1000));
             }
