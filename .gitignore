@@ -9,4 +9,5 @@ __pycache__/
 *.pyc
 dist-desktop/
 open_models/
+private_voices/
 

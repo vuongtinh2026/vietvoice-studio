@@ -49,7 +49,149 @@ const mergedAudioPlayer = document.getElementById('mergedAudioPlayer');
 
 const textInput = document.getElementById('textInput');
 const voiceSelect = document.getElementById('voiceSelect');
+const languageFilterSelect = document.getElementById('languageFilterSelect');
+const languageFilterContainer = document.getElementById('languageFilterContainer');
+const btnLoadNativeSample = document.getElementById('btnLoadNativeSample');
 const voiceNoteText = document.getElementById('voiceNoteText');
+
+// ==========================================
+// OWNER PRIVATE VOICE TOKEN & AUTH HELPERS
+// ==========================================
+window.getOwnerToken = function () {
+  try {
+    return sessionStorage.getItem('voiceviet_owner_token') || '';
+  } catch {
+    return '';
+  }
+};
+
+window.setOwnerToken = function (tok) {
+  try {
+    if (tok) sessionStorage.setItem('voiceviet_owner_token', tok);
+    else sessionStorage.removeItem('voiceviet_owner_token');
+  } catch {}
+};
+
+window.promptOwnerUnlockModal = function () {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('unlockVaultModal');
+    const pinInput = document.getElementById('modalOwnerPinInput');
+    const errEl = document.getElementById('modalUnlockError');
+    const btnClose = document.getElementById('btnCloseUnlockModal');
+    const btnCancel = document.getElementById('btnCancelUnlockModal');
+    const btnConfirm = document.getElementById('btnConfirmUnlockModal');
+
+    if (!modal || !pinInput || !btnConfirm) {
+      const p = window.prompt('🔒 Nhập Mã PIN Chủ Sở Hữu để mở khóa giọng đọc độc quyền:');
+      if (!p) return resolve(false);
+      fetch('/api/private-voices/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: p.trim() })
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (d.success && d.token) {
+            window.setOwnerToken(d.token);
+            if (typeof window.refreshVaultStatusUI === 'function') window.refreshVaultStatusUI();
+            resolve(true);
+          } else {
+            showToast(d.error || 'Sai Mã PIN Chủ Sở Hữu!', 'error');
+            resolve(false);
+          }
+        })
+        .catch(() => resolve(false));
+      return;
+    }
+
+    modal.classList.remove('hidden');
+    pinInput.value = '';
+    if (errEl) {
+      errEl.classList.add('hidden');
+      errEl.textContent = '';
+    }
+    setTimeout(() => pinInput.focus(), 60);
+
+    const cleanup = () => {
+      modal.classList.add('hidden');
+      btnConfirm.onclick = null;
+      if (btnCancel) btnCancel.onclick = null;
+      if (btnClose) btnClose.onclick = null;
+      pinInput.onkeydown = null;
+    };
+
+    const doUnlock = async () => {
+      const pin = pinInput.value.trim();
+      if (!pin) {
+        if (errEl) {
+          errEl.textContent = 'Vui lòng nhập Mã PIN Chủ Sở Hữu!';
+          errEl.classList.remove('hidden');
+        }
+        return;
+      }
+      const origHtml = btnConfirm.innerHTML;
+      btnConfirm.disabled = true;
+      btnConfirm.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang xác thực...';
+      try {
+        const r = await fetch('/api/private-voices/unlock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (r.ok && data.success && data.token) {
+          window.setOwnerToken(data.token);
+          if (typeof window.refreshVaultStatusUI === 'function') window.refreshVaultStatusUI();
+          showToast('🔓 Đã mở khóa Giọng Độc Quyền Chủ Sở Hữu thành công!', 'success');
+          cleanup();
+          resolve(true);
+        } else {
+          if (errEl) {
+            errEl.textContent = data.error || 'Mã PIN Chủ Sở Hữu không chính xác!';
+            errEl.classList.remove('hidden');
+          }
+        }
+      } catch (e) {
+        if (errEl) {
+          errEl.textContent = e.message || 'Lỗi kết nối xác thực!';
+          errEl.classList.remove('hidden');
+        }
+      } finally {
+        btnConfirm.disabled = false;
+        btnConfirm.innerHTML = origHtml;
+      }
+    };
+
+    btnConfirm.onclick = doUnlock;
+    pinInput.onkeydown = (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        doUnlock();
+      } else if (ev.key === 'Escape') {
+        cleanup();
+        resolve(false);
+      }
+    };
+    if (btnCancel) btnCancel.onclick = () => { cleanup(); resolve(false); };
+    if (btnClose) btnClose.onclick = () => { cleanup(); resolve(false); };
+  });
+};
+
+window.ensurePrivateVoiceAuthorized = async function (voiceId) {
+  if (!voiceId || !voiceId.startsWith('private-')) return true;
+  const tok = window.getOwnerToken();
+  if (tok) {
+    try {
+      const r = await fetch('/api/private-voices/status', {
+        headers: { 'X-Owner-Token': tok }
+      });
+      const d = await r.json().catch(() => ({}));
+      if (d.unlocked) return true;
+    } catch {}
+    window.setOwnerToken('');
+  }
+  return await window.promptOwnerUnlockModal();
+};
 const rateRange = document.getElementById('rateRange');
 const pitchRange = document.getElementById('pitchRange');
 const volumeRange = document.getElementById('volumeRange');
@@ -180,6 +322,23 @@ async function init() {
  * - Xóa ký tự rác ẩn, non-breaking space (\xa0), zero-width space.
  * - Chuẩn hóa dấu câu để ngắt câu tự nhiên.
  */
+function normalizeTextSmart(text, voiceId = '') {
+  if (!text) return '';
+  const v = voiceId || (voiceSelect ? voiceSelect.value : '');
+  const isInternational = v.startsWith('free-intl-') || (
+    v && !v.startsWith('vi-') && !v.startsWith('free-vi-') && !v.startsWith('private-')
+  );
+  if (isInternational) {
+    return text
+      .normalize('NFC')
+      .replace(/[\u00a0\u200b\u200e\u200f\ufeff]/g, ' ')
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+/g, ' ')
+      .trim();
+  }
+  return normalizeVietnameseText(text);
+}
+
 function normalizeVietnameseText(text) {
   if (!text) return '';
   let clean = text
@@ -523,21 +682,34 @@ function updateChapterCardUI(chap) {
 }
 
 async function synthesizeSingleChapter(chap) {
+  const selectedVoice = voiceSelect.value || 'free-vi-ngoc-huyen';
+  if (selectedVoice.startsWith('private-')) {
+    const authOk = await window.ensurePrivateVoiceAuthorized(selectedVoice);
+    if (!authOk) {
+      chap.status = 'pending';
+      updateChapterCardUI(chap);
+      return false;
+    }
+  }
+
   chap.status = 'processing';
   updateChapterCardUI(chap);
   showToast(`Đang tạo âm thanh cho "${chap.title}"...`, 'info');
 
-  const selectedVoice = voiceSelect.value || 'vi-entertainment';
   const rate = parseFloat(rateRange.value) || 1.0;
   const pauseSec = parseFloat(pauseDurationRange.value) || 0.4;
   const key = cheapTtsKeyInput.value.trim();
 
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    const tok = window.getOwnerToken();
+    if (tok) headers['X-Owner-Token'] = tok;
+
     const res = await fetch('/api/cheap-tts/synthesize', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
-        text: normalizeVietnameseText(chap.content),
+        text: normalizeTextSmart(chap.content, selectedVoice),
         voice: selectedVoice,
         rate,
         key: key || undefined,
@@ -550,6 +722,10 @@ async function synthesizeSingleChapter(chap) {
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
+      if (res.status === 403 || errData.code === 'private_locked') {
+        window.setOwnerToken('');
+        if (typeof window.refreshVaultStatusUI === 'function') window.refreshVaultStatusUI();
+      }
       throw new Error(errData.error || `Lỗi HTTP ${res.status}`);
     }
 
@@ -882,10 +1058,10 @@ async function startBatchChapters() {
     }
 
     // Pacing delay between chapters: Cheap-TTS allows 3 RPM (~20s per request).
-    // Free open-source voices have NO rate limit and run back-to-back immediately!
+    // Free open-source & Private cloned voices have NO rate limit and run back-to-back immediately!
     const activeVoiceId = voiceSelect ? (voiceSelect.value || '') : '';
-    const isFreeVoice = activeVoiceId.startsWith('free-');
-    if (!isFreeVoice && i < parsedChapters.length - 1 && !batchCancelRequested) {
+    const isLocalNoLimit = activeVoiceId.startsWith('free-') || activeVoiceId.startsWith('private-');
+    if (!isLocalNoLimit && i < parsedChapters.length - 1 && !batchCancelRequested) {
       const elapsedSec = (Date.now() - startTime) / 1000;
       const waitSeconds = Math.max(2, Math.ceil(20 - elapsedSec));
 
@@ -927,10 +1103,10 @@ function getCleanFileName(title) {
 }
 
 // ==========================================
-// 3. CHEAP-TTS VOICES & SYNTHESIS (STANDARD)
+// 3. STUDIO 48KHZ, PRIVATE CLONE & 32 GLOBAL LANGUAGES
 // ==========================================
 async function loadCheapTtsVoices() {
-  voiceSelect.innerHTML = '<option value="">Đang tải danh sách giọng AI từ Cheap-TTS...</option>';
+  voiceSelect.innerHTML = '<option value="">Đang tải danh sách giọng AI 48kHz & 32 ngôn ngữ...</option>';
 
   try {
     const res = await fetch('/api/cheap-tts/voices');
@@ -938,48 +1114,106 @@ async function loadCheapTtsVoices() {
     const data = await res.json();
     if (data.success && data.voices) {
       cheapTtsVoices = data.voices;
+      window.allAppVoices = cheapTtsVoices;
       populateCheapTtsVoiceList(cheapTtsVoices);
       return;
     }
     throw new Error(data.error || 'Không tải được danh sách giọng');
   } catch (err) {
     cheapTtsVoices = [
-      { id: 'vi-entertainment', name: 'Ngọc Huyền', language: 'vi', useCase: 'Giải trí / Kể chuyện' },
-      { id: 'vi-commentary', name: 'Minh Quân', language: 'vi', useCase: 'Bình luận phim' },
-      { id: 'vi-advertising', name: 'Mạnh Dũng', language: 'vi', useCase: 'Quảng cáo / TVC' },
-      { id: 'vi-tiktok-clip', name: 'Adam', language: 'vi', useCase: 'TikTok clip' }
+      { id: 'free-vi-ngoc-huyen', name: 'Ngọc Huyền (Studio 48kHz)', language: 'vi', country: '🇻🇳 Tiếng Việt', featured: true, useCase: 'Giải trí / Kể chuyện' },
+      { id: 'free-vi-minh-quan', name: 'Minh Quân (Studio 48kHz)', language: 'vi', country: '🇻🇳 Tiếng Việt', featured: true, useCase: 'Bình luận phim' }
     ];
     populateCheapTtsVoiceList(cheapTtsVoices);
+  }
+}
+window.reloadAllVoicesCatalog = loadCheapTtsVoices;
+
+function matchesLanguageFilter(v, filterKey) {
+  if (!filterKey || filterKey === 'all') return true;
+  const lang = (v.language || '').toLowerCase();
+  const isPriv = Boolean(v.isPrivate || v.id.startsWith('private-'));
+  if (filterKey === 'private') return isPriv;
+  if (filterKey === 'vi') return lang === 'vi' && !isPriv;
+  if (filterKey === 'en') return lang.startsWith('en');
+  if (filterKey === 'zh') return lang.startsWith('zh');
+  if (filterKey === 'ja') return lang.startsWith('ja');
+  if (filterKey === 'ko') return lang.startsWith('ko');
+  if (filterKey === 'fr') return lang.startsWith('fr');
+  if (filterKey === 'de') return lang.startsWith('de');
+  if (filterKey === 'es') return lang.startsWith('es');
+  if (filterKey === 'pt') return lang.startsWith('pt');
+  if (filterKey === 'it') return lang.startsWith('it');
+  if (filterKey === 'ru') return lang.startsWith('ru');
+  if (filterKey === 'th') return lang.startsWith('th');
+  if (filterKey === 'sea_other') return ['id', 'ms', 'fil'].some(p => lang.startsWith(p));
+  if (filterKey === 'asia_me') return ['hi', 'ar', 'tr'].some(p => lang.startsWith(p));
+  if (filterKey === 'eu_other') return ['nl', 'pl', 'sv', 'cs', 'el', 'uk', 'ro', 'hu', 'da', 'fi'].some(p => lang.startsWith(p));
+  return true;
+}
+
+function syncSelectedVoiceNoteAndSample() {
+  if (!voiceSelect) return;
+  const selId = voiceSelect.value || '';
+  const found = (cheapTtsVoices || []).find(v => v.id === selId);
+  if (found) {
+    if (found.isPrivate || selId.startsWith('private-')) {
+      voiceNoteText.innerHTML = `<span class="text-amber-300 font-semibold">🔒 Giọng Độc Quyền Chủ Sở Hữu (48kHz):</span> ${escapeHtml(found.useCase || found.name)}`;
+    } else if (found.country) {
+      voiceNoteText.textContent = `${found.country} • ${found.useCase || found.name}`;
+    } else {
+      voiceNoteText.textContent = found.useCase || found.name;
+    }
+    if (btnLoadNativeSample) {
+      if (found.sampleText && (found.language !== 'vi' || found.isPrivate)) {
+        btnLoadNativeSample.classList.remove('hidden');
+      } else {
+        btnLoadNativeSample.classList.add('hidden');
+      }
+    }
+  } else if (btnLoadNativeSample) {
+    btnLoadNativeSample.classList.add('hidden');
   }
 }
 
 function populateCheapTtsVoiceList(voicesList) {
   const prevSelected = voiceSelect.value;
   voiceSelect.innerHTML = '';
+  const activeFilter = languageFilterSelect ? languageFilterSelect.value : 'all';
 
   if (currentEngine === 'free') {
-    const freeList = voicesList.filter(v => v.id.startsWith('free-'));
-    const freeViCount = freeList.filter(v => v.language === 'vi').length;
-    voiceCountBadge.textContent = `${freeList.length} Giọng Free (${freeViCount} VN)`;
+    const localPool = voicesList.filter(v => v.id.startsWith('free-') || v.id.startsWith('private-'));
+    const filtered = localPool.filter(v => matchesLanguageFilter(v, activeFilter));
+    voiceCountBadge.textContent = `${filtered.length} / ${localPool.length} giọng`;
+
+    const groupPrivate = document.createElement('optgroup');
+    groupPrivate.label = '🔒 Giọng Nhân Bản Độc Quyền Của Tôi (48kHz Chủ Sở Hữu)';
 
     const groupFreeTop = document.createElement('optgroup');
-    groupFreeTop.label = '⭐ Top 7 Giọng AI Miễn Phí (Ngọc Huyền, Thiện Tâm, Minh Quân, Adam TikTok, Hoài My, Nam Minh, Chị Google)';
+    groupFreeTop.label = '⭐ Top Giọng AI Tiếng Việt Studio 48kHz';
 
     const groupFreeMore = document.createElement('optgroup');
-    groupFreeMore.label = '🎙️ Kho Giọng Việt Mã Nguồn Mở Offline (Ngọc Ngạn, Tài An, Ban Mai, Mạnh Dũng, Duy Oryx...)';
+    groupFreeMore.label = '🇻🇳 Kho Giọng Việt Đa Vùng Miền & Siêu Tốc';
 
-    const groupFreeIntl = document.createElement('optgroup');
-    groupFreeIntl.label = '🌐 Giọng Quốc Tế Miễn Phí (Anh, Mỹ, Nhật, Trung)';
+    const intlGroupsByCountry = new Map();
 
-    freeList.forEach(v => {
+    filtered.forEach(v => {
       const opt = document.createElement('option');
       opt.value = v.id;
       opt.textContent = `${v.name} — ${v.useCase || v.id}`;
       opt.dataset.name = v.name;
       opt.dataset.lang = v.language;
 
-      if (v.language !== 'vi') {
-        groupFreeIntl.appendChild(opt);
+      if (v.isPrivate || v.id.startsWith('private-')) {
+        groupPrivate.appendChild(opt);
+      } else if (v.language !== 'vi') {
+        const cLabel = v.country || `🌐 ${v.language.toUpperCase()}`;
+        if (!intlGroupsByCountry.has(cLabel)) {
+          const og = document.createElement('optgroup');
+          og.label = `${cLabel} (ElevenLabs Global HD)`;
+          intlGroupsByCountry.set(cLabel, og);
+        }
+        intlGroupsByCountry.get(cLabel).appendChild(opt);
       } else if (v.featured) {
         groupFreeTop.appendChild(opt);
       } else {
@@ -987,23 +1221,32 @@ function populateCheapTtsVoiceList(voicesList) {
       }
     });
 
+    if (groupPrivate.children.length > 0) voiceSelect.appendChild(groupPrivate);
     if (groupFreeTop.children.length > 0) voiceSelect.appendChild(groupFreeTop);
     if (groupFreeMore.children.length > 0) voiceSelect.appendChild(groupFreeMore);
-    if (groupFreeIntl.children.length > 0) voiceSelect.appendChild(groupFreeIntl);
+    intlGroupsByCountry.forEach(og => {
+      if (og.children.length > 0) voiceSelect.appendChild(og);
+    });
 
-    if (prevSelected && prevSelected.startsWith('free-') && freeList.some(v => v.id === prevSelected)) {
+    if (prevSelected && filtered.some(v => v.id === prevSelected)) {
       voiceSelect.value = prevSelected;
-    } else {
+    } else if (activeFilter === 'all' && filtered.some(v => v.id === 'free-vi-ngoc-huyen')) {
       voiceSelect.value = 'free-vi-ngoc-huyen';
-      if (!voiceSelect.value && freeList.length > 0) voiceSelect.value = freeList[0].id;
+    } else if (filtered.length > 0) {
+      voiceSelect.value = filtered[0].id;
     }
+    syncSelectedVoiceNoteAndSample();
     return;
   }
 
   // Cheap-TTS Cloud mode
-  const cloudList = voicesList.filter(v => !v.id.startsWith('free-'));
-  const viCount = cloudList.filter(v => v.language === 'vi' || v.id.startsWith('vi')).length;
-  voiceCountBadge.textContent = `${cloudList.length} giọng (${viCount} Giọng VN)`;
+  const cloudList = voicesList.filter(v => !v.id.startsWith('free-') || v.id.startsWith('private-'));
+  const filteredCloud = cloudList.filter(v => matchesLanguageFilter(v, activeFilter));
+  const viCount = filteredCloud.filter(v => v.language === 'vi' || v.id.startsWith('vi')).length;
+  voiceCountBadge.textContent = `${filteredCloud.length} giọng (${viCount} VN)`;
+
+  const groupPrivCloud = document.createElement('optgroup');
+  groupPrivCloud.label = '🔒 Giọng Nhân Bản Độc Quyền Của Tôi';
 
   const groupPro = document.createElement('optgroup');
   groupPro.label = '🌟 24 Giọng AI PRO Tiếng Việt Mới (Truyện Ma, Kiếm Hiệp, Podcast, Ngôn Tình...)';
@@ -1012,16 +1255,18 @@ function populateCheapTtsVoiceList(voicesList) {
   groupStandard.label = '⚡ 4 Giọng Tiêu Chuẩn Tiếng Việt';
 
   const groupOther = document.createElement('optgroup');
-  groupOther.label = '🌐 Giọng AI Quốc Tế (Anh, Pháp, Đức, Nhật, ...)';
+  groupOther.label = '🌐 Giọng AI Quốc Tế Cloud (Anh, Pháp, Đức, Nhật, ...)';
 
-  cloudList.forEach(v => {
+  filteredCloud.forEach(v => {
     const opt = document.createElement('option');
     opt.value = v.id;
     opt.textContent = `${v.name} (${v.useCase || v.id}) - ${v.language.toUpperCase()}`;
     opt.dataset.name = v.name;
     opt.dataset.lang = v.language;
 
-    if (v.id.startsWith('vi-pro-')) {
+    if (v.isPrivate || v.id.startsWith('private-')) {
+      groupPrivCloud.appendChild(opt);
+    } else if (v.id.startsWith('vi-pro-')) {
       groupPro.appendChild(opt);
     } else if (v.language === 'vi' || v.id.startsWith('vi-')) {
       groupStandard.appendChild(opt);
@@ -1030,16 +1275,19 @@ function populateCheapTtsVoiceList(voicesList) {
     }
   });
 
+  if (groupPrivCloud.children.length > 0) voiceSelect.appendChild(groupPrivCloud);
   if (groupPro.children.length > 0) voiceSelect.appendChild(groupPro);
   if (groupStandard.children.length > 0) voiceSelect.appendChild(groupStandard);
   if (groupOther.children.length > 0) voiceSelect.appendChild(groupOther);
 
-  if (prevSelected && !prevSelected.startsWith('free-') && cloudList.some(v => v.id === prevSelected)) {
+  if (prevSelected && filteredCloud.some(v => v.id === prevSelected)) {
     voiceSelect.value = prevSelected;
-  } else {
+  } else if (filteredCloud.some(v => v.id === 'vi-pro-podcast')) {
     voiceSelect.value = 'vi-pro-podcast';
-    if (!voiceSelect.value) voiceSelect.value = 'vi-entertainment';
+  } else if (filteredCloud.length > 0) {
+    voiceSelect.value = filteredCloud[0].id;
   }
+  syncSelectedVoiceNoteAndSample();
 }
 
 async function startCheapTtsSynthesis(text) {
@@ -1052,7 +1300,12 @@ async function startCheapTtsSynthesis(text) {
   }
 
   const selectedVoice = voiceSelect.value || (currentEngine === 'free' ? 'free-vi-ngoc-huyen' : 'vi-entertainment');
-  const isFree = selectedVoice.startsWith('free-');
+  if (selectedVoice.startsWith('private-')) {
+    const authOk = await window.ensurePrivateVoiceAuthorized(selectedVoice);
+    if (!authOk) return;
+  }
+
+  const isLocal = selectedVoice.startsWith('free-') || selectedVoice.startsWith('private-');
   const rate = parseFloat(rateRange.value) || 1.0;
   const pauseSec = parseFloat(pauseDurationRange.value) || 0.4;
   const key = cheapTtsKeyInput.value.trim();
@@ -1062,21 +1315,32 @@ async function startCheapTtsSynthesis(text) {
 
   btnSpeak.disabled = true;
   btnSpeakIcon.className = 'fa-solid fa-spinner fa-spin text-sm';
-  btnSpeakText.textContent = isFree ? 'Đang tạo giọng AI Miễn Phí...' : (isLong ? `Đang xử lý ${estChunks} đoạn lớn...` : 'Đang tạo âm thanh AI siêu tốc...');
+  btnSpeakText.textContent = selectedVoice.startsWith('private-')
+    ? '🔒 Đang tạo giọng độc quyền 48kHz...'
+    : (isLocal ? 'Đang tạo giọng Studio 48kHz...' : (isLong ? `Đang xử lý ${estChunks} đoạn lớn...` : 'Đang tạo âm thanh AI siêu tốc...'));
   btnStop.disabled = false;
 
-  showToast(isFree ? 'Đang tạo âm thanh AI Miễn Phí siêu tốc...' : (isLong ? `Văn bản rất dài (~${estChunks} đoạn lớn). Đang tự động ghép nối...` : 'Đang tạo âm thanh AI (chỉ ~5-7 giây)...'), 'info');
+  showToast(
+    selectedVoice.startsWith('private-')
+      ? '🔒 Đang tổng hợp Giọng Nhân Bản Độc Quyền 48kHz của bạn...'
+      : (isLocal ? 'Đang tạo âm thanh AI Studio 48kHz...' : 'Đang tạo âm thanh AI...'),
+    'info'
+  );
 
   try {
-    const endpoint = isFree ? '/api/free-tts/synthesize' : '/api/cheap-tts/synthesize';
+    const endpoint = isLocal ? '/api/free-tts/synthesize' : '/api/cheap-tts/synthesize';
+    const headers = { 'Content-Type': 'application/json' };
+    const tok = window.getOwnerToken();
+    if (tok) headers['X-Owner-Token'] = tok;
+
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         text,
         voice: selectedVoice,
         rate,
-        key: isFree ? undefined : (key || undefined),
+        key: isLocal ? undefined : (key || undefined),
         pauses: {
           sentence: pauseSec,
           paragraph: pauseSec * 1.5
@@ -1086,6 +1350,10 @@ async function startCheapTtsSynthesis(text) {
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
+      if (response.status === 403 || errData.code === 'private_locked') {
+        window.setOwnerToken('');
+        if (typeof window.refreshVaultStatusUI === 'function') window.refreshVaultStatusUI();
+      }
       throw new Error(errData.error || `Lỗi server HTTP ${response.status}`);
     }
 
@@ -1108,7 +1376,7 @@ async function startCheapTtsSynthesis(text) {
     const isMp3Format = audioBlob.type.includes('mpeg');
     btnDownloadAudio.download = `voiceviet-${selectedVoice}-${Date.now()}.${isMp3Format ? 'mp3' : 'wav'}`;
 
-    const seconds = secondsHeader ? parseFloat(secondsHeader).toFixed(1) : ((audioBlob.size / 44100).toFixed(1));
+    const seconds = secondsHeader ? parseFloat(secondsHeader).toFixed(1) : ((audioBlob.size / 96000).toFixed(1));
     const chunkNote = parseInt(chunksHeader) > 1 ? ` • Đã ghép ${chunksHeader} đoạn liền mạch` : '';
     audioDurationBadge.textContent = `${seconds}s`;
     audioVoiceInfo.textContent = `Giọng đọc: ${voiceNameHeader} • Dung lượng: ${(audioBlob.size / 1024).toFixed(1)} KB${chunkNote}`;
@@ -1305,26 +1573,28 @@ function switchEngine(engine) {
       tabFreeTts.classList.add('active', 'bg-gradient-to-r', 'from-emerald-600', 'to-teal-600', 'text-white');
       tabFreeTts.classList.remove('text-slate-400');
     }
+    if (languageFilterContainer) languageFilterContainer.classList.remove('hidden');
     cheapTtsConfigCard.classList.add('hidden');
     pitchControlGroup.classList.add('hidden');
     cheapTtsPauseGroup.classList.remove('hidden');
     btnPause.classList.add('hidden');
     btnSpeakText.textContent = '✨ Tạo Giọng AI Miễn Phí';
-    voiceNoteText.textContent = 'Giọng AI gốc mã nguồn mở (Ngọc Huyền, Thiện Tâm, Minh Quân, Adam TikTok, Hoài My, Nam Minh, Chị Google...) - Không giới hạn!';
     populateCheapTtsVoiceList(cheapTtsVoices);
-    showToast('Đã chuyển sang AI Miễn Phí (Không giới hạn)', 'success');
+    showToast('Đã chuyển sang Studio 48kHz & 32 Ngôn Ngữ Quốc Tế', 'success');
   } else if (engine === 'cheaptts') {
     tabCheapTts.classList.add('active', 'cheap-tts-active');
+    if (languageFilterContainer) languageFilterContainer.classList.remove('hidden');
     cheapTtsConfigCard.classList.remove('hidden');
     pitchControlGroup.classList.add('hidden');
     cheapTtsPauseGroup.classList.remove('hidden');
     btnPause.classList.add('hidden');
     btnSpeakText.textContent = 'Tạo giọng nói AI';
-    voiceNoteText.textContent = 'Giọng AI Cheap-TTS tự nhiên chuyên dùng cho Kể chuyện, Review phim, Tiểu thuyết.';
     populateCheapTtsVoiceList(cheapTtsVoices);
     showToast('Đã chuyển sang Cheap-TTS Cloud AI', 'info');
   } else {
     tabWebSpeech.classList.add('active');
+    if (languageFilterContainer) languageFilterContainer.classList.add('hidden');
+    if (btnLoadNativeSample) btnLoadNativeSample.classList.add('hidden');
     cheapTtsConfigCard.classList.add('hidden');
     pitchControlGroup.classList.remove('hidden');
     cheapTtsPauseGroup.classList.add('hidden');
@@ -1348,8 +1618,8 @@ async function handleSpeakAction() {
     return;
   }
 
-  // Tự động chuẩn hóa văn bản & sửa triệt để lỗi chữ IN HOA bị AI đánh vần từng ký tự
-  const text = normalizeVietnameseText(rawText);
+  const activeVoice = voiceSelect ? voiceSelect.value : '';
+  const text = normalizeTextSmart(rawText, activeVoice);
   saveToHistory(text);
 
   if (currentEngine === 'cheaptts' || currentEngine === 'free') {
@@ -1368,26 +1638,27 @@ async function previewSpecificVoice(voiceId, voiceLabel) {
     return;
   }
 
+  if (targetVoice.startsWith('private-')) {
+    const authOk = await window.ensurePrivateVoiceAuthorized(targetVoice);
+    if (!authOk) return;
+  }
+
   const samplePrompts = {
-    'free-vi-ngoc-huyen': 'Xin chào các bạn! Chào mừng các bạn đã quay trở lại với chuyên mục tóm tắt phim hay hôm nay cùng Ngọc Huyền.',
-    'free-vi-thien-tam': 'Nam mô Bổn Sư Thích Ca Mâu Ni Phật. Xin kính chào quý vị và các bạn đang lắng nghe chuyên mục sách nói đêm khuya cùng Thiện Tâm.',
-    'free-vi-minh-quan': 'Xin chào quý vị khán giả! Đây là bản tin bình luận công nghệ và thế giới cùng giọng đọc Minh Quân.',
-    'free-vi-adam-tiktok': 'Xin chào anh em! Hôm nay mình sẽ kể cho anh em nghe một câu chuyện cực kỳ thú vị trên TikTok nhé!',
-    'free-vi-hoaimy': 'Xin chào các bạn! Tôi là Hoài My, giọng đọc trí tuệ nhân tạo truyền cảm dành cho tiểu thuyết và truyện ngắn.',
+    'free-vi-ngoc-huyen': 'Xin chào các bạn! Chào mừng các bạn đã quay trở lại với chuyên mục tóm tắt phim hay hôm nay cùng Ngọc Huyền... Hôm nay chúng ta có một bộ phim cực kỳ kịch tính!',
+    'free-vi-thien-tam': 'Nam mô Bổn Sư Thích Ca Mâu Ni Phật... Xin kính chào quý vị và các bạn đang lắng nghe chuyên mục sách nói đêm khuya cùng Thiện Tâm.',
+    'free-vi-minh-quan': 'Xin chào quý vị khán giả! Đây là bản tin bình luận công nghệ và thế giới chuẩn 48kHz cùng giọng đọc Minh Quân.',
+    'free-vi-adam-tiktok': '[cười] Xin chào anh em! Hôm nay mình sẽ kể cho anh em nghe một câu chuyện cực kỳ bá đạo trên TikTok nhé!',
+    'free-vi-hoaimy': 'Xin chào các bạn! Tôi là Hoài My... giọng đọc trí tuệ nhân tạo truyền cảm dành cho tiểu thuyết và truyện ngắn.',
     'free-vi-namminh': 'Xin kính chào quý vị và các bạn! Tôi là Nam Minh, giọng đọc thuyết minh phóng sự và ký sự tài liệu.',
     'free-vi-google': 'Xin chào các bạn, đây là giọng đọc Chị Google huyền thoại chuyên làm video hài hước trên mạng xã hội.'
   };
 
-  let previewText = samplePrompts[targetVoice] || `Xin chào bạn! Đây là bản nghe thử giọng đọc ${cleanName} trên phần mềm VoiceViet Studio.`;
-  if (targetVoice.startsWith('free-en-')) {
-    previewText = `Hello there! Welcome to VoiceViet Studio, where your stories come alive with natural AI voices.`;
-  } else if (targetVoice.startsWith('free-ja-')) {
-    previewText = `こんにちは！VoiceViet Studioへようこそ。自然なAI音声をお楽しみください。`;
-  } else if (targetVoice.startsWith('free-zh-')) {
-    previewText = `大家好，欢迎使用 VoiceViet Studio 智能语音合成系统。`;
-  }
+  const foundObj = (cheapTtsVoices || []).find(v => v.id === targetVoice);
+  let previewText = (foundObj && foundObj.sampleText)
+    ? foundObj.sampleText
+    : (samplePrompts[targetVoice] || `Xin chào bạn... Đây là bản nghe thử giọng đọc ${cleanName} chuẩn phòng thu trên VoiceViet Studio.`);
 
-  const isFree = targetVoice.startsWith('free-');
+  const isLocal = targetVoice.startsWith('free-') || targetVoice.startsWith('private-');
   const rate = parseFloat(rateRange.value) || 1.0;
   const origTestHtml = btnTestVoice ? btnTestVoice.innerHTML : '';
 
@@ -1398,21 +1669,29 @@ async function previewSpecificVoice(voiceId, voiceLabel) {
     }
     showToast(`Đang tạo câu nghe thử giọng "${cleanName}"...`, 'info');
 
-    const endpoint = isFree ? '/api/free-tts/synthesize' : '/api/cheap-tts/synthesize';
+    const endpoint = isLocal ? '/api/free-tts/synthesize' : '/api/cheap-tts/synthesize';
+    const headers = { 'Content-Type': 'application/json' };
+    const tok = window.getOwnerToken();
+    if (tok) headers['X-Owner-Token'] = tok;
+
     const res = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         text: previewText,
         voice: targetVoice,
         rate,
-        key: isFree ? undefined : (cheapTtsKeyInput.value.trim() || undefined),
-        pauses: { sentence: 0.35 }
+        key: isLocal ? undefined : (cheapTtsKeyInput.value.trim() || undefined),
+        pauses: { sentence: 0.38 }
       })
     });
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
+      if (res.status === 403 || errData.code === 'private_locked') {
+        window.setOwnerToken('');
+        if (typeof window.refreshVaultStatusUI === 'function') window.refreshVaultStatusUI();
+      }
       throw new Error(errData.error || `Lỗi HTTP ${res.status}`);
     }
 
@@ -1428,7 +1707,7 @@ async function previewSpecificVoice(voiceId, voiceLabel) {
     btnDownloadAudio.download = `preview-${targetVoice}-${Date.now()}.wav`;
 
     const secondsHeader = res.headers.get('X-Audio-Seconds');
-    const seconds = secondsHeader ? parseFloat(secondsHeader).toFixed(1) : ((audioBlob.size / 44100).toFixed(1));
+    const seconds = secondsHeader ? parseFloat(secondsHeader).toFixed(1) : ((audioBlob.size / 96000).toFixed(1));
     audioDurationBadge.textContent = `${seconds}s`;
     audioVoiceInfo.textContent = `Nghe thử giọng: ${cleanName} • ${(audioBlob.size / 1024).toFixed(1)} KB`;
 
@@ -1992,11 +2271,16 @@ async function startWordBatchQueue() {
         throw new Error('File không có nội dung chữ');
       }
 
-      const selectedVoice = voiceSelect ? (voiceSelect.value || 'vi-entertainment') : 'vi-entertainment';
+      const selectedVoice = voiceSelect ? (voiceSelect.value || 'free-vi-ngoc-huyen') : 'free-vi-ngoc-huyen';
+      if (selectedVoice.startsWith('private-')) {
+        const authOk = await window.ensurePrivateVoiceAuthorized(selectedVoice);
+        if (!authOk) throw new Error('Cần mở khóa Mã PIN Chủ Sở Hữu để dùng giọng riêng tư!');
+      }
       const rate = parseFloat(rateRange?.value) || 1.0;
       const pauseSec = parseFloat(pauseDurationRange?.value) || 0.4;
       const key = cheapTtsKeyInput?.value.trim() || undefined;
       const selectedBitrate = mp3BitrateSelect ? mp3BitrateSelect.value : '48k';
+      const isLocalVoice = selectedVoice.startsWith('free-') || selectedVoice.startsWith('private-');
 
       // 2. Tự động chia nhỏ an toàn (xử lý hoàn hảo từ file ngắn đến file 70.000+ từ)
       const parts = detectChapters(text, 1000, 'auto');
@@ -2014,11 +2298,15 @@ async function startWordBatchQueue() {
         }
 
         const partStartTime = Date.now();
+        const headers = { 'Content-Type': 'application/json' };
+        const tok = window.getOwnerToken();
+        if (tok) headers['X-Owner-Token'] = tok;
+
         const synthRes = await fetch('/api/cheap-tts/synthesize', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
-            text: part.content,
+            text: normalizeTextSmart(part.content, selectedVoice),
             voice: selectedVoice,
             rate,
             key,
@@ -2028,6 +2316,10 @@ async function startWordBatchQueue() {
 
         if (!synthRes.ok) {
           const errJson = await synthRes.json().catch(() => ({}));
+          if (synthRes.status === 403 || errJson.code === 'private_locked') {
+            window.setOwnerToken('');
+            if (typeof window.refreshVaultStatusUI === 'function') window.refreshVaultStatusUI();
+          }
           throw new Error(errJson.error || `Lỗi HTTP ${synthRes.status}`);
         }
 
@@ -2036,11 +2328,11 @@ async function startWordBatchQueue() {
         itemWavBuffers.push(arrayBuf);
 
         const secondsHeader = synthRes.headers.get('X-Audio-Seconds');
-        const durationSec = secondsHeader ? parseFloat(secondsHeader) : (wavBlob.size / 44100);
+        const durationSec = secondsHeader ? parseFloat(secondsHeader) : (wavBlob.size / 96000);
         itemTotalDurationSec += durationSec;
 
         // Nghỉ làm mát API giữa các phần của file dài (chỉ áp dụng cho Cheap-TTS trả phí)
-        if (!selectedVoice.startsWith('free-') && pIdx < parts.length - 1 && !wordBatchCancelRequested) {
+        if (!isLocalVoice && pIdx < parts.length - 1 && !wordBatchCancelRequested) {
           const elapsedSec = (Date.now() - partStartTime) / 1000;
           const waitSeconds = Math.max(2, Math.ceil(20 - elapsedSec));
           for (let s = waitSeconds; s > 0; s--) {
@@ -2109,7 +2401,8 @@ async function startWordBatchQueue() {
 
     // 5. Nghỉ hạ nhiệt API giữa các file (chỉ áp dụng cho Cheap-TTS trả phí)
     const activeBatchVoice = voiceSelect ? (voiceSelect.value || '') : '';
-    if (!activeBatchVoice.startsWith('free-') && i < batchFiles.length - 1 && !wordBatchCancelRequested) {
+    const isLocalBatch = activeBatchVoice.startsWith('free-') || activeBatchVoice.startsWith('private-');
+    if (!isLocalBatch && i < batchFiles.length - 1 && !wordBatchCancelRequested) {
       const elapsedSec = (Date.now() - startTime) / 1000;
       const waitSeconds = Math.max(3, Math.ceil(20 - elapsedSec));
 
@@ -2140,6 +2433,34 @@ function setupEventListeners() {
   if (tabFreeTts) tabFreeTts.addEventListener('click', () => switchEngine('free'));
   tabCheapTts.addEventListener('click', () => switchEngine('cheaptts'));
   tabWebSpeech.addEventListener('click', () => switchEngine('webspeech'));
+
+  if (languageFilterSelect) {
+    languageFilterSelect.addEventListener('change', () => {
+      if (currentEngine === 'free' || currentEngine === 'cheaptts') {
+        populateCheapTtsVoiceList(cheapTtsVoices);
+        const labelText = languageFilterSelect.selectedOptions?.[0]?.textContent || '';
+        showToast(`Đã lọc danh sách giọng: ${labelText}`, 'info');
+      }
+    });
+  }
+
+  if (voiceSelect) {
+    voiceSelect.addEventListener('change', () => {
+      syncSelectedVoiceNoteAndSample();
+    });
+  }
+
+  if (btnLoadNativeSample) {
+    btnLoadNativeSample.addEventListener('click', () => {
+      const selId = voiceSelect ? voiceSelect.value : '';
+      const found = (cheapTtsVoices || []).find(v => v.id === selId);
+      if (found && found.sampleText) {
+        textInput.value = found.sampleText;
+        updateStats();
+        showToast(`Đã chèn câu mẫu bản ngữ của giọng "${found.name}"!`, 'success');
+      }
+    });
+  }
 
   btnToggleKeyEdit.addEventListener('click', () => {
     keyEditBox.classList.toggle('hidden');

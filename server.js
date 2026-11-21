@@ -205,13 +205,17 @@ async function getVoicesFree() {
   });
 }
 
-async function synthesizeFree(text, voice, rate = 1.0, pause = 0.40) {
+async function synthesizeFree(text, voice, rate = 1.0, pause = 0.40, ownerToken = '') {
   // 1. Try ultra-fast warm daemon in RAM first
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (ownerToken) {
+      headers['X-Owner-Token'] = ownerToken;
+    }
     const res = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/synthesize`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice, rate, pause })
+      headers,
+      body: JSON.stringify({ text, voice, rate, pause, ownerToken: ownerToken || undefined })
     });
     if (res.ok) {
       const arrayBuf = await res.arrayBuffer();
@@ -224,16 +228,22 @@ async function synthesizeFree(text, voice, rate = 1.0, pause = 0.40) {
       return { audio, seconds, voice: { id: voice, name: voiceName } };
     } else {
       const errData = await res.json().catch(() => ({}));
-      if (errData.error) throw new Error(errData.error);
+      const e = new Error(errData.error || `Daemon HTTP ${res.status}`);
+      e.status = res.status;
+      e.code = errData.code || (res.status === 403 ? 'private_locked' : 'synthesis_failed');
+      throw e;
     }
   } catch (daemonErr) {
-    // Only fallback to CLI if connection refused while daemon is booting
-    if (!String(daemonErr.message || '').includes('fetch failed') && !String(daemonErr.cause?.code || '').includes('ECONNREFUSED')) {
+    // Never bypass daemon token enforcement for private voices; only fallback to CLI if daemon is still booting for public voices
+    if (
+      voice.startsWith('private-') ||
+      (!String(daemonErr.message || '').includes('fetch failed') && !String(daemonErr.cause?.code || '').includes('ECONNREFUSED'))
+    ) {
       throw daemonErr;
     }
   }
 
-  // 2. Fallback one-shot CLI
+  // 2. Fallback one-shot CLI (public voices only while daemon warms up)
   return new Promise((resolve, reject) => {
     const py = spawn(PYTHON_BIN, [ENGINE_FREE_SCRIPT], { cwd: __dirname });
     const chunks = [];
@@ -264,13 +274,26 @@ let lastRequestTime = 0;
 const MIN_GAP_BETWEEN_REQUESTS_MS = 20000; // 20s gap between multi-chunk requests
 
 /**
- * Chuẩn hóa văn bản tiếng Việt & sửa triệt để lỗi phát âm AI:
- * - Phiên âm các từ tiếng Anh / viết tắt thông dụng: AI -> Ây Ai, Studio -> X-tu-đi-ô, audio -> ao-đi-ô.
- * - Chuyển từ VIẾT HOA TOÀN BỘ (ALL CAPS >= 2 ký tự) thành Viết hoa chữ đầu (Titlecase).
- *   (Tránh trường hợp AI hiểu nhầm là từ viết tắt nên tách từng chữ ra đánh vần).
- * - Sửa lỗi nuốt âm tên riêng trước dấu chấm than (ví dụ: Chào Quân! -> Chào bạn Quân!).
- * - Xóa ký tự rác ẩn, non-breaking spaces, chuẩn hóa dấu câu.
+ * Chuẩn hóa văn bản theo ngôn ngữ của giọng đọc:
+ * - Với giọng Tiếng Việt (vi-*, free-vi-*, private-*): phiên âm từ mượn (AI -> Ây Ai, video -> vi-đê-ô...) & sửa từ IN HOA.
+ * - Với giọng Quốc tế (free-intl-* hoặc ngôn ngữ khác): giữ nguyên 100% chữ bản ngữ (Anh, Trung, Nhật, Hàn, Nga, Ả Rập...), chỉ làm sạch ký tự ẩn!
  */
+function normalizeTextForVoice(text, voice = '') {
+  if (!text) return '';
+  const isInternational = voice.startsWith('free-intl-') || (
+    voice && !voice.startsWith('vi-') && !voice.startsWith('free-vi-') && !voice.startsWith('private-')
+  );
+  if (isInternational) {
+    return text
+      .normalize('NFC')
+      .replace(/[\u00a0\u200b\u200e\u200f\ufeff]/g, ' ')
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+/g, ' ')
+      .trim();
+  }
+  return normalizeVietnameseText(text);
+}
+
 function normalizeVietnameseText(text) {
   if (!text) return '';
   let clean = text
@@ -423,10 +446,35 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon'
 };
 
+function readJsonBody(req, maxBytes = 48 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    req.on('data', chunk => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        reject(new Error('Dữ liệu tải lên vượt quá giới hạn cho phép (48MB).'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      try {
+        const raw = Buffer.concat(chunks).toString('utf-8');
+        resolve(JSON.parse(raw || '{}'));
+      } catch (e) {
+        reject(new Error('Định dạng dữ liệu JSON không hợp lệ.'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Owner-Token, X-Audio-Bitrate');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -437,7 +485,56 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
   const pathname = parsedUrl.pathname;
 
-  // 1. API: Get Voices Catalog (includes all 24 new Pro Vietnamese voices)
+  // 0. API: Private Voice Vault (Owner-Protected Encrypted Voice Cloning)
+  if (pathname.startsWith('/api/private-voices/')) {
+    const subRoute = pathname.replace('/api/private-voices/', '');
+    const daemonMap = {
+      'status': { method: 'GET', path: '/private/status' },
+      'unlock': { method: 'POST', path: '/private/unlock' },
+      'lock': { method: 'POST', path: '/private/lock' },
+      'change-pin': { method: 'POST', path: '/private/change-pin' },
+      'enroll': { method: 'POST', path: '/private/enroll', invalidateCache: true },
+      'delete': { method: 'POST', path: '/private/delete', invalidateCache: true }
+    };
+    const target = daemonMap[subRoute];
+    if (!target || req.method !== target.method) {
+      res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: 'Endpoint không tồn tại.' }));
+      return;
+    }
+
+    try {
+      const ownerToken = req.headers['x-owner-token'] || '';
+      const headers = { 'Content-Type': 'application/json' };
+      if (ownerToken) headers['X-Owner-Token'] = ownerToken;
+
+      let fetchOpts = { method: target.method, headers };
+      if (target.method === 'POST') {
+        const payload = await readJsonBody(req);
+        fetchOpts.body = JSON.stringify(payload);
+      }
+
+      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}${target.path}`, fetchOpts);
+      const data = await dRes.json().catch(() => ({ success: false, error: `Daemon HTTP ${dRes.status}` }));
+      if (dRes.ok && target.invalidateCache) {
+        cachedFreeVoices = null;
+      }
+      res.writeHead(dRes.status, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(data));
+    } catch (err) {
+      console.error(`[Private Vault API Error - ${subRoute}]:`, err);
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: false,
+        error: String(err.message || '').includes('fetch failed')
+          ? 'Đang khởi động AI Engine 48kHz, vui lòng thử lại sau 2 giây!'
+          : err.message
+      }));
+    }
+    return;
+  }
+
+  // 1. API: Get Voices Catalog (includes Private Cloned Voices + 32 Global Languages + 24 Pro Vietnamese voices)
   if (pathname === '/api/cheap-tts/voices' && req.method === 'GET') {
     try {
       const keyHeader = req.headers.authorization?.replace(/^Bearer\s+/i, '');
@@ -466,7 +563,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 1.1 API: List Free Open Source Voices (Edge Neural, Google, TikTok, Thiện Tâm, Ngọc Huyền...)
+  // 1.1 API: List Free Open Source + Private Voices
   if (pathname === '/api/free-tts/voices' && req.method === 'GET') {
     try {
       const voices = await getVoicesFree();
@@ -480,31 +577,76 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 1.2 API: Synthesize Audio via Free Open Source Engine
+  // 1.2 API: Synthesize Audio via Free Studio 48kHz / Private Clone / Global 32 Languages Engine
   if (pathname === '/api/free-tts/synthesize' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const payload = JSON.parse(body || '{}');
-        const rawText = payload.text?.trim();
-        const text = normalizeVietnameseText(rawText);
-        const voice = payload.voice || 'free-vi-ngoc-huyen';
-        const rate = parseFloat(payload.rate) || 1.0;
-        const pause = payload.pauses?.sentence ? parseFloat(payload.pauses.sentence) : 0.35;
+    try {
+      const payload = await readJsonBody(req);
+      const voice = payload.voice || 'free-vi-ngoc-huyen';
+      const rawText = payload.text?.trim();
+      const text = normalizeTextForVoice(rawText, voice);
+      const rate = parseFloat(payload.rate) || 1.0;
+      const pause = payload.pauses?.sentence ? parseFloat(payload.pauses.sentence) : 0.40;
+      const ownerToken = req.headers['x-owner-token'] || payload.ownerToken || '';
 
-        if (!text) {
-          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify({ success: false, error: 'Vui lòng nhập văn bản cần đọc.' }));
-          return;
-        }
+      if (!text) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: 'Vui lòng nhập văn bản cần đọc.' }));
+        return;
+      }
 
+      if (!cachedFreeVoices) {
+        await getVoicesFree().catch(() => {});
+      }
+
+      console.log(`[Studio 48kHz Engine] Synthesizing ${text.length} chars with voice ${voice}...`);
+      const result = await synthesizeFree(text, voice, rate, pause, ownerToken);
+      res.writeHead(200, {
+        'Content-Type': 'audio/wav',
+        'Content-Length': result.audio.length,
+        'X-Audio-Seconds': result.seconds.toFixed(1),
+        'X-Audio-Voice': voice,
+        'X-Voice-Name': encodeURIComponent(result.voice.name || voice),
+        'X-Total-Chunks': '1'
+      });
+      res.end(result.audio);
+    } catch (err) {
+      console.error('[Studio Engine Error]:', err.message);
+      res.writeHead(err.status || 500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: false,
+        code: err.code || 'synthesis_failed',
+        error: err.message
+      }));
+    }
+    return;
+  }
+
+  // 2. API: Synthesize Audio (Unified endpoint for Batch / Chapters / Cloud / Free / Private)
+  if (pathname === '/api/cheap-tts/synthesize' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req);
+      const voice = payload.voice || 'free-vi-ngoc-huyen';
+      const rawText = payload.text?.trim();
+      const text = normalizeTextForVoice(rawText, voice);
+      const rate = parseFloat(payload.rate) || 1.0;
+      const pauses = payload.pauses;
+      const key = payload.key || req.headers.authorization?.replace(/^Bearer\s+/i, '') || DEFAULT_KEY;
+      const ownerToken = req.headers['x-owner-token'] || payload.ownerToken || '';
+
+      if (!text) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: 'Vui lòng nhập văn bản cần đọc.' }));
+        return;
+      }
+
+      // Support free open source & private cloned voices directly via same endpoint (returns WAV 48kHz)
+      if (voice.startsWith('free-') || voice.startsWith('private-')) {
         if (!cachedFreeVoices) {
           await getVoicesFree().catch(() => {});
         }
-
-        console.log(`[Free Engine] Synthesizing ${text.length} chars with voice ${voice}...`);
-        const result = await synthesizeFree(text, voice, rate, pause);
+        const pause = pauses?.sentence ? parseFloat(pauses.sentence) : 0.40;
+        console.log(`[Studio Engine via Synthesize] Synthesizing ${text.length} chars (Voice: ${voice})...`);
+        const result = await synthesizeFree(text, voice, rate, pause, ownerToken);
         res.writeHead(200, {
           'Content-Type': 'audio/wav',
           'Content-Length': result.audio.length,
@@ -514,167 +656,118 @@ const server = http.createServer(async (req, res) => {
           'X-Total-Chunks': '1'
         });
         res.end(result.audio);
-      } catch (err) {
-        console.error('[Free Engine Error]:', err);
-        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ success: false, error: err.message }));
+        return;
       }
-    });
-    return;
-  }
 
-  // 2. API: Synthesize Audio
-  if (pathname === '/api/cheap-tts/synthesize' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const payload = JSON.parse(body || '{}');
-        const rawText = payload.text?.trim();
-        const text = normalizeVietnameseText(rawText);
-        const voice = payload.voice || 'free-vi-ngoc-huyen';
-        const rate = parseFloat(payload.rate) || 1.0;
-        const pauses = payload.pauses;
-        const key = payload.key || req.headers.authorization?.replace(/^Bearer\s+/i, '') || DEFAULT_KEY;
-
-        if (!text) {
-          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify({ success: false, error: 'Vui lòng nhập văn bản cần đọc.' }));
-          return;
-        }
-
-        // Support free open source voices directly via same endpoint (returns WAV 22050Hz)
-        if (voice.startsWith('free-')) {
-          if (!cachedFreeVoices) {
-            await getVoicesFree().catch(() => {});
-          }
-          const pause = pauses?.sentence ? parseFloat(pauses.sentence) : 0.35;
-          console.log(`[Free Engine via Synthesize] Synthesizing ${text.length} chars (Voice: ${voice})...`);
-          const result = await synthesizeFree(text, voice, rate, pause);
-          res.writeHead(200, {
-            'Content-Type': 'audio/wav',
-            'Content-Length': result.audio.length,
-            'X-Audio-Seconds': result.seconds.toFixed(1),
-            'X-Audio-Voice': voice,
-            'X-Voice-Name': encodeURIComponent(result.voice.name || voice),
-            'X-Total-Chunks': '1'
-          });
-          res.end(result.audio);
-          return;
-        }
-
-        // Allow up to 500,000 characters (~80,000 words)
-        if (text.length > 500000) {
-          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify({
-            success: false,
-            error: `Văn bản này quá lớn (${text.length.toLocaleString()} ký tự). Giới hạn tối đa là 500.000 ký tự (~80.000 từ). Vui lòng chia nhỏ thành các file hoặc chương để xử lý tốt nhất!`,
-            code: 'payload_too_large'
-          }));
-          return;
-        }
-
-        const isProVoice = voice.startsWith('vi-pro-');
-        const tts = isProVoice ? null : getTtsClient(key);
-
-        // Pro voices accept up to 1,000 chars/call; Standard voices accept up to 4,800 chars
-        const maxChunkChars = isProVoice ? 950 : 4800;
-        const chunks = splitTextIntoSafeChunks(text, maxChunkChars);
-        console.log(`[Cheap-TTS] Synthesizing ${text.length} chars in ${chunks.length} chunk(s) (Voice: ${voice}, Pro: ${isProVoice})...`);
-
-        const wavBuffers = [];
-        let totalSeconds = 0;
-        let voiceInfo = null;
-
-        for (let i = 0; i < chunks.length; i++) {
-          const chunkText = chunks[i];
-          let result;
-
-          if (isProVoice) {
-            console.log(`[Cheap-TTS Pro] Processing chunk ${i + 1}/${chunks.length} (${chunkText.length} chars) with Python engine...`);
-            result = await synthesizeWithPython(chunkText, voice, rate, key);
-          } else {
-            console.log(`[Cheap-TTS Standard] Processing chunk ${i + 1}/${chunks.length} (${chunkText.length} chars)...`);
-            const synthOptions = {
-              text: chunkText,
-              voice,
-              rate
-            };
-            if (pauses) {
-              synthOptions.pauses = pauses;
-            }
-            result = await synthesizeWithRateLimit(tts, synthOptions);
-          }
-
-          wavBuffers.push(result.audio);
-          totalSeconds += result.seconds;
-          voiceInfo = result.voice;
-
-          if (i < chunks.length - 1) {
-            const gap = isProVoice ? 2000 : 15000;
-            console.log(`[Cheap-TTS] Waiting ${gap}ms between sub-chunks...`);
-            await sleep(gap);
-          }
-        }
-
-        const pauseDuration = pauses?.sentence ? parseFloat(pauses.sentence) : 0.25;
-        const mergedAudio = mergeWavBuffers(wavBuffers, pauseDuration);
-        console.log(`[Cheap-TTS] Finished! Generated ${totalSeconds.toFixed(1)}s audio (${mergedAudio.length} bytes).`);
-
-        res.writeHead(200, {
-          'Content-Type': 'audio/wav',
-          'Content-Length': mergedAudio.length,
-          'X-Audio-Seconds': totalSeconds.toFixed(1),
-          'X-Total-Chunks': chunks.length.toString(),
-          'X-Voice-Name': encodeURIComponent(voiceInfo?.name || voice),
-          'Content-Disposition': `attachment; filename="cheap-tts-${voice}-${Date.now()}.wav"`
-        });
-        res.end(mergedAudio);
-      } catch (err) {
-        console.error('Synthesis error:', err);
-        let errorMsg = err.message || 'Lỗi khi tạo giọng nói';
-        if (err.code === 'rate_limited' || err.status === 429) {
-          errorMsg = 'Tài khoản Cheap-TTS đang bị giới hạn tần suất gọi (3 lần/phút). Vui lòng đợi 30 giây rồi thử lại, hoặc dùng tab "Trình duyệt (Web Speech)" để đọc không giới hạn!';
-        }
-        res.writeHead(err.status || 500, { 'Content-Type': 'application/json; charset=utf-8' });
+      // Allow up to 500,000 characters (~80,000 words)
+      if (text.length > 500000) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({
           success: false,
-          error: errorMsg,
-          code: err.code || 'synthesis_failed'
+          error: `Văn bản này quá lớn (${text.length.toLocaleString()} ký tự). Giới hạn tối đa là 500.000 ký tự (~80.000 từ). Vui lòng chia nhỏ thành các file hoặc chương để xử lý tốt nhất!`,
+          code: 'payload_too_large'
         }));
+        return;
       }
-    });
+
+      const isProVoice = voice.startsWith('vi-pro-');
+      const tts = isProVoice ? null : getTtsClient(key);
+
+      // Pro voices accept up to 1,000 chars/call; Standard voices accept up to 4,800 chars
+      const maxChunkChars = isProVoice ? 950 : 4800;
+      const chunks = splitTextIntoSafeChunks(text, maxChunkChars);
+      console.log(`[Cheap-TTS] Synthesizing ${text.length} chars in ${chunks.length} chunk(s) (Voice: ${voice}, Pro: ${isProVoice})...`);
+
+      const wavBuffers = [];
+      let totalSeconds = 0;
+      let voiceInfo = null;
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunkText = chunks[i];
+        let result;
+
+        if (isProVoice) {
+          console.log(`[Cheap-TTS Pro] Processing chunk ${i + 1}/${chunks.length} (${chunkText.length} chars) with Python engine...`);
+          result = await synthesizeWithPython(chunkText, voice, rate, key);
+        } else {
+          console.log(`[Cheap-TTS Standard] Processing chunk ${i + 1}/${chunks.length} (${chunkText.length} chars)...`);
+          const synthOptions = {
+            text: chunkText,
+            voice,
+            rate
+          };
+          if (pauses) {
+            synthOptions.pauses = pauses;
+          }
+          result = await synthesizeWithRateLimit(tts, synthOptions);
+        }
+
+        wavBuffers.push(result.audio);
+        totalSeconds += result.seconds;
+        voiceInfo = result.voice;
+
+        if (i < chunks.length - 1) {
+          const gap = isProVoice ? 2000 : 15000;
+          console.log(`[Cheap-TTS] Waiting ${gap}ms between sub-chunks...`);
+          await sleep(gap);
+        }
+      }
+
+      const pauseDuration = pauses?.sentence ? parseFloat(pauses.sentence) : 0.25;
+      const mergedAudio = mergeWavBuffers(wavBuffers, pauseDuration);
+      console.log(`[Cheap-TTS] Finished! Generated ${totalSeconds.toFixed(1)}s audio (${mergedAudio.length} bytes).`);
+
+      res.writeHead(200, {
+        'Content-Type': 'audio/wav',
+        'Content-Length': mergedAudio.length,
+        'X-Audio-Seconds': totalSeconds.toFixed(1),
+        'X-Total-Chunks': chunks.length.toString(),
+        'X-Voice-Name': encodeURIComponent(voiceInfo?.name || voice),
+        'Content-Disposition': `attachment; filename="cheap-tts-${voice}-${Date.now()}.wav"`
+      });
+      res.end(mergedAudio);
+    } catch (err) {
+      console.error('Synthesis error:', err);
+      let errorMsg = err.message || 'Lỗi khi tạo giọng nói';
+      if (err.code === 'rate_limited' || err.status === 429) {
+        errorMsg = 'Tài khoản Cheap-TTS đang bị giới hạn tần suất gọi (3 lần/phút). Vui lòng đợi 30 giây rồi thử lại, hoặc dùng tab "AI Miễn Phí (Không giới hạn)"!';
+      }
+      res.writeHead(err.status || 500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: false,
+        error: errorMsg,
+        code: err.code || 'synthesis_failed'
+      }));
+    }
     return;
   }
 
-  // 3. API: Convert WAV to lightweight MP3 using FFmpeg (libmp3lame)
+  // 3. API: Convert WAV to lightweight Studio MP3 using FFmpeg (libmp3lame)
   if (pathname === '/api/audio/convert-to-mp3' && req.method === 'POST') {
     const tempId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const tempWav = path.join('/tmp', `vietvoice_in_${tempId}.wav`);
     const tempMp3 = path.join('/tmp', `vietvoice_out_${tempId}.mp3`);
 
-    // Parse requested bitrate (?bitrate=48k or header X-Audio-Bitrate: 48k)
-    // Speech audio in mono (-ac 1) at 48k reduces file size by 65-70% with pristine voice clarity!
     const validBitrates = ['32k', '48k', '64k', '96k', '128k', '192k'];
     const paramBitrate = parsedUrl.searchParams ? parsedUrl.searchParams.get('bitrate') : null;
     const requestedBitrate = paramBitrate || req.headers['x-audio-bitrate'] || '48k';
     const bitrate = validBitrates.includes(requestedBitrate) ? requestedBitrate : '48k';
+    const mp3SampleRate = bitrate === '32k' ? '24000' : (bitrate === '48k' ? '32000' : '48000');
 
-    console.log(`[FFmpeg] Receiving WAV audio for MP3 conversion at ${bitrate} mono...`);
+    console.log(`[FFmpeg] Receiving WAV audio for MP3 conversion at ${bitrate} mono (${mp3SampleRate}Hz)...`);
     const fileStream = fs.createWriteStream(tempWav);
     req.pipe(fileStream);
 
     fileStream.on('finish', () => {
       const ffmpegPath = fs.existsSync('/opt/homebrew/bin/ffmpeg') ? '/opt/homebrew/bin/ffmpeg' : 'ffmpeg';
-      
-      // Convert to ultra-lightweight mono MP3
+
       const ffmpegArgs = [
         '-y',
         '-i', tempWav,
         '-codec:a', 'libmp3lame',
         '-b:a', bitrate,
         '-ac', '1',
-        '-ar', '22050',
+        '-ar', mp3SampleRate,
         tempMp3
       ];
 
@@ -723,9 +816,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 4. Static Files Delivery
+  // 4. Static Files Delivery (with strict Vault & Source Firewall!)
   let safePath = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, '');
   if (safePath === '/' || safePath === '') safePath = '/index.html';
+
+  const lowerSafe = safePath.toLowerCase();
+  if (
+    lowerSafe.startsWith('/private_voices') ||
+    lowerSafe.startsWith('/open_models') ||
+    lowerSafe.startsWith('/venv') ||
+    lowerSafe.startsWith('/.git') ||
+    lowerSafe.startsWith('/.env') ||
+    lowerSafe.endsWith('.py') ||
+    lowerSafe.endsWith('vault.json') ||
+    lowerSafe === '/server.js' ||
+    lowerSafe === '/package.json'
+  ) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden - Protected Private Resource');
+    return;
+  }
 
   const filePath = path.join(__dirname, safePath);
   const ext = path.extname(filePath).toLowerCase();
@@ -746,7 +856,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`=======================================================`);
-  console.log(`🎙️  VoiceViet đang chạy tại: http://0.0.0.0:${PORT}`);
-  console.log(`⚡ Cơ chế Rate-Limit Shield (Bảo vệ chống lỗi 429 Cheap-TTS)`);
+  console.log(`🎙️  VoiceViet Studio v4.0 đang chạy tại: http://0.0.0.0:${PORT}`);
+  console.log(`🔒 Bảo vệ Giọng Nhân Bản Độc Quyền + 32 Ngôn Ngữ Quốc Tế`);
   console.log(`=======================================================`);
 });

@@ -1,0 +1,8 @@
+node_modules
+venv
+dist-desktop
+open_models
+private_voices
+.git
+*.wav
+*.mp3

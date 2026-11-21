@@ -118,12 +118,14 @@
   }
 
   // =========================================================================
-  // 4. DYNAMIC VOICE CATALOG & DIALOGUE VOICE OPTIONS SYNC
+  // 4. DYNAMIC 32-LANGUAGE CATALOG, DIALOGUE SYNC & PRIVATE VOICE VAULT 48KHZ
   // =========================================================================
   const voiceSelect = document.getElementById('voiceSelect');
+  const languageFilterSelect = document.getElementById('languageFilterSelect');
   const voiceCatalogGrid = document.getElementById('voiceCatalogGrid');
   const voiceSearchInput = document.getElementById('voiceSearchInput');
-  let allLoadedViVoices = [];
+  const catalogLanguageFilter = document.getElementById('catalogLanguageFilter');
+  let allCatalogVoices = [];
 
   function escapeHtmlSafe(str) {
     return String(str || '')
@@ -133,26 +135,61 @@
       .replace(/"/g, '&quot;');
   }
 
+  function matchesCatalogCategory(v, cat) {
+    if (!cat || cat === 'all') return true;
+    const lang = (v.language || '').toLowerCase();
+    const isPriv = Boolean(v.isPrivate || v.id.startsWith('private-'));
+    if (cat === 'private') return isPriv;
+    if (cat === 'vi') return (lang === 'vi' || v.id.startsWith('vi-')) && !isPriv;
+    if (cat === 'en') return lang.startsWith('en');
+    if (cat === 'zh') return lang.startsWith('zh');
+    if (cat === 'ja') return lang.startsWith('ja');
+    if (cat === 'ko') return lang.startsWith('ko');
+    if (cat === 'sea') return ['th', 'id', 'ms', 'fil'].some(p => lang.startsWith(p));
+    if (cat === 'eu_west') return ['fr', 'de', 'es', 'it', 'pt', 'nl'].some(p => lang.startsWith(p));
+    if (cat === 'ru_east') return ['ru', 'uk', 'pl', 'cs', 'sv', 'da', 'fi', 'el', 'ro', 'hu'].some(p => lang.startsWith(p));
+    if (cat === 'asia_me') return ['hi', 'ar', 'tr'].some(p => lang.startsWith(p));
+    return true;
+  }
+
   function buildVoiceOptionsHtml(selectedId) {
-    if (!allLoadedViVoices || allLoadedViVoices.length === 0) {
+    if (!allCatalogVoices || allCatalogVoices.length === 0) {
       return `
         <option value="free-vi-ngoc-huyen" ${selectedId === 'free-vi-ngoc-huyen' ? 'selected' : ''}>✨ Ngọc Huyền (Studio 48kHz)</option>
         <option value="free-vi-minh-quan" ${selectedId === 'free-vi-minh-quan' ? 'selected' : ''}>✨ Minh Quân (Studio 48kHz)</option>
         <option value="free-vi-thien-tam" ${selectedId === 'free-vi-thien-tam' ? 'selected' : ''}>✨ Thiện Tâm (Studio 48kHz)</option>
-        <option value="free-vi-adam-tiktok" ${selectedId === 'free-vi-adam-tiktok' ? 'selected' : ''}>✨ Adam TikTok (Studio 48kHz)</option>
-        <option value="free-vi-hoaimy" ${selectedId === 'free-vi-hoaimy' ? 'selected' : ''}>✨ Hoài My (Neural)</option>
-        <option value="free-vi-namminh" ${selectedId === 'free-vi-namminh' ? 'selected' : ''}>✨ Nam Minh (Neural)</option>
       `;
     }
-    const freeStudio = allLoadedViVoices.filter(v => v.id.startsWith('free-') && v.language === 'vi');
-    const proCloud = allLoadedViVoices.filter(v => v.id.startsWith('vi-'));
+    const privVoices = allCatalogVoices.filter(v => v.isPrivate || v.id.startsWith('private-'));
+    const freeStudioVi = allCatalogVoices.filter(v => v.id.startsWith('free-') && v.language === 'vi' && !v.isPrivate);
+    const freeGlobal = allCatalogVoices.filter(v => v.id.startsWith('free-') && v.language !== 'vi');
+    const proCloud = allCatalogVoices.filter(v => v.id.startsWith('vi-'));
 
-    let html = '<optgroup label="✨ Giọng AI Miễn Phí Chuẩn Studio 48kHz (Khuyên dùng)">';
-    freeStudio.forEach(v => {
+    let html = '';
+    if (privVoices.length > 0) {
+      html += '<optgroup label="🔒 Giọng Nhân Bản Độc Quyền Của Tôi (48kHz Chủ Sở Hữu)">';
+      privVoices.forEach(v => {
+        const sel = v.id === selectedId ? 'selected' : '';
+        html += `<option value="${v.id}" ${sel}>🔒 ${escapeHtmlSafe(v.name)} (${v.gender || 'Chính chủ'})</option>`;
+      });
+      html += '</optgroup>';
+    }
+
+    html += '<optgroup label="✨ Giọng AI Tiếng Việt Studio 48kHz (Khuyên dùng)">';
+    freeStudioVi.forEach(v => {
       const sel = v.id === selectedId ? 'selected' : '';
       html += `<option value="${v.id}" ${sel}>✨ ${escapeHtmlSafe(v.name)} (${v.gender || 'VN'})</option>`;
     });
     html += '</optgroup>';
+
+    if (freeGlobal.length > 0) {
+      html += '<optgroup label="🌍 32 Ngôn Ngữ Quốc Tế Chuẩn ElevenLabs">';
+      freeGlobal.forEach(v => {
+        const sel = v.id === selectedId ? 'selected' : '';
+        html += `<option value="${v.id}" ${sel}>${escapeHtmlSafe(v.country || v.language)} • ${escapeHtmlSafe(v.name)}</option>`;
+      });
+      html += '</optgroup>';
+    }
 
     if (proCloud.length > 0) {
       html += '<optgroup label="⚡ Giọng Cheap-TTS Cloud">';
@@ -173,102 +210,139 @@
     });
   }
 
+  function renderCatalogCards() {
+    if (!voiceCatalogGrid || !allCatalogVoices.length) return;
+    const cat = catalogLanguageFilter ? catalogLanguageFilter.value : 'all';
+    const query = voiceSearchInput ? voiceSearchInput.value.toLowerCase().trim() : '';
+
+    const visibleVoices = allCatalogVoices.filter(v => {
+      if (!matchesCatalogCategory(v, cat)) return false;
+      if (!query) return true;
+      const hay = `${v.name} ${v.country || ''} ${v.useCase || ''} ${v.language || ''} ${v.id}`.toLowerCase();
+      return hay.includes(query);
+    });
+
+    voiceCatalogGrid.innerHTML = '';
+    if (visibleVoices.length === 0) {
+      voiceCatalogGrid.innerHTML = '<div class="col-span-full text-center py-8 text-xs text-slate-400 italic">Không tìm thấy giọng đọc nào khớp với bộ lọc hiện tại.</div>';
+      return;
+    }
+
+    visibleVoices.forEach(v => {
+      const isPriv = Boolean(v.isPrivate || v.id.startsWith('private-'));
+      const isFreeVi = v.id.startsWith('free-') && v.language === 'vi' && !isPriv;
+      const isGlobal = v.id.startsWith('free-') && v.language !== 'vi';
+      const isPro = v.id.startsWith('vi-pro-');
+
+      const cleanLetters = v.name.replace(/[^\p{L}\s]/gu, '').trim();
+      const initials = (cleanLetters || v.name).split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+      let badgeColor = 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+      let avatarBg = 'bg-slate-800 text-amber-400 border border-slate-700';
+      let cardBorder = 'border-slate-800 hover:border-amber-500/50';
+      let badgeText = v.badge || 'Tiêu Chuẩn';
+      let btnBg = 'bg-slate-800 hover:bg-slate-700 text-slate-200';
+
+      if (isPriv) {
+        badgeColor = 'bg-amber-500/25 text-amber-300 border-amber-400/50';
+        avatarBg = 'bg-gradient-to-tr from-amber-500 to-orange-600 text-slate-950';
+        cardBorder = 'border-amber-500/50 hover:border-amber-400 bg-gradient-to-br from-amber-950/20 to-slate-900/90';
+        badgeText = '🔒 ĐỘC QUYỀN 48kHz';
+        btnBg = 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 text-slate-950 font-bold';
+      } else if (isFreeVi) {
+        badgeColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+        avatarBg = 'bg-gradient-to-tr from-emerald-600 to-teal-600 text-white';
+        cardBorder = 'border-emerald-500/30 hover:border-emerald-400';
+        badgeText = v.badge || 'STUDIO 48kHz';
+        btnBg = 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white';
+      } else if (isGlobal) {
+        badgeColor = 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30';
+        avatarBg = 'bg-gradient-to-tr from-cyan-600 to-blue-600 text-white';
+        cardBorder = 'border-cyan-500/30 hover:border-cyan-400';
+        badgeText = v.country || 'GLOBAL HD';
+        btnBg = 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white';
+      } else if (isPro) {
+        badgeColor = 'bg-purple-500/20 text-purple-300 border-purple-500/30';
+        avatarBg = 'bg-gradient-to-tr from-purple-600 to-indigo-600 text-white';
+        cardBorder = 'border-purple-500/30 hover:border-purple-500';
+        badgeText = 'PRO 48kHz';
+        btnBg = 'bg-purple-600 hover:bg-purple-500 text-white';
+      }
+
+      const card = document.createElement('div');
+      card.className = `p-4 rounded-xl bg-slate-900/80 border ${cardBorder} transition-all flex flex-col justify-between gap-3 shadow-lg`;
+      card.innerHTML = `
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-full ${avatarBg} flex items-center justify-center font-bold text-xs shrink-0 shadow-md">
+            ${isPriv ? '<i class="fa-solid fa-crown text-sm"></i>' : escapeHtmlSafe(initials)}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-1">
+              <h4 class="text-xs font-bold text-white truncate" title="${escapeHtmlSafe(v.name)}">${escapeHtmlSafe(v.name)}</h4>
+              <span class="text-[9px] ${badgeColor} border px-1.5 py-0.2 rounded font-mono shrink-0">${escapeHtmlSafe(badgeText)}</span>
+            </div>
+            <p class="text-[11px] text-slate-300 font-medium mt-0.5 line-clamp-2">${escapeHtmlSafe(v.useCase || v.id)}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="preview-voice-quick-btn px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
+            <i class="fa-solid fa-volume-high mr-1"></i>Nghe thử
+          </button>
+          <button class="select-voice-quick-btn flex-1 py-1.5 ${btnBg} rounded-lg text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
+            Chọn Giọng Này
+          </button>
+        </div>
+      `;
+      voiceCatalogGrid.appendChild(card);
+    });
+
+    voiceCatalogGrid.querySelectorAll('.preview-voice-quick-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const vId = btn.getAttribute('data-voice-id');
+        const vName = btn.getAttribute('data-voice-name');
+        if (typeof window.previewSpecificVoice === 'function') {
+          const orig = btn.innerHTML;
+          btn.disabled = true;
+          btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+          await window.previewSpecificVoice(vId, vName);
+          btn.disabled = false;
+          btn.innerHTML = orig;
+        }
+      });
+    });
+
+    voiceCatalogGrid.querySelectorAll('.select-voice-quick-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const vId = btn.getAttribute('data-voice-id');
+        const vName = btn.getAttribute('data-voice-name');
+        if (voiceSelect && vId) {
+          if (languageFilterSelect) {
+            languageFilterSelect.value = 'all';
+            languageFilterSelect.dispatchEvent(new Event('change'));
+          }
+          if (typeof window.switchEngine === 'function') {
+            window.switchEngine((vId.startsWith('free-') || vId.startsWith('private-')) ? 'free' : 'cheaptts');
+          }
+          voiceSelect.value = vId;
+          voiceSelect.dispatchEvent(new Event('change'));
+          switchView('viewStudio');
+          if (typeof showToast === 'function') {
+            showToast(`Đã chọn giọng: ${vName}`, 'success');
+          }
+        }
+      });
+    });
+  }
+
   async function loadAndRenderVoiceCatalog() {
     try {
       const res = await fetch('/api/cheap-tts/voices');
       const data = await res.json();
       if (!data.success || !data.voices) return;
 
-      const viVoices = data.voices.filter(v => v.language === 'vi' || v.id.startsWith('vi') || v.id.startsWith('free-vi'));
-      allLoadedViVoices = viVoices;
+      allCatalogVoices = data.voices;
       refreshAllDialogueSelects();
-
-      if (!voiceCatalogGrid || viVoices.length === 0) return;
-      voiceCatalogGrid.innerHTML = '';
-
-      viVoices.forEach(v => {
-        const isFree = v.id.startsWith('free-');
-        const isPro = v.id.startsWith('vi-pro-');
-        const initials = v.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-        let badgeColor = 'bg-amber-500/20 text-amber-300 border-amber-500/30';
-        let avatarBg = 'bg-slate-800 text-amber-400 border border-slate-700';
-        let cardBorder = 'border-slate-800 hover:border-amber-500/50';
-        let badgeText = 'Tiêu Chuẩn';
-        let btnBg = 'bg-slate-800 hover:bg-slate-700 text-slate-200';
-
-        if (isFree) {
-          badgeColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
-          avatarBg = 'bg-gradient-to-tr from-emerald-600 to-teal-600 text-white';
-          cardBorder = 'border-emerald-500/30 hover:border-emerald-400';
-          badgeText = v.badge || 'STUDIO 48kHz';
-          btnBg = 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white';
-        } else if (isPro) {
-          badgeColor = 'bg-purple-500/20 text-purple-300 border-purple-500/30';
-          avatarBg = 'bg-gradient-to-tr from-purple-600 to-indigo-600 text-white';
-          cardBorder = 'border-purple-500/30 hover:border-purple-500';
-          badgeText = 'PRO 48kHz';
-          btnBg = 'bg-purple-600 hover:bg-purple-500 text-white';
-        }
-
-        const card = document.createElement('div');
-        card.className = `p-4 rounded-xl bg-slate-900/80 border ${cardBorder} transition-all flex flex-col justify-between gap-3 shadow-lg`;
-        card.innerHTML = `
-          <div class="flex items-start gap-3">
-            <div class="w-10 h-10 rounded-full ${avatarBg} flex items-center justify-center font-bold text-xs shrink-0 shadow-md">
-              ${escapeHtmlSafe(initials)}
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between gap-1">
-                <h4 class="text-xs font-bold text-white truncate">${escapeHtmlSafe(v.name)}</h4>
-                <span class="text-[9px] ${badgeColor} border px-1.5 py-0.2 rounded font-mono shrink-0">${escapeHtmlSafe(badgeText)}</span>
-              </div>
-              <p class="text-[11px] text-cyan-300 font-medium mt-0.5 line-clamp-2">${escapeHtmlSafe(v.useCase || v.id)}</p>
-            </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <button class="preview-voice-quick-btn px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
-              <i class="fa-solid fa-volume-high mr-1"></i>Nghe thử
-            </button>
-            <button class="select-voice-quick-btn flex-1 py-1.5 ${btnBg} rounded-lg text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
-              Chọn Giọng Này
-            </button>
-          </div>
-        `;
-        voiceCatalogGrid.appendChild(card);
-      });
-
-      voiceCatalogGrid.querySelectorAll('.preview-voice-quick-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const vId = btn.getAttribute('data-voice-id');
-          const vName = btn.getAttribute('data-voice-name');
-          if (typeof window.previewSpecificVoice === 'function') {
-            const orig = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-            await window.previewSpecificVoice(vId, vName);
-            btn.disabled = false;
-            btn.innerHTML = orig;
-          }
-        });
-      });
-
-      voiceCatalogGrid.querySelectorAll('.select-voice-quick-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const vId = btn.getAttribute('data-voice-id');
-          const vName = btn.getAttribute('data-voice-name');
-          if (voiceSelect && vId) {
-            if (typeof window.switchEngine === 'function') {
-              window.switchEngine(vId.startsWith('free-') ? 'free' : 'cheaptts');
-            }
-            voiceSelect.value = vId;
-            voiceSelect.dispatchEvent(new Event('change'));
-            switchView('viewStudio');
-            if (typeof showToast === 'function') {
-              showToast(`Đã chọn: ${vName}`, 'success');
-            }
-          }
-        });
-      });
+      renderCatalogCards();
     } catch (e) {
       console.warn('Cannot render dynamic voice catalog:', e);
     }
@@ -276,12 +350,447 @@
 
   loadAndRenderVoiceCatalog();
 
-  if (voiceSearchInput && voiceCatalogGrid) {
-    voiceSearchInput.addEventListener('input', (e) => {
-      const query = e.target.value.toLowerCase().trim();
-      voiceCatalogGrid.querySelectorAll('.p-4').forEach(card => {
-        card.style.display = card.textContent.toLowerCase().includes(query) ? 'flex' : 'none';
+  if (voiceSearchInput) {
+    voiceSearchInput.addEventListener('input', renderCatalogCards);
+  }
+  if (catalogLanguageFilter) {
+    catalogLanguageFilter.addEventListener('change', renderCatalogCards);
+  }
+
+  // =========================================================================
+  // 4.5 PRIVATE VOICE CLONE VAULT (OWNER PIN + MULTI-WINDOW 48KHZ ENROLLMENT)
+  // =========================================================================
+  const vaultLockStatusBadge = document.getElementById('vaultLockStatusBadge');
+  const sidebarVaultBadge = document.getElementById('sidebarVaultBadge');
+  const ownerPinInput = document.getElementById('ownerPinInput');
+  const btnTogglePinVisibility = document.getElementById('btnTogglePinVisibility');
+  const btnUnlockPrivateVault = document.getElementById('btnUnlockPrivateVault');
+  const btnLockPrivateVault = document.getElementById('btnLockPrivateVault');
+  const btnToggleChangePin = document.getElementById('btnToggleChangePin');
+  const changePinBox = document.getElementById('changePinBox');
+  const currentPinInput = document.getElementById('currentPinInput');
+  const newPinInput = document.getElementById('newPinInput');
+  const btnChangeOwnerPin = document.getElementById('btnChangeOwnerPin');
+  const privateVoicesList = document.getElementById('privateVoicesList');
+  const privateVoicesCountBadge = document.getElementById('privateVoicesCountBadge');
+
+  const cloneVoiceNameInput = document.getElementById('cloneVoiceNameInput');
+  const cloneVoiceGenderSelect = document.getElementById('cloneVoiceGenderSelect');
+  const cloneVoiceDescInput = document.getElementById('cloneVoiceDescInput');
+  const cloneAudioFileInput = document.getElementById('cloneAudioFileInput');
+  const btnPickCloneFile = document.getElementById('btnPickCloneFile');
+  const btnRecordCloneMic = document.getElementById('btnRecordCloneMic');
+  const recordCloneMicText = document.getElementById('recordCloneMicText');
+  const cloneDropZone = document.getElementById('cloneDropZone');
+  const cloneSelectedFileName = document.getElementById('cloneSelectedFileName');
+  const cloneSamplePreviewPlayer = document.getElementById('cloneSamplePreviewPlayer');
+  const cloneVoiceStatus = document.getElementById('cloneVoiceStatus');
+  const btnCreateCloneVoice = document.getElementById('btnCreateCloneVoice');
+
+  let pendingCloneBlob = null;
+  let micRecorder = null;
+  let micChunks = [];
+
+  function setVaultUnlockedBadges(isUnlocked) {
+    if (vaultLockStatusBadge) {
+      if (isUnlocked) {
+        vaultLockStatusBadge.className = 'text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1';
+        vaultLockStatusBadge.innerHTML = '<i class="fa-solid fa-unlock text-[10px]"></i> ĐÃ MỞ KHÓA CHỦ SỞ HỮU';
+      } else {
+        vaultLockStatusBadge.className = 'text-[11px] bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1';
+        vaultLockStatusBadge.innerHTML = '<i class="fa-solid fa-lock text-[10px]"></i> ĐANG KHÓA BẢO VỆ';
+      }
+    }
+    if (sidebarVaultBadge) {
+      if (isUnlocked) {
+        sidebarVaultBadge.className = 'text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded-md ml-auto font-semibold';
+        sidebarVaultBadge.textContent = '🔓 Đã Mở';
+      } else {
+        sidebarVaultBadge.className = 'text-[9px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.5 rounded-md ml-auto font-semibold';
+        sidebarVaultBadge.textContent = '🔒 Khóa';
+      }
+    }
+  }
+
+  function renderPrivateVoicesCards(voices, isUnlocked) {
+    if (!privateVoicesList) return;
+    if (privateVoicesCountBadge) {
+      privateVoicesCountBadge.textContent = `${voices.length} giọng độc quyền`;
+    }
+    if (!voices || voices.length === 0) {
+      privateVoicesList.innerHTML = '<div class="col-span-full p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400 italic text-center">Chưa có giọng nhân bản nào trong két sắt. Hãy tải file thu âm giọng của bạn lên khung bên dưới để nhân bản!</div>';
+      return;
+    }
+
+    privateVoicesList.innerHTML = '';
+    voices.forEach(v => {
+      const card = document.createElement('div');
+      card.className = 'p-4 rounded-2xl bg-gradient-to-br from-slate-900 via-amber-950/15 to-slate-900 border border-amber-500/40 flex flex-col justify-between gap-3 shadow-xl';
+      card.innerHTML = `
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-start gap-3">
+            <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 text-slate-950 flex items-center justify-center shadow-md shrink-0">
+              <i class="fa-solid fa-crown text-lg"></i>
+            </div>
+            <div>
+              <h4 class="text-xs sm:text-sm font-bold text-white flex flex-wrap items-center gap-1.5">
+                <span>${escapeHtmlSafe(v.name)}</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded font-mono ${isUnlocked ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'}">
+                  ${isUnlocked ? '🔓 Sẵn sàng' : '🔒 Đang khóa'}
+                </span>
+              </h4>
+              <p class="text-[11px] text-slate-300 mt-1 leading-relaxed">${escapeHtmlSafe(v.useCase || '')}</p>
+              ${v.createdAt ? `<p class="text-[10px] text-slate-500 mt-1 font-mono">Mã hóa lúc: ${escapeHtmlSafe(v.createdAt)} • Chuẩn 48.000 Hz</p>` : ''}
+            </div>
+          </div>
+          <button type="button" class="btn-delete-private-voice text-slate-500 hover:text-rose-400 text-xs p-1 cursor-pointer transition" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}" title="Xóa vĩnh viễn giọng này khỏi két sắt">
+            <i class="fa-regular fa-trash-can"></i>
+          </button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80">
+          <button type="button" class="btn-preview-priv px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
+            <i class="fa-solid fa-volume-high"></i> Nghe thử 48kHz
+          </button>
+          <button type="button" class="btn-use-priv-studio flex-1 py-1.5 px-3 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 text-slate-950 text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-1.5" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Chọn Dùng Ở Studio
+          </button>
+          <button type="button" class="btn-use-priv-dialogue px-3 py-1.5 rounded-lg bg-cyan-600/25 hover:bg-cyan-600/40 text-cyan-300 border border-cyan-500/40 text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}" title="Đưa giọng của bạn vào vai Người dẫn chuyện trong Hội Thoại Đa Giọng">
+            <i class="fa-solid fa-comments mr-1"></i>Đa Giọng
+          </button>
+        </div>
+      `;
+
+      card.querySelector('.btn-preview-priv')?.addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget;
+        if (typeof window.previewSpecificVoice === 'function') {
+          const orig = btn.innerHTML;
+          btn.disabled = true;
+          btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tạo...';
+          await window.previewSpecificVoice(v.id, v.name);
+          btn.disabled = false;
+          btn.innerHTML = orig;
+        }
       });
+
+      card.querySelector('.btn-use-priv-studio')?.addEventListener('click', async () => {
+        if (typeof window.ensurePrivateVoiceAuthorized === 'function') {
+          const ok = await window.ensurePrivateVoiceAuthorized(v.id);
+          if (!ok) return;
+        }
+        if (languageFilterSelect) {
+          languageFilterSelect.value = 'all';
+          languageFilterSelect.dispatchEvent(new Event('change'));
+        }
+        if (typeof window.switchEngine === 'function') window.switchEngine('free');
+        if (voiceSelect) {
+          voiceSelect.value = v.id;
+          voiceSelect.dispatchEvent(new Event('change'));
+        }
+        switchView('viewStudio');
+        if (typeof showToast === 'function') showToast(`👑 Đã chọn "${v.name}"! Sẵn sàng đọc kịch bản của bạn.`, 'success');
+      });
+
+      card.querySelector('.btn-use-priv-dialogue')?.addEventListener('click', async () => {
+        if (typeof window.ensurePrivateVoiceAuthorized === 'function') {
+          const ok = await window.ensurePrivateVoiceAuthorized(v.id);
+          if (!ok) return;
+        }
+        const selC = document.getElementById('dialogueVoiceC');
+        if (selC) selC.value = v.id;
+        switchView('viewDialogue');
+        if (typeof showToast === 'function') showToast(`👑 Đã gán "${v.name}" cho vai Người dẫn chuyện (C)!`, 'success');
+      });
+
+      card.querySelector('.btn-delete-private-voice')?.addEventListener('click', async () => {
+        if (!window.confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn giọng "${v.name}" khỏi Két Sắt không?`)) return;
+        if (typeof window.ensurePrivateVoiceAuthorized === 'function') {
+          const ok = await window.ensurePrivateVoiceAuthorized(v.id);
+          if (!ok) return;
+        }
+        try {
+          const tok = typeof window.getOwnerToken === 'function' ? window.getOwnerToken() : '';
+          const r = await fetch('/api/private-voices/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Owner-Token': tok },
+            body: JSON.stringify({ voiceId: v.id })
+          });
+          const d = await r.json();
+          if (!r.ok || !d.success) throw new Error(d.error || 'Không thể xóa giọng');
+          if (typeof window.reloadAllVoicesCatalog === 'function') await window.reloadAllVoicesCatalog();
+          await loadAndRenderVoiceCatalog();
+          await refreshVaultStatusUI();
+          if (typeof showToast === 'function') showToast(`Đã xóa giọng "${v.name}" khỏi Két Sắt.`, 'info');
+        } catch (err) {
+          if (typeof showToast === 'function') showToast(`Lỗi xóa giọng: ${err.message}`, 'error');
+        }
+      });
+
+      privateVoicesList.appendChild(card);
+    });
+  }
+
+  async function refreshVaultStatusUI() {
+    try {
+      const tok = typeof window.getOwnerToken === 'function' ? window.getOwnerToken() : '';
+      const r = await fetch('/api/private-voices/status', {
+        headers: tok ? { 'X-Owner-Token': tok } : {}
+      });
+      const data = await r.json();
+      if (data.success) {
+        if (!data.unlocked && tok && typeof window.setOwnerToken === 'function') {
+          window.setOwnerToken('');
+        }
+        setVaultUnlockedBadges(Boolean(data.unlocked));
+        renderPrivateVoicesCards(data.voices || [], Boolean(data.unlocked));
+      }
+    } catch (e) {
+      console.warn('Vault status check error:', e);
+    }
+  }
+  window.refreshVaultStatusUI = refreshVaultStatusUI;
+  refreshVaultStatusUI();
+
+  if (btnTogglePinVisibility && ownerPinInput) {
+    btnTogglePinVisibility.addEventListener('click', () => {
+      const isPwd = ownerPinInput.type === 'password';
+      ownerPinInput.type = isPwd ? 'text' : 'password';
+      btnTogglePinVisibility.innerHTML = isPwd ? '<i class="fa-regular fa-eye-slash"></i>' : '<i class="fa-regular fa-eye"></i>';
+    });
+  }
+
+  async function handleOwnerUnlock() {
+    const pin = ownerPinInput ? ownerPinInput.value.trim() : '';
+    if (!pin) {
+      if (typeof showToast === 'function') showToast('Vui lòng nhập Mã PIN / Mật khẩu Chủ Sở Hữu!', 'warning');
+      ownerPinInput?.focus();
+      return;
+    }
+    if (btnUnlockPrivateVault) btnUnlockPrivateVault.disabled = true;
+    try {
+      const r = await fetch('/api/private-voices/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin })
+      });
+      const data = await r.json();
+      if (!r.ok || !data.success) throw new Error(data.error || 'Mã PIN Chủ Sở Hữu không đúng!');
+      if (typeof window.setOwnerToken === 'function') window.setOwnerToken(data.token);
+      if (ownerPinInput) ownerPinInput.value = '';
+      await refreshVaultStatusUI();
+      if (typeof showToast === 'function') showToast('🔓 Đã mở khóa Két Sắt Giọng Độc Quyền thành công!', 'success');
+    } catch (err) {
+      if (typeof showToast === 'function') showToast(err.message, 'error');
+    } finally {
+      if (btnUnlockPrivateVault) btnUnlockPrivateVault.disabled = false;
+    }
+  }
+
+  if (btnUnlockPrivateVault) btnUnlockPrivateVault.addEventListener('click', handleOwnerUnlock);
+  if (ownerPinInput) {
+    ownerPinInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleOwnerUnlock();
+      }
+    });
+  }
+
+  if (btnLockPrivateVault) {
+    btnLockPrivateVault.addEventListener('click', async () => {
+      try {
+        await fetch('/api/private-voices/lock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      } catch {}
+      if (typeof window.setOwnerToken === 'function') window.setOwnerToken('');
+      await refreshVaultStatusUI();
+      if (typeof showToast === 'function') {
+        showToast('🔒 Đã KHÓA Két Sắt! Không một ai khác có thể sử dụng giọng của bạn.', 'success');
+      }
+    });
+  }
+
+  if (btnToggleChangePin && changePinBox) {
+    btnToggleChangePin.addEventListener('click', () => {
+      changePinBox.classList.toggle('hidden');
+    });
+  }
+
+  if (btnChangeOwnerPin) {
+    btnChangeOwnerPin.addEventListener('click', async () => {
+      const currentPin = currentPinInput ? currentPinInput.value.trim() : '';
+      const newPin = newPinInput ? newPinInput.value.trim() : '';
+      if (!currentPin || !newPin) {
+        if (typeof showToast === 'function') showToast('Vui lòng nhập đầy đủ mật khẩu hiện tại và mật khẩu mới!', 'warning');
+        return;
+      }
+      btnChangeOwnerPin.disabled = true;
+      try {
+        const r = await fetch('/api/private-voices/change-pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentPin, newPin })
+        });
+        const data = await r.json();
+        if (!r.ok || !data.success) throw new Error(data.error || 'Đổi mật khẩu thất bại!');
+        if (typeof window.setOwnerToken === 'function') window.setOwnerToken(data.token);
+        if (currentPinInput) currentPinInput.value = '';
+        if (newPinInput) newPinInput.value = '';
+        changePinBox?.classList.add('hidden');
+        await refreshVaultStatusUI();
+        if (typeof showToast === 'function') showToast('🔐 Đã cập nhật Mật khẩu Chủ Sở Hữu mới & mã hóa lại Két Sắt!', 'success');
+      } catch (err) {
+        if (typeof showToast === 'function') showToast(err.message, 'error');
+      } finally {
+        btnChangeOwnerPin.disabled = false;
+      }
+    });
+  }
+
+  function setSelectedCloneSample(fileOrBlob, displayLabel) {
+    pendingCloneBlob = fileOrBlob;
+    if (cloneSelectedFileName) {
+      const sizeKB = (fileOrBlob.size / 1024).toFixed(1);
+      cloneSelectedFileName.innerHTML = `<span class="text-emerald-300"><i class="fa-solid fa-circle-check mr-1"></i>Đã nạp mẫu: <b>${escapeHtmlSafe(displayLabel)}</b> (${sizeKB} KB)</span>`;
+    }
+    if (cloneSamplePreviewPlayer) {
+      cloneSamplePreviewPlayer.src = URL.createObjectURL(fileOrBlob);
+      cloneSamplePreviewPlayer.classList.remove('hidden');
+    }
+  }
+
+  if (btnPickCloneFile && cloneAudioFileInput) {
+    btnPickCloneFile.addEventListener('click', () => cloneAudioFileInput.click());
+    cloneAudioFileInput.addEventListener('change', (e) => {
+      const f = e.target.files?.[0];
+      if (f) setSelectedCloneSample(f, f.name);
+    });
+  }
+
+  if (cloneDropZone) {
+    cloneDropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      cloneDropZone.classList.add('border-purple-400');
+    });
+    cloneDropZone.addEventListener('dragleave', () => {
+      cloneDropZone.classList.remove('border-purple-400');
+    });
+    cloneDropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      cloneDropZone.classList.remove('border-purple-400');
+      const f = e.dataTransfer?.files?.[0];
+      if (f) setSelectedCloneSample(f, f.name);
+    });
+  }
+
+  if (btnRecordCloneMic) {
+    btnRecordCloneMic.addEventListener('click', async () => {
+      if (micRecorder && micRecorder.state === 'recording') {
+        micRecorder.stop();
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (typeof showToast === 'function') showToast('Trình duyệt không hỗ trợ thu âm trực tiếp, vui lòng chọn file âm thanh!', 'warning');
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        micChunks = [];
+        micRecorder = new MediaRecorder(stream);
+        micRecorder.ondataavailable = (ev) => {
+          if (ev.data && ev.data.size > 0) micChunks.push(ev.data);
+        };
+        micRecorder.onstop = () => {
+          stream.getTracks().forEach(t => t.stop());
+          const blob = new Blob(micChunks, { type: micRecorder.mimeType || 'audio/webm' });
+          setSelectedCloneSample(blob, `Thu-am-truc-tiep-${new Date().toLocaleTimeString('vi-VN')}.webm`);
+          if (recordCloneMicText) recordCloneMicText.textContent = 'Thu Âm Micro';
+          btnRecordCloneMic.classList.remove('bg-rose-600', 'text-white', 'animate-pulse');
+          if (typeof showToast === 'function') showToast('Đã hoàn tất thu âm giọng mẫu!', 'success');
+        };
+        micRecorder.start();
+        if (recordCloneMicText) recordCloneMicText.textContent = 'Đang thu... (Bấm để dừng)';
+        btnRecordCloneMic.classList.add('bg-rose-600', 'text-white', 'animate-pulse');
+      } catch (err) {
+        if (typeof showToast === 'function') showToast('Không thể truy cập Micro: ' + err.message, 'error');
+      }
+    });
+  }
+
+  if (btnCreateCloneVoice) {
+    btnCreateCloneVoice.addEventListener('click', async () => {
+      if (!pendingCloneBlob) {
+        if (typeof showToast === 'function') showToast('Vui lòng chọn file âm thanh giọng mẫu hoặc bấm Thu Âm Micro trước!', 'warning');
+        return;
+      }
+      const name = (cloneVoiceNameInput?.value || '').trim() || '👑 Giọng Độc Quyền Của Tôi';
+      const gender = cloneVoiceGenderSelect?.value || 'Nam';
+      const description = (cloneVoiceDescInput?.value || '').trim() || 'Giọng nhân bản cá nhân độc quyền (48kHz Studio)';
+
+      if (typeof window.ensurePrivateVoiceAuthorized === 'function') {
+        const ok = await window.ensurePrivateVoiceAuthorized('private-enroll');
+        if (!ok) return;
+      }
+
+      const origHtml = btnCreateCloneVoice.innerHTML;
+      btnCreateCloneVoice.disabled = true;
+      btnCreateCloneVoice.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang phân tích thanh quản & mã hóa 48kHz...';
+      if (cloneVoiceStatus) {
+        cloneVoiceStatus.innerHTML = '<span class="text-amber-300 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang lọc tạp âm phòng thu, trích xuất đa cửa sổ thanh quản & mã hóa PBKDF2-SHA256 (~5-12 giây)...</span>';
+      }
+
+      try {
+        const base64Audio = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const resStr = String(reader.result || '');
+            const commaIdx = resStr.indexOf(',');
+            resolve(commaIdx >= 0 ? resStr.slice(commaIdx + 1) : resStr);
+          };
+          reader.onerror = () => reject(new Error('Không thể đọc file âm thanh'));
+          reader.readAsDataURL(pendingCloneBlob);
+        });
+
+        const tok = typeof window.getOwnerToken === 'function' ? window.getOwnerToken() : '';
+        const res = await fetch('/api/private-voices/enroll', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Owner-Token': tok
+          },
+          body: JSON.stringify({
+            name,
+            gender,
+            description,
+            audioBase64: base64Audio
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Không thể nhân bản giọng đọc');
+
+        if (typeof window.reloadAllVoicesCatalog === 'function') await window.reloadAllVoicesCatalog();
+        await loadAndRenderVoiceCatalog();
+        await refreshVaultStatusUI();
+
+        if (cloneVoiceNameInput) cloneVoiceNameInput.value = '';
+        if (cloneVoiceDescInput) cloneVoiceDescInput.value = '';
+        pendingCloneBlob = null;
+        if (cloneSamplePreviewPlayer) cloneSamplePreviewPlayer.classList.add('hidden');
+        if (cloneSelectedFileName) cloneSelectedFileName.textContent = 'Đã nhân bản & khóa bảo mật vào Két Sắt thành công!';
+        if (cloneVoiceStatus) {
+          cloneVoiceStatus.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check mr-1"></i> Hoàn tất! Giọng "${escapeHtmlSafe(data.voice?.name || name)}" đã sẵn sàng ở chuẩn 48kHz!</span>`;
+        }
+        if (typeof showToast === 'function') {
+          showToast(`👑 Đã nhân bản & mã hóa giọng "${data.voice?.name || name}" thành công!`, 'success');
+        }
+      } catch (err) {
+        if (cloneVoiceStatus) {
+          cloneVoiceStatus.innerHTML = `<span class="text-rose-400 font-semibold"><i class="fa-solid fa-triangle-exclamation mr-1"></i> ${escapeHtmlSafe(err.message)}</span>`;
+        }
+        if (typeof showToast === 'function') showToast(`Lỗi nhân bản giọng: ${err.message}`, 'error');
+      } finally {
+        btnCreateCloneVoice.disabled = false;
+        btnCreateCloneVoice.innerHTML = origHtml;
+      }
     });
   }
 
@@ -801,6 +1310,15 @@ Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương h
 
       renderParsedSegmentsPanel();
 
+      // Check if any speaker in this scene uses a private owner-locked voice
+      const usedPrivVoice = parsedDialogueSegments
+        .map(s => getSpeakerVoiceId(s.speaker))
+        .find(vId => vId && vId.startsWith('private-'));
+      if (usedPrivVoice && typeof window.ensurePrivateVoiceAuthorized === 'function') {
+        const authOk = await window.ensurePrivateVoiceAuthorized(usedPrivVoice);
+        if (!authOk) return;
+      }
+
       btnGenerateDialogue.disabled = true;
       if (btnStopDialogue) btnStopDialogue.disabled = false;
       const rateEl = document.getElementById('rateRange');
@@ -815,16 +1333,20 @@ Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương h
           const seg = parsedDialogueSegments[i];
           const voiceId = getSpeakerVoiceId(seg.speaker);
           const roleName = speakerNamesMap[seg.speaker] || `Vai ${seg.speaker}`;
-          const isFree = voiceId.startsWith('free-');
+          const isLocal = voiceId.startsWith('free-') || voiceId.startsWith('private-');
 
           if (dialogueStatus) {
             dialogueStatus.innerHTML = `<span class="text-cyan-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> [${i + 1}/${parsedDialogueSegments.length}] Đang thu âm <b>${escapeHtmlSafe(roleName)}</b>...</span>`;
           }
 
-          const endpoint = isFree ? '/api/free-tts/synthesize' : '/api/cheap-tts/synthesize';
+          const endpoint = isLocal ? '/api/free-tts/synthesize' : '/api/cheap-tts/synthesize';
+          const headers = { 'Content-Type': 'application/json' };
+          const tok = typeof window.getOwnerToken === 'function' ? window.getOwnerToken() : '';
+          if (tok) headers['X-Owner-Token'] = tok;
+
           const res = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({
               text: seg.text,
               voice: voiceId,
@@ -835,6 +1357,10 @@ Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương h
 
           if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
+            if (res.status === 403 || errData.code === 'private_locked') {
+              if (typeof window.setOwnerToken === 'function') window.setOwnerToken('');
+              if (typeof window.refreshVaultStatusUI === 'function') window.refreshVaultStatusUI();
+            }
             throw new Error(errData.error || `Lỗi tạo đoạn #${i + 1} (HTTP ${res.status})`);
           }
 
@@ -850,7 +1376,7 @@ Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương h
 
           renderParsedSegmentsPanel();
 
-          if (!isFree && i < parsedDialogueSegments.length - 1 && !dialogueCancelRequested) {
+          if (!isLocal && i < parsedDialogueSegments.length - 1 && !dialogueCancelRequested) {
             await new Promise(r => setTimeout(r, 1800));
           }
         }

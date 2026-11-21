@@ -99,6 +99,12 @@
           <span>Studio Soạn Thảo</span>
         </button>
 
+        <button class="nav-tab" data-view="viewVoiceClone">
+          <i class="fa-solid fa-fingerprint text-sm text-amber-400 w-5"></i>
+          <span>Nhân Bản Giọng (Riêng Tư)</span>
+          <span id="sidebarVaultBadge" class="text-[9px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.5 rounded-md ml-auto font-semibold">🔒 Khóa</span>
+        </button>
+
         <button class="nav-tab" data-view="viewDialogue">
           <i class="fa-solid fa-comments text-sm text-cyan-400 w-5"></i>
           <span>Hội Thoại Đa Giọng</span>
@@ -112,8 +118,9 @@
         </button>
 
         <button class="nav-tab" data-view="viewVoices">
-          <i class="fa-solid fa-music text-sm text-emerald-400 w-5"></i>
-          <span>Thư Viện Giọng Đọc</span>
+          <i class="fa-solid fa-earth-americas text-sm text-emerald-400 w-5"></i>
+          <span>Thư Viện Đa Ngôn Ngữ</span>
+          <span class="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded-md ml-auto font-semibold">32 Nước</span>
         </button>
 
         <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-3 mt-6 mb-2">Thương Mại & Quota</div>
@@ -764,74 +771,204 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
         </div>
       </div>
 
-      <!-- ================= VIEW 4: THƯ VIỆN GIỌNG ĐỌC ================= -->
+      <!-- ================= VIEW 3.5: NHÂN BẢN GIỌNG NÓI CÁ NHÂN ĐỘC QUYỀN (PRIVATE VAULT 48KHZ) ================= -->
+      <div id="viewVoiceClone" class="content-view hidden flex flex-col gap-6">
+        <!-- Card 1: Két Sắt Mã Hóa & Quyền Chủ Sở Hữu -->
+        <div class="glass-panel rounded-2xl p-6 border border-amber-500/40 shadow-2xl flex flex-col gap-5">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div class="flex items-start gap-3.5">
+              <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-slate-950 shadow-lg shadow-amber-500/25 shrink-0">
+                <i class="fa-solid fa-shield-halved text-2xl"></i>
+              </div>
+              <div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <h2 class="text-base font-bold text-white">Két Sắt Nhân Bản Giọng Cá Nhân Độc Quyền (48kHz Studio)</h2>
+                  <span id="vaultLockStatusBadge" class="text-[11px] bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                    <i class="fa-solid fa-lock text-[10px]"></i> ĐANG KHÓA BẢO VỆ
+                  </span>
+                </div>
+                <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+                  Giọng của bạn được mã hóa mật mã học <b>PBKDF2-HMAC-SHA256 (200.000 vòng)</b> ngay trên ổ cứng cá nhân, loại bỏ hoàn toàn khỏi đám mây công cộng.
+                  <b>Không một ai khác có thể tạo âm thanh bằng giọng của bạn</b> nếu không có Mật khẩu / Mã PIN Chủ Sở Hữu do bạn cấp phép!
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Unlock / Lock Controls -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+            <div class="lg:col-span-5 relative">
+              <i class="fa-solid fa-key absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-400 text-xs"></i>
+              <input
+                type="password"
+                id="ownerPinInput"
+                placeholder="Nhập Mã PIN / Mật khẩu Chủ Sở Hữu để mở khóa..."
+                class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 font-mono"
+              />
+              <button type="button" id="btnTogglePinVisibility" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-300 text-xs cursor-pointer" title="Hiện / Ẩn mật khẩu">
+                <i class="fa-regular fa-eye"></i>
+              </button>
+            </div>
+
+            <div class="lg:col-span-7 flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                id="btnUnlockPrivateVault"
+                class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <i class="fa-solid fa-unlock-keyhole"></i> Mở Khóa Quyền Chủ Sở Hữu
+              </button>
+
+              <button
+                type="button"
+                id="btnLockPrivateVault"
+                class="px-4 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 hover:text-white text-rose-300 border border-rose-500/40 font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <i class="fa-solid fa-lock"></i> Khóa Lại Ngay
+              </button>
+
+              <button
+                type="button"
+                id="btnToggleChangePin"
+                class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-xs transition flex items-center gap-1.5 cursor-pointer ml-auto"
+              >
+                <i class="fa-solid fa-user-lock text-purple-400"></i> Đổi Mật Khẩu Bảo Vệ
+              </button>
+            </div>
+          </div>
+
+          <!-- Collapsible Change PIN Box -->
+          <div id="changePinBox" class="hidden p-4 rounded-xl bg-purple-950/25 border border-purple-500/30 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            <div>
+              <label class="text-[11px] text-slate-300 font-semibold block mb-1">Mã PIN / Mật khẩu hiện tại</label>
+              <input type="password" id="currentPinInput" placeholder="Nhập PIN hiện tại..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-purple-500">
+            </div>
+            <div>
+              <label class="text-[11px] text-slate-300 font-semibold block mb-1">Mật khẩu riêng mới (tối thiểu 4 ký tự)</label>
+              <input type="password" id="newPinInput" placeholder="Nhập mật khẩu bí mật mới của bạn..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-purple-500">
+            </div>
+            <div>
+              <button type="button" id="btnChangeOwnerPin" class="w-full py-2 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 text-white font-bold text-xs transition cursor-pointer">
+                <i class="fa-solid fa-shield-check mr-1"></i> Lưu & Mã Hóa Lại Két Sắt
+              </button>
+            </div>
+          </div>
+
+          <!-- Enrolled Private Voices List -->
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-amber-300 flex items-center gap-2">
+                <i class="fa-solid fa-crown"></i> Giọng Đọc Độc Quyền Của Bạn Đã Lưu Trong Két Sắt
+              </h3>
+              <span id="privateVoicesCountBadge" class="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-mono">1 giọng</span>
+            </div>
+            <div id="privateVoicesList" class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <!-- Populated dynamically by studio_pro.js -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2: Tạo Thêm Giọng Nhân Bản Mới Từ File Thu Âm Hoặc Micro -->
+        <div class="glass-panel rounded-2xl p-6 border border-purple-500/30 flex flex-col gap-4">
+          <div class="pb-3 border-b border-slate-800">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-dna text-purple-400"></i> Nhân Bản Thêm Giọng Nói Mới (Công Nghệ Multi-Window 48kHz Studio)
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">
+              Tải lên 1 file thu âm giọng thật của bạn (MP3, WAV, M4A... dài từ 10 giây đến 3 phút, không nhạc nền) hoặc thu âm trực tiếp để AI trích xuất đặc trưng thanh quản 48kHz và khóa chặt vào két sắt riêng!
+            </p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="md:col-span-2">
+              <label class="text-[11px] font-semibold text-slate-300 block mb-1">Tên giọng nhân bản</label>
+              <input type="text" id="cloneVoiceNameInput" placeholder="Ví dụ: Giọng Của Tôi (Kể Truyện Tiên Hiệp)" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-purple-500">
+            </div>
+            <div>
+              <label class="text-[11px] font-semibold text-slate-300 block mb-1">Giới tính giọng</label>
+              <select id="cloneVoiceGenderSelect" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-purple-500">
+                <option value="Nam" selected>Nam</option>
+                <option value="Nữ">Nữ</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="text-[11px] font-semibold text-slate-300 block mb-1">Ghi chú phong cách (Tuỳ chọn)</label>
+            <input type="text" id="cloneVoiceDescInput" placeholder="Ví dụ: Giọng chính chủ kênh YouTube — Cấm sử dụng trái phép" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-purple-500">
+          </div>
+
+          <!-- Audio Upload & Mic Recorder Zone -->
+          <div id="cloneDropZone" class="p-5 rounded-2xl border-2 border-dashed border-slate-700 hover:border-purple-500/60 bg-slate-950/60 transition flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-microphone-lines text-lg"></i>
+              </div>
+              <div>
+                <p id="cloneSelectedFileName" class="text-xs font-semibold text-slate-200">Chưa chọn file giọng mẫu (.mp3, .wav, .m4a, .ogg, .flac)</p>
+                <p class="text-[11px] text-slate-400 mt-0.5">Khuyên dùng đoạn thu âm rõ chữ từ 15 giây – 2 phút để đạt độ giống thật 99.9%</p>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
+              <input type="file" id="cloneAudioFileInput" accept=".mp3,.wav,.m4a,.ogg,.flac,.webm,audio/*" class="hidden">
+              <button type="button" id="btnPickCloneFile" class="px-3.5 py-2 rounded-xl bg-purple-600/25 hover:bg-purple-600/40 text-purple-200 border border-purple-500/40 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5">
+                <i class="fa-solid fa-upload"></i> Chọn File Giọng Mẫu
+              </button>
+              <button type="button" id="btnRecordCloneMic" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-600/30 text-rose-300 border border-slate-700 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5">
+                <i class="fa-solid fa-circle-dot"></i> <span id="recordCloneMicText">Thu Âm Micro</span>
+              </button>
+            </div>
+          </div>
+
+          <audio id="cloneSamplePreviewPlayer" controls class="hidden w-full h-9 outline-none"></audio>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+            <div id="cloneVoiceStatus" class="text-xs text-slate-400">
+              <i class="fa-solid fa-lock text-amber-400 mr-1"></i> Dữ liệu thanh quản sau khi trích xuất sẽ được mã hóa tự động, file âm thanh gốc được xóa ngay khỏi bộ nhớ tạm.
+            </div>
+            <button
+              type="button"
+              id="btnCreateCloneVoice"
+              class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-amber-500 hover:from-purple-500 text-white font-bold text-xs shadow-lg shadow-purple-500/25 transition flex items-center gap-2 cursor-pointer"
+            >
+              <i class="fa-solid fa-fingerprint"></i> Nhân Bản & Khóa Vào Két Sắt 48kHz
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= VIEW 4: THƯ VIỆN GIỌNG ĐỌC ĐA NGÔN NGỮ (ELEVENLABS STYLE) ================= -->
       <div id="viewVoices" class="content-view hidden flex flex-col gap-6">
         <div class="glass-panel rounded-2xl p-6 flex flex-col gap-4">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-slate-800">
             <div>
               <h2 class="text-base font-bold text-white flex items-center gap-2">
-                <i class="fa-solid fa-music text-emerald-400"></i> Thư Viện 104 Giọng Đọc AI Cao Cấp
+                <i class="fa-solid fa-earth-americas text-emerald-400"></i> Thư Viện Đa Ngôn Ngữ Toàn Cầu Chuẩn ElevenLabs (32 Ngôn Ngữ & Studio 48kHz)
               </h2>
-              <p class="text-xs text-slate-400 mt-0.5">Lựa chọn giọng đọc truyền cảm tối ưu nhất cho kênh YouTube, TikTok, và Sách nói.</p>
+              <p class="text-xs text-slate-400 mt-0.5">Hơn 110+ giọng đọc bản xứ tự nhiên: Tiếng Việt 48kHz, Tiếng Anh (Mỹ/Anh/Úc), Trung (Tiên hiệp/Đài/HK), Nhật, Hàn, Pháp, Đức, Tây Ban Nha, Nga, Thái, Indonesia...</p>
             </div>
-            <!-- Search & Gender Filter -->
-            <div class="flex items-center gap-2">
-              <input type="text" id="voiceSearchInput" placeholder="Tìm theo tên giọng..." class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-48">
+            <!-- Language Filter & Search -->
+            <div class="flex flex-wrap items-center gap-2">
+              <select id="catalogLanguageFilter" class="bg-slate-900 border border-emerald-500/40 rounded-lg px-3 py-1.5 text-xs text-emerald-300 font-semibold focus:outline-none cursor-pointer">
+                <option value="all" selected>🌍 Tất cả ngôn ngữ (32 Nước)</option>
+                <option value="private">🔒 Giọng Độc Quyền Của Tôi</option>
+                <option value="vi">🇻🇳 Tiếng Việt (Studio 48kHz & Pro)</option>
+                <option value="en">🇺🇸🇬🇧🇦🇺 Tiếng Anh (Mỹ / Anh / Úc)</option>
+                <option value="zh">🇨🇳🇹🇼🇭🇰 Tiếng Trung (Đại Lục / Đài / HK)</option>
+                <option value="ja">🇯🇵 Tiếng Nhật (Anime / Light Novel)</option>
+                <option value="ko">🇰🇷 Tiếng Hàn (Webtoon / K-Drama)</option>
+                <option value="sea">🇹🇭🇮🇩🇲🇾🇵🇭 Đông Nam Á (Thái / Indo / Mã / Phil)</option>
+                <option value="eu_west">🇫🇷🇩🇪🇪🇸🇮🇹🇵🇹 Pháp / Đức / TBN / Ý / Bồ Đào Nha</option>
+                <option value="ru_east">🇷🇺🇺🇦🇵🇱🇨🇿 Nga & Đông Âu & Bắc Âu</option>
+                <option value="asia_me">🇮🇳🇸🇦🇹🇷 Ấn Độ / Ả Rập / Thổ Nhĩ Kỳ</option>
+              </select>
+              <input type="text" id="voiceSearchInput" placeholder="Tìm tên giọng, quốc gia..." class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-48">
             </div>
           </div>
 
           <!-- Voice Catalog Grid (Sample Cards) -->
           <div id="voiceCatalogGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            <!-- Sample 1: Ngoc Huyen -->
-            <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-purple-500/50 transition flex flex-col justify-between gap-3">
-              <div class="flex items-start gap-3">
-                <div class="w-10 h-10 rounded-full bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 font-bold shrink-0">NH</div>
-                <div>
-                  <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
-                    Ngọc Huyền
-                    <span class="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.2 rounded font-normal">Nữ</span>
-                  </h4>
-                  <p class="text-[11px] text-slate-400 mt-0.5">Giọng Bắc kể chuyện, tiểu thuyết đêm khuya, diễn cảm sâu lắng.</p>
-                </div>
-              </div>
-              <button class="select-voice-quick-btn w-full py-1.5 bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white rounded-lg text-xs font-semibold transition" data-voice-id="vi-entertainment">
-                Chọn Giọng Này
-              </button>
-            </div>
-
-            <!-- Sample 2: Minh Quan -->
-            <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-indigo-500/50 transition flex flex-col justify-between gap-3">
-              <div class="flex items-start gap-3">
-                <div class="w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 font-bold shrink-0">MQ</div>
-                <div>
-                  <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
-                    Minh Quân
-                    <span class="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.2 rounded font-normal">Nam</span>
-                  </h4>
-                  <p class="text-[11px] text-slate-400 mt-0.5">Giọng Nam trầm ấm, cực chuẩn cho bình luận phim, tin tức thế giới.</p>
-                </div>
-              </div>
-              <button class="select-voice-quick-btn w-full py-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded-lg text-xs font-semibold transition" data-voice-id="vi-commentary">
-                Chọn Giọng Này
-              </button>
-            </div>
-
-            <!-- Sample 3: Manh Dung -->
-            <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-emerald-500/50 transition flex flex-col justify-between gap-3">
-              <div class="flex items-start gap-3">
-                <div class="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold shrink-0">MD</div>
-                <div>
-                  <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
-                    Mạnh Dũng
-                    <span class="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded font-normal">Nam</span>
-                  </h4>
-                  <p class="text-[11px] text-slate-400 mt-0.5">Giọng đọc dõng dạc, nội lực, chuyên quảng cáo TVC, khoá học.</p>
-                </div>
-              </div>
-              <button class="select-voice-quick-btn w-full py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-lg text-xs font-semibold transition" data-voice-id="vi-advertising">
-                Chọn Giọng Này
-              </button>
-            </div>
+            <!-- Dynamically populated with all 32 languages + Private Voices -->
           </div>
         </div>
       </div>
@@ -872,7 +1009,7 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
                 <p class="text-[11px] text-slate-400 mt-2">Dành cho người làm kênh YouTube, TikTok truyện dài.</p>
                 <ul class="text-xs text-slate-300 space-y-2 mt-4">
                   <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> <b>8.000.000</b> ký tự / tháng</li>
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Toàn bộ 104 giọng Studio</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Toàn bộ 110+ giọng Studio & 32 ngôn ngữ</li>
                   <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Tự động băm nhỏ file >70.000 từ</li>
                   <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Xuất MP3 Mono 48k siêu nhẹ</li>
                 </ul>
@@ -919,11 +1056,41 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
           </button>
         </div>
 
+        <!-- ElevenLabs-style Language Filter -->
+        <div id="languageFilterContainer" class="flex flex-col gap-1.5">
+          <label for="languageFilterSelect" class="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider flex items-center justify-between">
+            <span><i class="fa-solid fa-globe mr-1"></i>Ngôn Ngữ / Khu Vực</span>
+            <span class="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded-full font-mono">32 Ngôn ngữ</span>
+          </label>
+          <select
+            id="languageFilterSelect"
+            class="w-full bg-[#0a0e17] border border-emerald-500/30 rounded-xl px-3 py-1.5 text-xs text-emerald-200 font-medium focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+          >
+            <option value="all" selected>🌍 Tất cả ngôn ngữ & Giọng Của Tôi</option>
+            <option value="private">🔒 Giọng Nhân Bản Độc Quyền Của Tôi</option>
+            <option value="vi">🇻🇳 Tiếng Việt (Studio 48kHz)</option>
+            <option value="en">🇺🇸🇬🇧🇦🇺 Tiếng Anh (Mỹ / Anh / Úc)</option>
+            <option value="zh">🇨🇳🇹🇼🇭🇰 Tiếng Trung (Phổ thông / Đài / HK)</option>
+            <option value="ja">🇯🇵 Tiếng Nhật (Anime / Isekai)</option>
+            <option value="ko">🇰🇷 Tiếng Hàn (Webtoon / K-Drama)</option>
+            <option value="fr">🇫🇷 Tiếng Pháp (French)</option>
+            <option value="de">🇩🇪 Tiếng Đức (German)</option>
+            <option value="es">🇪🇸🇲🇽 Tiếng Tây Ban Nha (TBN & Mỹ Latinh)</option>
+            <option value="pt">🇧🇷 Tiếng Bồ Đào Nha (Brazil)</option>
+            <option value="it">🇮🇹 Tiếng Ý (Italian)</option>
+            <option value="ru">🇷🇺 Tiếng Nga (Russian)</option>
+            <option value="th">🇹🇭 Tiếng Thái Lan (Thai)</option>
+            <option value="sea_other">🇮🇩🇲🇾🇵🇭 Indonesia / Malaysia / Philippines</option>
+            <option value="asia_me">🇮🇳🇸🇦🇹🇷 Ấn Độ / Ả Rập / Thổ Nhĩ Kỳ</option>
+            <option value="eu_other">🇪🇺 Châu Âu Khác (Hà Lan, Ba Lan, Thụy Điển, Hy Lạp...)</option>
+          </select>
+        </div>
+
         <!-- Voice Selection -->
         <div class="flex flex-col gap-1.5">
           <label for="voiceSelect" class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
             <span>Giọng đọc AI</span>
-            <span id="voiceCountBadge" class="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.2 rounded-full font-mono">104 giọng</span>
+            <span id="voiceCountBadge" class="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.2 rounded-full font-mono">84 giọng</span>
           </label>
           <div class="relative">
             <select
@@ -936,9 +1103,14 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
               <i class="fa-solid fa-chevron-down"></i>
             </div>
           </div>
-          <p id="voiceNoteText" class="text-[10px] text-slate-500 leading-tight">
-            Giọng AI Cheap-TTS tự nhiên chuyên dùng cho Kể chuyện, Review phim, Tiểu thuyết.
-          </p>
+          <div class="flex items-center justify-between gap-2 mt-0.5">
+            <p id="voiceNoteText" class="text-[10px] text-slate-500 leading-tight flex-1">
+              Hỗ trợ Giọng Nhân Bản Độc Quyền 48kHz, Tiếng Việt Studio & 32 ngôn ngữ chuẩn ElevenLabs.
+            </p>
+            <button type="button" id="btnLoadNativeSample" class="hidden text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 shrink-0 cursor-pointer transition" title="Dán câu mẫu ngôn ngữ bản xứ vào ô soạn thảo">
+              📝 Mẫu bản ngữ
+            </button>
+          </div>
         </div>
 
         <!-- Speed / Rate Slider -->
@@ -1090,6 +1262,44 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
     </div>
   </div>
 
+  <!-- Owner Private Voice Unlock Modal -->
+  <div id="unlockVaultModal" class="fixed inset-0 z-50 modal-backdrop hidden flex items-center justify-center p-4">
+    <div class="glass-panel border border-amber-500/50 rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 relative animate-fade-in">
+      <button type="button" id="btnCloseUnlockModal" class="absolute top-4 right-4 text-slate-400 hover:text-white text-base cursor-pointer">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <div class="text-center flex flex-col items-center gap-1.5">
+        <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-slate-950 text-xl shadow-lg shadow-amber-500/25">
+          <i class="fa-solid fa-shield-halved"></i>
+        </div>
+        <h3 class="text-base font-bold text-white">Xác Thực Chủ Sở Hữu Giọng Độc Quyền</h3>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          Giọng đọc này đang được khóa bảo mật riêng tư. Vui lòng nhập <b>Mã PIN / Mật khẩu Chủ Sở Hữu</b> để mở khóa sử dụng trên trình duyệt này!
+        </p>
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <input
+          type="password"
+          id="modalOwnerPinInput"
+          placeholder="Nhập Mã PIN Chủ Sở Hữu..."
+          class="w-full bg-slate-950 border border-amber-500/40 rounded-xl px-4 py-3 text-sm text-center text-amber-300 placeholder-slate-500 font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-amber-500"
+        />
+        <p id="modalUnlockError" class="hidden text-xs text-rose-400 text-center font-medium"></p>
+      </div>
+
+      <div class="flex items-center gap-2.5">
+        <button type="button" id="btnCancelUnlockModal" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition cursor-pointer">
+          Hủy
+        </button>
+        <button type="button" id="btnConfirmUnlockModal" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 text-slate-950 text-xs font-extrabold shadow-lg shadow-amber-500/20 transition cursor-pointer">
+          <i class="fa-solid fa-unlock-keyhole mr-1"></i> Mở Khóa Ngay
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div id="toast" class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 bg-slate-900 text-slate-100 border border-purple-500/40 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 z-50 pointer-events-none">
     <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
@@ -1099,8 +1309,8 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
   <!-- Mammoth.js for Word (.docx) document parsing -->
   <script src="/mammoth.browser.min.js"></script>
   <!-- Main Logic -->
-  <script src="app.js?v=3.0"></script>
-  <!-- Pro Studio Extensions (Navigation tabs, Multi-speaker dialogue, VietQR modal) -->
-  <script src="studio_pro.js?v=3.0"></script>
+  <script src="app.js?v=4.0"></script>
+  <!-- Pro Studio Extensions (Private Voice Vault, 32 Languages, Multi-speaker dialogue, VietQR modal) -->
+  <script src="studio_pro.js?v=4.0"></script>
 </body>
 </html>
