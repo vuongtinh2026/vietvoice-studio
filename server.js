@@ -127,25 +127,71 @@ function synthesizeWithPython(text, voice, rate = 1.0, key = DEFAULT_KEY) {
 }
 
 /**
- * Free Engine (Open Source TTS Hub: Edge Neural, Google, TikTok, Thiện Tâm, Ngọc Huyền...)
+ * Free Engine v3.0 (48kHz Studio Pro Warm Daemon + Piper Offline + Edge Neural + Google)
  */
+const FREE_DAEMON_PORT = process.env.FREE_DAEMON_PORT || 3099;
+let freeDaemonProc = null;
 let cachedFreeVoices = null;
 
-function getVoicesFree() {
-  return new Promise((resolve, reject) => {
-    if (cachedFreeVoices && cachedFreeVoices.length > 0) {
-      return resolve(cachedFreeVoices);
-    }
-    const py = spawn(PYTHON_BIN, [ENGINE_FREE_SCRIPT, 'voices'], {
-      cwd: __dirname
+function startFreeDaemon() {
+  if (freeDaemonProc) return;
+  try {
+    freeDaemonProc = spawn(PYTHON_BIN, [ENGINE_FREE_SCRIPT, 'daemon', String(FREE_DAEMON_PORT)], {
+      cwd: __dirname,
+      stdio: ['ignore', 'ignore', 'inherit']
     });
+    freeDaemonProc.on('exit', (code) => {
+      console.warn(`[Free Daemon] Exited with code ${code}. Auto-restarting in 2s...`);
+      freeDaemonProc = null;
+      setTimeout(startFreeDaemon, 2000);
+    });
+  } catch (err) {
+    console.warn('[Free Daemon] Could not spawn daemon:', err.message);
+  }
+}
+
+startFreeDaemon();
+
+process.on('exit', () => {
+  if (freeDaemonProc) {
+    try { freeDaemonProc.kill(); } catch {}
+  }
+});
+process.on('SIGTERM', () => {
+  if (freeDaemonProc) {
+    try { freeDaemonProc.kill(); } catch {}
+  }
+  process.exit(0);
+});
+process.on('SIGINT', () => {
+  if (freeDaemonProc) {
+    try { freeDaemonProc.kill(); } catch {}
+  }
+  process.exit(0);
+});
+
+async function getVoicesFree() {
+  if (cachedFreeVoices && cachedFreeVoices.length > 0) {
+    return cachedFreeVoices;
+  }
+  try {
+    const res = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/voices`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.voices && data.voices.length > 0) {
+        cachedFreeVoices = data.voices;
+        return cachedFreeVoices;
+      }
+    }
+  } catch {}
+
+  return new Promise((resolve, reject) => {
+    const py = spawn(PYTHON_BIN, [ENGINE_FREE_SCRIPT, 'voices'], { cwd: __dirname });
     let out = '';
     let err = '';
     py.stdout.on('data', d => { out += d; });
     py.stderr.on('data', d => { err += d; });
-    py.on('error', (err) => {
-      reject(err);
-    });
+    py.on('error', reject);
     py.on('close', code => {
       if (code !== 0) return reject(new Error(err || `Free voices exited with ${code}`));
       try {
@@ -159,20 +205,42 @@ function getVoicesFree() {
   });
 }
 
-function synthesizeFree(text, voice, rate = 1.0, pause = 0.35) {
-  return new Promise((resolve, reject) => {
-    const py = spawn(PYTHON_BIN, [ENGINE_FREE_SCRIPT], {
-      cwd: __dirname
+async function synthesizeFree(text, voice, rate = 1.0, pause = 0.40) {
+  // 1. Try ultra-fast warm daemon in RAM first
+  try {
+    const res = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/synthesize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice, rate, pause })
     });
+    if (res.ok) {
+      const arrayBuf = await res.arrayBuffer();
+      const audio = Buffer.from(arrayBuf);
+      const dataSize = Math.max(0, audio.length - 44);
+      const sampleRate = audio.length >= 28 ? audio.readUInt32LE(24) : 48000;
+      const seconds = Math.max(0.2, dataSize / (sampleRate * 2));
+      const found = (cachedFreeVoices || []).find(v => v.id === voice);
+      const voiceName = found ? found.name : voice;
+      return { audio, seconds, voice: { id: voice, name: voiceName } };
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      if (errData.error) throw new Error(errData.error);
+    }
+  } catch (daemonErr) {
+    // Only fallback to CLI if connection refused while daemon is booting
+    if (!String(daemonErr.message || '').includes('fetch failed') && !String(daemonErr.cause?.code || '').includes('ECONNREFUSED')) {
+      throw daemonErr;
+    }
+  }
+
+  // 2. Fallback one-shot CLI
+  return new Promise((resolve, reject) => {
+    const py = spawn(PYTHON_BIN, [ENGINE_FREE_SCRIPT], { cwd: __dirname });
     const chunks = [];
     const errChunks = [];
-
     py.stdout.on('data', d => chunks.push(d));
     py.stderr.on('data', d => errChunks.push(d));
-    py.on('error', (err) => {
-      reject(err);
-    });
-
+    py.on('error', reject);
     py.on('close', code => {
       if (code !== 0) {
         const errMsg = Buffer.concat(errChunks).toString('utf-8').trim();
@@ -180,13 +248,12 @@ function synthesizeFree(text, voice, rate = 1.0, pause = 0.35) {
       }
       const audio = Buffer.concat(chunks);
       const dataSize = Math.max(0, audio.length - 44);
-      const sampleRate = audio.length >= 28 ? audio.readUInt32LE(24) : 22050;
+      const sampleRate = audio.length >= 28 ? audio.readUInt32LE(24) : 48000;
       const seconds = Math.max(0.2, dataSize / (sampleRate * 2));
       const found = (cachedFreeVoices || []).find(v => v.id === voice);
       const voiceName = found ? found.name : voice;
       resolve({ audio, seconds, voice: { id: voice, name: voiceName } });
     });
-
     py.stdin.write(JSON.stringify({ text, voice, rate, pause }));
     py.stdin.end();
   });

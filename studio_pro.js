@@ -1,13 +1,17 @@
 /**
- * VoiceViet Studio Pro Extensions
- * Inspired by TKvisuals & Top Global AI SaaS Platforms
- * Handles Navigation, Multi-Speaker Dialogue, VietQR Billing & Voice Audition
+ * VoiceViet Studio Pro Extensions v3.0
+ * - Navigation, VietQR Modal & Dynamic 48kHz Voice Catalog
+ * - Smart Long-Story Auto-Role Parser (Narrator + Multi-Character Quotes & Dashes)
+ * - Visual Per-Segment Role Distinction & Override
+ * - Separated Per-Speaker Audio Export (Voice-Only MP3 + Timeline-Synced CapCut Stem WAV)
  */
 
 (function () {
   'use strict';
 
-  // 1. Navigation View Switcher
+  // =========================================================================
+  // 1. NAVIGATION VIEW SWITCHER
+  // =========================================================================
   const navTabs = document.querySelectorAll('.nav-tab');
   const contentViews = document.querySelectorAll('.content-view');
   const btnHeaderPricing = document.getElementById('btnHeaderPricing');
@@ -30,7 +34,6 @@
       }
     });
 
-    // Special behavior when navigating to Batch Word: make sure card is shown
     if (targetViewId === 'viewBatchWord') {
       const batchWordCard = document.getElementById('batchWordCard');
       if (batchWordCard) batchWordCard.classList.remove('hidden');
@@ -44,21 +47,46 @@
     });
   });
 
-  if (btnHeaderPricing) {
-    btnHeaderPricing.addEventListener('click', () => switchView('viewPricing'));
-  }
-  if (btnSidebarUpgrade) {
-    btnSidebarUpgrade.addEventListener('click', () => switchView('viewPricing'));
+  if (btnHeaderPricing) btnHeaderPricing.addEventListener('click', () => switchView('viewPricing'));
+  if (btnSidebarUpgrade) btnSidebarUpgrade.addEventListener('click', () => switchView('viewPricing'));
+
+  // =========================================================================
+  // 2. EXPRESSION / PROSODY QUICK INSERT BUTTONS (... , [cười], [thở dài])
+  // =========================================================================
+  function insertAtCursor(textarea, cueText) {
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    const before = textarea.value.slice(0, start);
+    const after = textarea.value.slice(end);
+    textarea.value = before + cueText + after;
+    const newPos = start + cueText.length;
+    textarea.focus();
+    textarea.setSelectionRange(newPos, newPos);
+    textarea.dispatchEvent(new Event('input'));
   }
 
-  // 2. VietQR Payment Modal Simulation
+  document.querySelectorAll('.insert-cue-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      insertAtCursor(document.getElementById('textInput'), btn.getAttribute('data-cue') || '');
+    });
+  });
+
+  document.querySelectorAll('.insert-dialogue-cue-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      insertAtCursor(document.getElementById('dialogueScriptInput'), btn.getAttribute('data-cue') || '');
+    });
+  });
+
+  // =========================================================================
+  // 3. VIETQR MODAL
+  // =========================================================================
   const vietqrModal = document.getElementById('vietqrModal');
   const btnCloseVietqrModal = document.getElementById('btnCloseVietqrModal');
   const vietqrImage = document.getElementById('vietqrImage');
   const vietqrPlanName = document.getElementById('vietqrPlanName');
   const vietqrAmount = document.getElementById('vietqrAmount');
   const vietqrMemo = document.getElementById('vietqrMemo');
-  const buyPlanBtns = document.querySelectorAll('.btn-buy-plan');
 
   function openVietqrModal(planName, amount) {
     if (!vietqrModal) return;
@@ -66,13 +94,9 @@
     if (vietqrPlanName) vietqrPlanName.textContent = planName;
     if (vietqrAmount) vietqrAmount.textContent = `${parseInt(amount).toLocaleString('vi-VN')} VNĐ`;
     if (vietqrMemo) vietqrMemo.textContent = memo;
-
-    // Generate real VietQR image
     if (vietqrImage) {
-      const qrUrl = `https://img.vietqr.io/image/MB-0359888888-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(memo)}&accountName=VOICEVIET%20PRO`;
-      vietqrImage.src = qrUrl;
+      vietqrImage.src = `https://img.vietqr.io/image/MB-0359888888-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(memo)}&accountName=VOICEVIET%20PRO`;
     }
-
     vietqrModal.classList.remove('hidden');
   }
 
@@ -80,38 +104,86 @@
     if (vietqrModal) vietqrModal.classList.add('hidden');
   }
 
-  buyPlanBtns.forEach(btn => {
+  document.querySelectorAll('.btn-buy-plan').forEach(btn => {
     btn.addEventListener('click', () => {
-      const plan = btn.getAttribute('data-plan') || 'VIP Tháng';
-      const amount = btn.getAttribute('data-amount') || '25000';
-      openVietqrModal(plan, amount);
+      openVietqrModal(btn.getAttribute('data-plan') || 'VIP Tháng', btn.getAttribute('data-amount') || '25000');
     });
   });
 
-  if (btnCloseVietqrModal) {
-    btnCloseVietqrModal.addEventListener('click', closeVietqrModal);
-  }
+  if (btnCloseVietqrModal) btnCloseVietqrModal.addEventListener('click', closeVietqrModal);
   if (vietqrModal) {
     vietqrModal.addEventListener('click', (e) => {
       if (e.target === vietqrModal) closeVietqrModal();
     });
   }
 
-  // 3 & 4. Dynamic Voice Library Rendering & Search (24 Pro Voices + 4 Standard)
+  // =========================================================================
+  // 4. DYNAMIC VOICE CATALOG & DIALOGUE VOICE OPTIONS SYNC
+  // =========================================================================
   const voiceSelect = document.getElementById('voiceSelect');
   const voiceCatalogGrid = document.getElementById('voiceCatalogGrid');
   const voiceSearchInput = document.getElementById('voiceSearchInput');
+  let allLoadedViVoices = [];
+
+  function escapeHtmlSafe(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function buildVoiceOptionsHtml(selectedId) {
+    if (!allLoadedViVoices || allLoadedViVoices.length === 0) {
+      return `
+        <option value="free-vi-ngoc-huyen" ${selectedId === 'free-vi-ngoc-huyen' ? 'selected' : ''}>✨ Ngọc Huyền (Studio 48kHz)</option>
+        <option value="free-vi-minh-quan" ${selectedId === 'free-vi-minh-quan' ? 'selected' : ''}>✨ Minh Quân (Studio 48kHz)</option>
+        <option value="free-vi-thien-tam" ${selectedId === 'free-vi-thien-tam' ? 'selected' : ''}>✨ Thiện Tâm (Studio 48kHz)</option>
+        <option value="free-vi-adam-tiktok" ${selectedId === 'free-vi-adam-tiktok' ? 'selected' : ''}>✨ Adam TikTok (Studio 48kHz)</option>
+        <option value="free-vi-hoaimy" ${selectedId === 'free-vi-hoaimy' ? 'selected' : ''}>✨ Hoài My (Neural)</option>
+        <option value="free-vi-namminh" ${selectedId === 'free-vi-namminh' ? 'selected' : ''}>✨ Nam Minh (Neural)</option>
+      `;
+    }
+    const freeStudio = allLoadedViVoices.filter(v => v.id.startsWith('free-') && v.language === 'vi');
+    const proCloud = allLoadedViVoices.filter(v => v.id.startsWith('vi-'));
+
+    let html = '<optgroup label="✨ Giọng AI Miễn Phí Chuẩn Studio 48kHz (Khuyên dùng)">';
+    freeStudio.forEach(v => {
+      const sel = v.id === selectedId ? 'selected' : '';
+      html += `<option value="${v.id}" ${sel}>✨ ${escapeHtmlSafe(v.name)} (${v.gender || 'VN'})</option>`;
+    });
+    html += '</optgroup>';
+
+    if (proCloud.length > 0) {
+      html += '<optgroup label="⚡ Giọng Cheap-TTS Cloud">';
+      proCloud.forEach(v => {
+        const sel = v.id === selectedId ? 'selected' : '';
+        html += `<option value="${v.id}" ${sel}>${escapeHtmlSafe(v.name)} (${v.id})</option>`;
+      });
+      html += '</optgroup>';
+    }
+    return html;
+  }
+
+  function refreshAllDialogueSelects() {
+    document.querySelectorAll('.dialogue-voice-select').forEach(sel => {
+      const cur = sel.value;
+      sel.innerHTML = buildVoiceOptionsHtml(cur);
+      if (cur) sel.value = cur;
+    });
+  }
 
   async function loadAndRenderVoiceCatalog() {
-    if (!voiceCatalogGrid) return;
     try {
       const res = await fetch('/api/cheap-tts/voices');
       const data = await res.json();
       if (!data.success || !data.voices) return;
 
-      const viVoices = data.voices.filter(v => v.language === 'vi' || v.id.startsWith('vi') || v.id.startsWith('free-'));
-      if (viVoices.length === 0) return;
+      const viVoices = data.voices.filter(v => v.language === 'vi' || v.id.startsWith('vi') || v.id.startsWith('free-vi'));
+      allLoadedViVoices = viVoices;
+      refreshAllDialogueSelects();
 
+      if (!voiceCatalogGrid || viVoices.length === 0) return;
       voiceCatalogGrid.innerHTML = '';
 
       viVoices.forEach(v => {
@@ -128,7 +200,7 @@
           badgeColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
           avatarBg = 'bg-gradient-to-tr from-emerald-600 to-teal-600 text-white';
           cardBorder = 'border-emerald-500/30 hover:border-emerald-400';
-          badgeText = v.badge || 'MIỄN PHÍ';
+          badgeText = v.badge || 'STUDIO 48kHz';
           btnBg = 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white';
         } else if (isPro) {
           badgeColor = 'bg-purple-500/20 text-purple-300 border-purple-500/30';
@@ -143,22 +215,21 @@
         card.innerHTML = `
           <div class="flex items-start gap-3">
             <div class="w-10 h-10 rounded-full ${avatarBg} flex items-center justify-center font-bold text-xs shrink-0 shadow-md">
-              ${initials}
+              ${escapeHtmlSafe(initials)}
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between gap-1">
-                <h4 class="text-xs font-bold text-white truncate">${v.name}</h4>
-                <span class="text-[9px] ${badgeColor} border px-1.5 py-0.2 rounded font-mono shrink-0">${badgeText}</span>
+                <h4 class="text-xs font-bold text-white truncate">${escapeHtmlSafe(v.name)}</h4>
+                <span class="text-[9px] ${badgeColor} border px-1.5 py-0.2 rounded font-mono shrink-0">${escapeHtmlSafe(badgeText)}</span>
               </div>
-              <p class="text-[11px] text-cyan-300 font-medium mt-0.5 truncate">${v.useCase || v.id}</p>
-              <p class="text-[10px] text-slate-400 mt-0.5">Mã: <code class="text-slate-300">${v.id}</code></p>
+              <p class="text-[11px] text-cyan-300 font-medium mt-0.5 line-clamp-2">${escapeHtmlSafe(v.useCase || v.id)}</p>
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button class="preview-voice-quick-btn px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0" data-voice-id="${v.id}" data-voice-name="${v.name}" title="Nghe thử mẫu giọng">
+            <button class="preview-voice-quick-btn px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
               <i class="fa-solid fa-volume-high mr-1"></i>Nghe thử
             </button>
-            <button class="select-voice-quick-btn flex-1 py-1.5 ${btnBg} rounded-lg text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${v.name}">
+            <button class="select-voice-quick-btn flex-1 py-1.5 ${btnBg} rounded-lg text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
               Chọn Giọng Này
             </button>
           </div>
@@ -166,7 +237,6 @@
         voiceCatalogGrid.appendChild(card);
       });
 
-      // Bind preview buttons
       voiceCatalogGrid.querySelectorAll('.preview-voice-quick-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
           const vId = btn.getAttribute('data-voice-id');
@@ -182,7 +252,6 @@
         });
       });
 
-      // Bind quick select buttons
       voiceCatalogGrid.querySelectorAll('.select-voice-quick-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const vId = btn.getAttribute('data-voice-id');
@@ -195,7 +264,7 @@
             voiceSelect.dispatchEvent(new Event('change'));
             switchView('viewStudio');
             if (typeof showToast === 'function') {
-              showToast(`Đã chọn: ${vName} (${vId})`, 'success');
+              showToast(`Đã chọn: ${vName}`, 'success');
             }
           }
         });
@@ -207,56 +276,506 @@
 
   loadAndRenderVoiceCatalog();
 
-  // Voice Catalog Search Filter
   if (voiceSearchInput && voiceCatalogGrid) {
     voiceSearchInput.addEventListener('input', (e) => {
       const query = e.target.value.toLowerCase().trim();
-      const cards = voiceCatalogGrid.querySelectorAll('.p-4');
-      cards.forEach(card => {
-        const text = card.textContent.toLowerCase();
-        if (text.includes(query)) {
-          card.style.display = 'flex';
-        } else {
-          card.style.display = 'none';
-        }
+      voiceCatalogGrid.querySelectorAll('.p-4').forEach(card => {
+        card.style.display = card.textContent.toLowerCase().includes(query) ? 'flex' : 'none';
       });
     });
   }
 
-  // 5. Multi-Speaker Dialogue Feature with Rate-Limit Shield
+  // =========================================================================
+  // 5. MULTI-SPEAKER LONG-STORY PARSER & PER-VOICE SEPARATED TRACK STUDIO
+  // =========================================================================
+  const speakerGrid = document.getElementById('dialogueSpeakerCardsGrid');
+  const btnAddDialogueSpeaker = document.getElementById('btnAddDialogueSpeaker');
+  const btnAutoParseStory = document.getElementById('btnAutoParseStory');
+  const btnLoadLongStorySample = document.getElementById('btnLoadLongStorySample');
   const btnLoadDialogueSample = document.getElementById('btnLoadDialogueSample');
   const dialogueScriptInput = document.getElementById('dialogueScriptInput');
+  const dialogueParsedPanel = document.getElementById('dialogueParsedPanel');
+  const dialogueParsedCountBadge = document.getElementById('dialogueParsedCountBadge');
+  const dialogueRoleSummaryBadges = document.getElementById('dialogueRoleSummaryBadges');
+  const dialogueSegmentsList = document.getElementById('dialogueSegmentsList');
   const btnGenerateDialogue = document.getElementById('btnGenerateDialogue');
   const btnStopDialogue = document.getElementById('btnStopDialogue');
   const dialogueStatus = document.getElementById('dialogueStatus');
   const dialogueOutputContainer = document.getElementById('dialogueOutputContainer');
   const dialogueAudioPlayer = document.getElementById('dialogueAudioPlayer');
   const btnDownloadDialogueMp3 = document.getElementById('btnDownloadDialogueMp3');
-  const dialogueVoiceA = document.getElementById('dialogueVoiceA');
-  const dialogueVoiceB = document.getElementById('dialogueVoiceB');
-  const dialogueVoiceC = document.getElementById('dialogueVoiceC');
+  const btnDownloadDialogueWav = document.getElementById('btnDownloadDialogueWav');
+  const dialogueSeparatedTracksGrid = document.getElementById('dialogueSeparatedTracksGrid');
+  const btnDownloadAllSeparatedTracks = document.getElementById('btnDownloadAllSeparatedTracks');
 
+  const SPEAKER_THEMES = {
+    A: { border: 'border-purple-500/40', text: 'text-purple-400', badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30', defaultVoice: 'free-vi-ngoc-huyen', defaultLabel: 'Nhân vật Nữ (A)' },
+    B: { border: 'border-cyan-500/40', text: 'text-cyan-400', badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30', defaultVoice: 'free-vi-minh-quan', defaultLabel: 'Nhân vật Nam (B)' },
+    C: { border: 'border-amber-500/40', text: 'text-amber-400', badge: 'bg-amber-500/20 text-amber-300 border-amber-500/30', defaultVoice: 'free-vi-thien-tam', defaultLabel: 'Người dẫn chuyện (C)' },
+    D: { border: 'border-emerald-500/40', text: 'text-emerald-400', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', defaultVoice: 'free-vi-truc-ly', defaultLabel: 'Nhân vật D' },
+    E: { border: 'border-rose-500/40', text: 'text-rose-400', badge: 'bg-rose-500/20 text-rose-300 border-rose-500/30', defaultVoice: 'free-vi-pham-tuyen', defaultLabel: 'Nhân vật E' },
+    F: { border: 'border-indigo-500/40', text: 'text-indigo-400', badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30', defaultVoice: 'free-vi-my-duyen', defaultLabel: 'Nhân vật F' },
+    G: { border: 'border-orange-500/40', text: 'text-orange-400', badge: 'bg-orange-500/20 text-orange-300 border-orange-500/30', defaultVoice: 'free-vi-hai-dang', defaultLabel: 'Nhân vật G' },
+    H: { border: 'border-teal-500/40', text: 'text-teal-400', badge: 'bg-teal-500/20 text-teal-300 border-teal-500/30', defaultVoice: 'free-vi-ngoc-ngan', defaultLabel: 'Nhân vật H' }
+  };
+
+  const EXTRA_KEYS = ['D', 'E', 'F', 'G', 'H'];
+  let activeSpeakerKeys = ['A', 'B', 'C'];
+  let speakerNamesMap = {
+    A: 'Nhân vật Nữ (A)',
+    B: 'Nhân vật Nam (B)',
+    C: 'Người dẫn chuyện (C)'
+  };
+  let parsedDialogueSegments = [];
+  let lastParsedRawScript = '';
+  let separatedDownloadItems = [];
   let dialogueCancelRequested = false;
+
+  function getTheme(key) {
+    return SPEAKER_THEMES[key] || SPEAKER_THEMES.D;
+  }
+
+  function getSpeakerSelectEl(key) {
+    if (key === 'A') return document.getElementById('dialogueVoiceA');
+    if (key === 'B') return document.getElementById('dialogueVoiceB');
+    if (key === 'C') return document.getElementById('dialogueVoiceC');
+    return document.getElementById(`dialogueVoice_${key}`);
+  }
+
+  function getSpeakerVoiceId(key) {
+    const sel = getSpeakerSelectEl(key);
+    return sel ? sel.value : (getTheme(key).defaultVoice || 'free-vi-ngoc-huyen');
+  }
+
+  function getSpeakerVoiceDisplayName(key) {
+    const sel = getSpeakerSelectEl(key);
+    if (sel && sel.selectedOptions && sel.selectedOptions[0]) {
+      return sel.selectedOptions[0].textContent.replace(/^✨\s*/, '').split('(')[0].trim();
+    }
+    return getSpeakerVoiceId(key);
+  }
+
+  function updateSpeakerCardTitle(key, customTitle) {
+    speakerNamesMap[key] = customTitle;
+    const card = speakerGrid ? speakerGrid.querySelector(`[data-speaker-key="${key}"]`) : null;
+    if (card) {
+      const titleSpan = card.querySelector('.speaker-role-title');
+      if (titleSpan) titleSpan.textContent = customTitle;
+    }
+  }
+
+  function ensureSpeakerCard(key, customLabel, preferredGender) {
+    if (activeSpeakerKeys.includes(key)) {
+      if (customLabel) updateSpeakerCardTitle(key, customLabel);
+      return key;
+    }
+    if (!speakerGrid) return 'A';
+    activeSpeakerKeys.push(key);
+    const theme = getTheme(key);
+    let defaultVoice = theme.defaultVoice;
+    if (preferredGender === 'female') {
+      const femPool = ['free-vi-truc-ly', 'free-vi-my-duyen', 'free-vi-ngoc-linh', 'free-vi-mai-anh', 'free-vi-hoaimy'];
+      defaultVoice = femPool[activeSpeakerKeys.length % femPool.length];
+    } else if (preferredGender === 'male') {
+      const malePool = ['free-vi-pham-tuyen', 'free-vi-hai-dang', 'free-vi-thai-son', 'free-vi-adam-tiktok', 'free-vi-namminh'];
+      defaultVoice = malePool[activeSpeakerKeys.length % malePool.length];
+    }
+
+    const roleLabel = customLabel || theme.defaultLabel;
+    speakerNamesMap[key] = roleLabel;
+
+    const card = document.createElement('div');
+    card.className = `dialogue-speaker-card p-3.5 rounded-xl bg-slate-900/80 border ${theme.border} flex flex-col gap-2`;
+    card.setAttribute('data-speaker-key', key);
+    card.innerHTML = `
+      <div class="flex items-center justify-between text-xs">
+        <span class="font-bold ${theme.text} flex items-center gap-1.5"><i class="fa-solid fa-user"></i> <span class="speaker-role-title">${escapeHtmlSafe(roleLabel)}</span></span>
+        <span class="text-[10px] ${theme.badge} px-1.5 py-0.5 rounded font-mono">${key}:</span>
+      </div>
+      <select id="dialogueVoice_${key}" class="dialogue-voice-select w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
+        ${buildVoiceOptionsHtml(defaultVoice)}
+      </select>
+    `;
+    speakerGrid.appendChild(card);
+    return key;
+  }
+
+  if (btnAddDialogueSpeaker) {
+    btnAddDialogueSpeaker.addEventListener('click', () => {
+      const nextKey = EXTRA_KEYS.find(k => !activeSpeakerKeys.includes(k));
+      if (!nextKey) {
+        if (typeof showToast === 'function') showToast('Đã đạt tối đa 8 nhân vật trong 1 cảnh!', 'warning');
+        return;
+      }
+      ensureSpeakerCard(nextKey);
+      renderParsedSegmentsPanel();
+      if (typeof showToast === 'function') showToast(`Đã thêm Nhân vật ${nextKey}!`, 'success');
+    });
+  }
+
+  // Heuristic gender detector from Vietnamese names / pronouns / attribution context
+  function guessGenderFromVietnameseContext(contextStr) {
+    const s = (contextStr || '').toLowerCase();
+    const femaleHints = /\b(cô|nàng|chị|em|bà|mẹ|má|dì|cô ấy|nàng ấy|thiếp|nữ|huyền|lan|mai|linh|vy|my|nhung|hương|thảo|trang|ngọc|hà|yến|tuyết|trúc|duyên)\b/i;
+    const maleHints = /\b(anh|chàng|hắn|ông|chú|bác|cha|bố|thầy|cậu|gã|y|trẫm|nam|quân|minh|hùng|tuyên|đức|sơn|khôi|dũng|long|phong|viêm|thành|khang)\b/i;
+    if (femaleHints.test(s) && !maleHints.test(s)) return 'female';
+    if (maleHints.test(s) && !femaleHints.test(s)) return 'male';
+    // Check last subject right before speaking verb
+    const lastClause = s.slice(-45);
+    if (femaleHints.test(lastClause)) return 'female';
+    if (maleHints.test(lastClause)) return 'male';
+    return null;
+  }
+
+  /**
+   * Smart Story & Script Parser:
+   * Handles:
+   * 1. Explicit speaker lines (`A: ...`, `B: ...`, `C: ...`, or `Quân: ...`, `Huyền: ...`, `Dẫn chuyện: ...`)
+   * 2. Novel dash dialogue lines (`- ...`, `– ...`, `— ...`)
+   * 3. Prose paragraphs with inline quoted dialogues (`“...”` or `"..."`), splitting Narrator vs Spoken Quotes!
+   */
+  function parseLongStoryIntoSegments(rawScript) {
+    const text = (rawScript || '').replace(/\r\n/g, '\n').trim();
+    if (!text) return [];
+
+    const namedRoleMap = {}; // normalizedName -> speakerKey
+    let usedMaleB = false;
+    let usedFemaleA = false;
+    let lastDialogueSpeaker = 'B';
+
+    function resolveNamedCharacter(rawName) {
+      const clean = rawName.replace(/^[\[\(]|[\]\)]$/g, '').trim();
+      const upper = clean.toUpperCase();
+      if (['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].includes(upper)) {
+        if (!activeSpeakerKeys.includes(upper)) ensureSpeakerCard(upper);
+        return upper;
+      }
+      const norm = clean.toLowerCase();
+      if (/^(dẫn chuyện|người dẫn|narrator|thuyết minh|bối cảnh)$/i.test(norm)) {
+        return 'C';
+      }
+      if (namedRoleMap[norm]) return namedRoleMap[norm];
+
+      const gender = guessGenderFromVietnameseContext(clean);
+      if (gender === 'female' && !usedFemaleA) {
+        usedFemaleA = true;
+        namedRoleMap[norm] = 'A';
+        updateSpeakerCardTitle('A', `${clean} (A)`);
+        return 'A';
+      }
+      if (gender === 'male' && !usedMaleB) {
+        usedMaleB = true;
+        namedRoleMap[norm] = 'B';
+        updateSpeakerCardTitle('B', `${clean} (B)`);
+        return 'B';
+      }
+      if (!usedFemaleA && gender !== 'male') {
+        usedFemaleA = true;
+        namedRoleMap[norm] = 'A';
+        updateSpeakerCardTitle('A', `${clean} (A)`);
+        return 'A';
+      }
+      if (!usedMaleB) {
+        usedMaleB = true;
+        namedRoleMap[norm] = 'B';
+        updateSpeakerCardTitle('B', `${clean} (B)`);
+        return 'B';
+      }
+      const extraKey = EXTRA_KEYS.find(k => !Object.values(namedRoleMap).includes(k)) || 'D';
+      ensureSpeakerCard(extraKey, `${clean} (${extraKey})`, gender);
+      namedRoleMap[norm] = extraKey;
+      return extraKey;
+    }
+
+    function pickAlternatingDialogueSpeaker(contextBefore, contextAfter) {
+      const g = guessGenderFromVietnameseContext(`${contextBefore || ''} ${contextAfter || ''}`);
+      if (g === 'female') {
+        lastDialogueSpeaker = 'A';
+        return 'A';
+      }
+      if (g === 'male') {
+        lastDialogueSpeaker = 'B';
+        return 'B';
+      }
+      lastDialogueSpeaker = lastDialogueSpeaker === 'A' ? 'B' : 'A';
+      return lastDialogueSpeaker;
+    }
+
+    const segments = [];
+    const lines = text.split('\n');
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      // Case 1: Explicit `SpeakerName: content` (SpeakerName <= 22 chars, no quotes/dots inside name)
+      const labelMatch = line.match(/^([A-Za-zÀ-ỹ0-9_\s\[\]\(\)]{1,22}):\s+(.+)$/);
+      const candidateLabel = labelMatch ? labelMatch[1].trim() : '';
+      const isNarrativeVerbColon = /\b(nói|hỏi|đáp|kêu|thở dài|thầm thì|gọi|bảo|cười|nghĩ|nhìn|rằng|như sau|là)$/i.test(candidateLabel);
+
+      if (labelMatch && !isNarrativeVerbColon && candidateLabel.split(/\s+/).length <= 4) {
+        const spk = resolveNamedCharacter(candidateLabel);
+        const content = labelMatch[2].trim();
+        if (content) {
+          segments.push({ id: segments.length + 1, speaker: spk, text: content, audioBuffer: null, blobUrl: null, durationSec: 0 });
+          if (spk !== 'C') lastDialogueSpeaker = spk;
+        }
+        continue;
+      }
+
+      // Case 2: Novel dash dialogue (`- Lời thoại...` or `– Lời thoại...`)
+      const dashMatch = line.match(/^[—–\-]\s*(.+)$/);
+      if (dashMatch) {
+        const body = dashMatch[1].trim();
+        // Check if trailing narrator attribution exists, e.g. `Chào cậu! - Huyền mỉm cười nói.`
+        const trailMatch = body.match(/^(.+?[.?!…])\s+[—–\-]\s+([^—–\-]{3,60})$/);
+        if (trailMatch) {
+          const spoken = trailMatch[1].trim();
+          const attr = trailMatch[2].trim();
+          const spk = pickAlternatingDialogueSpeaker('', attr);
+          segments.push({ id: segments.length + 1, speaker: spk, text: spoken, audioBuffer: null, blobUrl: null, durationSec: 0 });
+          segments.push({ id: segments.length + 1, speaker: 'C', text: attr, audioBuffer: null, blobUrl: null, durationSec: 0 });
+        } else {
+          const prevNarr = segments.length > 0 && segments[segments.length - 1].speaker === 'C' ? segments[segments.length - 1].text : '';
+          const spk = pickAlternatingDialogueSpeaker(prevNarr, '');
+          segments.push({ id: segments.length + 1, speaker: spk, text: body, audioBuffer: null, blobUrl: null, durationSec: 0 });
+        }
+        continue;
+      }
+
+      // Case 3: Prose paragraph containing inline quoted speech `“...”` or `"..."`
+      const quoteRegex = /[“"]([^”"]{2,})[”"]/g;
+      if (quoteRegex.test(line)) {
+        quoteRegex.lastIndex = 0;
+        let lastIdx = 0;
+        let m;
+        while ((m = quoteRegex.exec(line)) !== null) {
+          const narrBefore = line.slice(lastIdx, m.index).trim();
+          const quotedSpeech = m[1].trim();
+          const narrAfterPeek = line.slice(m.index + m[0].length, m.index + m[0].length + 50).trim();
+
+          if (narrBefore) {
+            segments.push({ id: segments.length + 1, speaker: 'C', text: narrBefore, audioBuffer: null, blobUrl: null, durationSec: 0 });
+          }
+          if (quotedSpeech) {
+            const spk = pickAlternatingDialogueSpeaker(narrBefore, narrAfterPeek);
+            segments.push({ id: segments.length + 1, speaker: spk, text: quotedSpeech, audioBuffer: null, blobUrl: null, durationSec: 0 });
+          }
+          lastIdx = m.index + m[0].length;
+        }
+        const tailNarr = line.slice(lastIdx).replace(/^[,.;:\s]+/, '').trim();
+        if (tailNarr) {
+          segments.push({ id: segments.length + 1, speaker: 'C', text: tailNarr, audioBuffer: null, blobUrl: null, durationSec: 0 });
+        }
+        continue;
+      }
+
+      // Case 4: Pure narration paragraph -> Narrator C
+      segments.push({ id: segments.length + 1, speaker: 'C', text: line, audioBuffer: null, blobUrl: null, durationSec: 0 });
+    }
+
+    return segments;
+  }
+
+  function renderParsedSegmentsPanel() {
+    if (!dialogueParsedPanel || !dialogueSegmentsList) return;
+    if (!parsedDialogueSegments || parsedDialogueSegments.length === 0) {
+      dialogueParsedPanel.classList.add('hidden');
+      return;
+    }
+
+    dialogueParsedPanel.classList.remove('hidden');
+    if (dialogueParsedCountBadge) {
+      dialogueParsedCountBadge.textContent = `${parsedDialogueSegments.length} đoạn thoại`;
+    }
+
+    // Role counts summary
+    if (dialogueRoleSummaryBadges) {
+      const counts = {};
+      parsedDialogueSegments.forEach(s => { counts[s.speaker] = (counts[s.speaker] || 0) + 1; });
+      dialogueRoleSummaryBadges.innerHTML = Object.keys(counts).map(k => {
+        const th = getTheme(k);
+        const label = speakerNamesMap[k] || k;
+        return `<span class="px-2 py-0.5 rounded-full border text-[10px] font-semibold ${th.badge}">${escapeHtmlSafe(label)}: ${counts[k]} câu</span>`;
+      }).join('');
+    }
+
+    dialogueSegmentsList.innerHTML = '';
+    parsedDialogueSegments.forEach((seg, idx) => {
+      const th = getTheme(seg.speaker);
+      const row = document.createElement('div');
+      row.className = `p-2.5 rounded-xl bg-slate-900/90 border ${th.border} flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs`;
+
+      const speakerOpts = activeSpeakerKeys.map(k => {
+        const sel = k === seg.speaker ? 'selected' : '';
+        return `<option value="${k}" ${sel}>${escapeHtmlSafe(speakerNamesMap[k] || `Vai ${k}`)}</option>`;
+      }).join('');
+
+      row.innerHTML = `
+        <div class="flex items-start gap-2.5 flex-1 min-w-0">
+          <span class="text-[10px] font-mono text-slate-500 mt-1 shrink-0">#${idx + 1}</span>
+          <select class="seg-speaker-override bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] font-semibold ${th.text} shrink-0 cursor-pointer" data-seg-idx="${idx}">
+            ${speakerOpts}
+          </select>
+          <p class="text-slate-200 leading-relaxed break-words flex-1">${escapeHtmlSafe(seg.text)}</p>
+        </div>
+        <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+          ${seg.blobUrl ? `
+            <button type="button" class="btn-play-single-seg px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] cursor-pointer" data-seg-idx="${idx}" title="Nghe riêng câu này">
+              <i class="fa-solid fa-play"></i> ${seg.durationSec ? `${seg.durationSec.toFixed(1)}s` : ''}
+            </button>
+            <a href="${seg.blobUrl}" download="cau-${idx + 1}-${seg.speaker}.wav" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[11px]" title="Tải lẻ câu này">
+              <i class="fa-solid fa-download"></i>
+            </a>
+          ` : '<span class="text-[10px] text-slate-500 italic">Chưa tạo audio</span>'}
+        </div>
+      `;
+
+      const selectEl = row.querySelector('.seg-speaker-override');
+      if (selectEl) {
+        selectEl.addEventListener('change', (e) => {
+          parsedDialogueSegments[idx].speaker = e.target.value;
+          parsedDialogueSegments[idx].audioBuffer = null;
+          parsedDialogueSegments[idx].blobUrl = null;
+          renderParsedSegmentsPanel();
+        });
+      }
+
+      const playBtn = row.querySelector('.btn-play-single-seg');
+      if (playBtn) {
+        playBtn.addEventListener('click', () => {
+          if (seg.blobUrl && dialogueAudioPlayer) {
+            dialogueOutputContainer?.classList.remove('hidden');
+            dialogueAudioPlayer.src = seg.blobUrl;
+            dialogueAudioPlayer.play().catch(() => {});
+          }
+        });
+      }
+
+      dialogueSegmentsList.appendChild(row);
+    });
+  }
+
+  function runAutoParseAndPreview(showNotification = true) {
+    const raw = dialogueScriptInput ? dialogueScriptInput.value.trim() : '';
+    if (!raw) {
+      if (showNotification && typeof showToast === 'function') {
+        showToast('Vui lòng dán văn bản truyện hoặc kịch bản vào ô trước!', 'warning');
+      }
+      return [];
+    }
+    parsedDialogueSegments = parseLongStoryIntoSegments(raw);
+    lastParsedRawScript = raw;
+    renderParsedSegmentsPanel();
+    if (showNotification && typeof showToast === 'function') {
+      const rolesUsed = new Set(parsedDialogueSegments.map(s => s.speaker)).size;
+      showToast(`Đã tự động bóc tách thành ${parsedDialogueSegments.length} đoạn thoại cho ${rolesUsed} giọng đọc!`, 'success');
+    }
+    return parsedDialogueSegments;
+  }
+
+  if (btnAutoParseStory) {
+    btnAutoParseStory.addEventListener('click', () => runAutoParseAndPreview(true));
+  }
+
+  if (btnLoadDialogueSample && dialogueScriptInput) {
+    btnLoadDialogueSample.addEventListener('click', () => {
+      updateSpeakerCardTitle('A', 'Huyền (A)');
+      updateSpeakerCardTitle('B', 'Quân (B)');
+      updateSpeakerCardTitle('C', 'Người dẫn chuyện (C)');
+      dialogueScriptInput.value =
+`C: Buổi sáng cuối thu tại quán cà phê phố cổ... hai người bạn cũ gặp lại nhau sau mười năm xa cách.
+A: Chào Quân... Đã lâu quá rồi chúng ta mới có dịp ngồi lại cùng nhau thế này!
+B: [cười] Chào Huyền! Trông cậu vẫn rạng rỡ như ngày xưa vậy... thời gian dường như bỏ quên cậu rồi.
+A: Cậu khéo miệng quá! Nghe nói gần đây cậu đang phát triển một dự án sách nói AI rất thành công?
+B: Đúng vậy Huyền... công cụ mới giúp bóc tách từng nhân vật và xuất file riêng cho từng giọng cực kỳ tiện lợi.
+C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng nhạc nhẹ nhàng... và nắng ấm đầu đông.`;
+      runAutoParseAndPreview(true);
+    });
+  }
+
+  if (btnLoadLongStorySample && dialogueScriptInput) {
+    btnLoadLongStorySample.addEventListener('click', () => {
+      updateSpeakerCardTitle('A', 'Nhân vật Nữ (A)');
+      updateSpeakerCardTitle('B', 'Nhân vật Nam (B)');
+      updateSpeakerCardTitle('C', 'Người dẫn chuyện (C)');
+      dialogueScriptInput.value =
+`Đêm đã về khuya... từng hạt mưa rơi tí tách bên hiên nhà vắng lặng. Quân đứng lặng lẽ bên khung cửa sổ, ánh mắt trầm tư nhìn về phía con ngõ nhỏ rồi khẽ cất tiếng hỏi: “Huyền này... suốt ngần ấy năm qua, có bao giờ em hối tiếc về quyết định ngày hôm ấy không?”
+
+Huyền khẽ đặt tách trà nóng xuống mặt bàn gỗ... cô im lặng một thoáng rồi mỉm cười nhẹ nhàng đáp: “[thở dài] Chuyện cũ cũng như cơn mưa ngoài kia vậy anh ạ... lúc mới đổ xuống thì xối xả lắm, nhưng rồi trời cũng sẽ tạnh thôi.”
+
+Quân quay lại nhìn cô, giọng anh trầm ấm hơn: “[cười] Ừ nhỉ... nghe em nói vậy tự dưng lòng anh cũng thấy nhẹ nhõm hơn rất nhiều rồi.”
+
+Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương hoa sữa dịu ngọt của những ngày cuối thu Hà Nội.`;
+      runAutoParseAndPreview(true);
+    });
+  }
+
+  // Helper: Build WAV Blob from raw PCM chunks (int16 mono) at detected sampleRate
+  function createWavBlobFromPcmChunks(pcmByteArrays, sampleRate = 48000) {
+    let totalBytes = 0;
+    pcmByteArrays.forEach(arr => { totalBytes += arr.byteLength; });
+    const header = new ArrayBuffer(44);
+    const view = new DataView(header);
+    const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+    writeStr(0, 'RIFF');
+    view.setUint32(4, totalBytes + 36, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, totalBytes, true);
+    return new Blob([header, ...pcmByteArrays], { type: 'audio/wav' });
+  }
+
+  async function convertWavBlobToMp3(wavBlob, bitrate = '64k') {
+    try {
+      const res = await fetch(`/api/audio/convert-to-mp3?bitrate=${bitrate}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'audio/wav' },
+        body: wavBlob
+      });
+      if (res.ok) {
+        return { blob: await res.blob(), ext: 'mp3' };
+      }
+    } catch (e) {
+      console.warn('MP3 convert fallback to WAV:', e);
+    }
+    return { blob: wavBlob, ext: 'wav' };
+  }
+
+  if (btnDownloadAllSeparatedTracks) {
+    btnDownloadAllSeparatedTracks.addEventListener('click', async () => {
+      if (!separatedDownloadItems || separatedDownloadItems.length === 0) return;
+      for (let i = 0; i < separatedDownloadItems.length; i++) {
+        const item = separatedDownloadItems[i];
+        const a = document.createElement('a');
+        a.href = item.url;
+        a.download = item.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        await new Promise(r => setTimeout(r, 350));
+      }
+      if (typeof showToast === 'function') {
+        showToast(`Đã tải xuống trọn bộ ${separatedDownloadItems.length} file giọng tách riêng!`, 'success');
+      }
+    });
+  }
 
   if (btnStopDialogue) {
     btnStopDialogue.addEventListener('click', () => {
       dialogueCancelRequested = true;
       btnStopDialogue.disabled = true;
       if (dialogueStatus) {
-        dialogueStatus.innerHTML = '<span class="text-amber-400 font-semibold"><i class="fa-solid fa-hand mr-1"></i> Đang dừng tiến trình đối thoại...</span>';
+        dialogueStatus.innerHTML = '<span class="text-amber-400 font-semibold"><i class="fa-solid fa-hand mr-1"></i> Đang dừng tiến trình...</span>';
       }
-    });
-  }
-
-  if (btnLoadDialogueSample && dialogueScriptInput) {
-    btnLoadDialogueSample.addEventListener('click', () => {
-      dialogueScriptInput.value =
-`C: Buổi sáng tại quán cà phê cổ phố, hai người bạn gặp lại nhau sau mười năm xa cách.
-A: Chào bạn Quân! Đã lâu quá rồi chúng ta mới có dịp ngồi lại cùng nhau thế này.
-B: Chào Huyền! Trông cậu vẫn rạng rỡ như ngày xưa vậy, thời gian dường như bỏ quên cậu rồi.
-A: Cậu khéo miệng quá! Nghe nói gần đây cậu đang phát triển một dự án sách nói AI rất thành công?
-B: Đúng vậy Huyền, công cụ VoiceViet Studio giúp chuyển đổi toàn bộ tiểu thuyết dài hàng vạn từ thành audio siêu nhanh.
-C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cười ấm áp của ngày chớm đông.`;
     });
   }
 
@@ -264,185 +783,210 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
     btnGenerateDialogue.addEventListener('click', async () => {
       const script = dialogueScriptInput ? dialogueScriptInput.value.trim() : '';
       if (!script) {
-        alert('Vui lòng nhập kịch bản đối thoại.');
+        if (typeof showToast === 'function') showToast('Vui lòng dán văn bản hoặc kịch bản hội thoại!', 'warning');
         return;
       }
 
       dialogueCancelRequested = false;
-      const lines = script.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      const rawParsedLines = [];
-
-      for (const line of lines) {
-        const match = line.match(/^([ABCabc]):\s*(.*)$/);
-        if (match) {
-          const speaker = match[1].toUpperCase();
-          const text = match[2].trim();
-          if (text) {
-            let voice = 'vi-entertainment';
-            if (speaker === 'A' && dialogueVoiceA) voice = dialogueVoiceA.value;
-            if (speaker === 'B' && dialogueVoiceB) voice = dialogueVoiceB.value;
-            if (speaker === 'C' && dialogueVoiceC) voice = dialogueVoiceC.value;
-            rawParsedLines.push({ speaker, text, voice });
-          }
-        } else {
-          // Default to speaker C (narrator)
-          let voice = dialogueVoiceC ? dialogueVoiceC.value : 'vi-advertising';
-          rawParsedLines.push({ speaker: 'C', text: line, voice });
-        }
+      // Re-parse automatically if script changed since last manual parse, while preserving manual overrides if script unchanged
+      if (!parsedDialogueSegments || parsedDialogueSegments.length === 0 || script !== lastParsedRawScript) {
+        parsedDialogueSegments = parseLongStoryIntoSegments(script);
+        lastParsedRawScript = script;
       }
 
-      // Merge adjacent lines of the same speaker & voice to save API calls
-      const parsedLines = [];
-      for (const item of rawParsedLines) {
-        if (parsedLines.length > 0 && parsedLines[parsedLines.length - 1].speaker === item.speaker && parsedLines[parsedLines.length - 1].voice === item.voice) {
-          parsedLines[parsedLines.length - 1].text += ' ' + item.text;
-        } else {
-          parsedLines.push({ ...item });
-        }
-      }
-
-      if (parsedLines.length === 0) {
-        alert('Không tìm thấy dòng đối thoại hợp lệ (Định dạng: A: Lời thoại hoặc B: Lời thoại).');
+      if (parsedDialogueSegments.length === 0) {
+        if (typeof showToast === 'function') showToast('Không tìm thấy nội dung thoại hợp lệ.', 'warning');
         return;
       }
 
+      renderParsedSegmentsPanel();
+
       btnGenerateDialogue.disabled = true;
       if (btnStopDialogue) btnStopDialogue.disabled = false;
-      if (dialogueStatus) dialogueStatus.innerHTML = `<span class="text-cyan-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Bắt đầu xử lý ${parsedLines.length} câu thoại...</span>`;
+      const rateEl = document.getElementById('rateRange');
+      const pauseEl = document.getElementById('pauseDurationRange');
+      const rate = rateEl ? (parseFloat(rateEl.value) || 1.0) : 1.0;
+      const pauseSec = pauseEl ? (parseFloat(pauseEl.value) || 0.40) : 0.40;
 
       try {
-        const audioBuffers = [];
+        for (let i = 0; i < parsedDialogueSegments.length; i++) {
+          if (dialogueCancelRequested) throw new Error('Đã dừng theo yêu cầu người dùng.');
 
-        for (let i = 0; i < parsedLines.length; i++) {
-          if (dialogueCancelRequested) {
-            throw new Error('Đã hủy theo yêu cầu người dùng.');
-          }
+          const seg = parsedDialogueSegments[i];
+          const voiceId = getSpeakerVoiceId(seg.speaker);
+          const roleName = speakerNamesMap[seg.speaker] || `Vai ${seg.speaker}`;
+          const isFree = voiceId.startsWith('free-');
 
-          const item = parsedLines[i];
           if (dialogueStatus) {
-            dialogueStatus.innerHTML = `<span class="text-cyan-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> [${i + 1}/${parsedLines.length}] Đang đọc câu thoại ${item.speaker}...</span>`;
+            dialogueStatus.innerHTML = `<span class="text-cyan-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> [${i + 1}/${parsedDialogueSegments.length}] Đang thu âm <b>${escapeHtmlSafe(roleName)}</b>...</span>`;
           }
 
-          // Smart phonetic normalization for natural speech
-          let cleanText = (item.text || '')
-            .replace(/\bAI\b/g, 'Ây Ai')
-            .replace(/\bVoiceViet\b/gi, 'Voi-Việt')
-            .replace(/\bStudio\b/gi, 'X-tu-đi-ô')
-            .replace(/\baudio\b/gi, 'ao-đi-ô')
-            .replace(/\bChào Quân!/gi, 'Chào bạn Quân!')
-            .replace(/\bChào Quân,/gi, 'Chào bạn Quân,');
+          const endpoint = isFree ? '/api/free-tts/synthesize' : '/api/cheap-tts/synthesize';
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: seg.text,
+              voice: voiceId,
+              rate,
+              pauses: { sentence: pauseSec }
+            })
+          });
 
-          // Retry logic with countdown if hitting 429
-          let lineBuffer = null;
-          const maxRetries = 3;
-
-          for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            if (dialogueCancelRequested) throw new Error('Đã hủy theo yêu cầu người dùng.');
-
-            const res = await fetch('/api/cheap-tts/synthesize', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                text: cleanText,
-                voice: item.voice,
-                rate: 1.0,
-                pauses: { sentence: 0.3 }
-              })
-            });
-
-            if (res.ok) {
-              lineBuffer = await res.arrayBuffer();
-              break;
-            }
-
-            if (res.status === 429) {
-              console.warn(`[Dialogue] 429 Rate limited. Cooling down...`);
-              for (let s = 18; s > 0; s--) {
-                if (dialogueCancelRequested) throw new Error('Đã hủy theo yêu cầu người dùng.');
-                if (dialogueStatus) {
-                  dialogueStatus.innerHTML = `<span class="text-amber-400 font-semibold"><i class="fa-solid fa-hourglass-half fa-spin mr-1"></i> API đang hạ nhiệt tần suất (${s}s)... Tự động tiếp tục câu ${i + 1}</span>`;
-                }
-                await new Promise(r => setTimeout(r, 1000));
-              }
-              continue;
-            }
-
+          if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.error || `Lỗi HTTP ${res.status}`);
+            throw new Error(errData.error || `Lỗi tạo đoạn #${i + 1} (HTTP ${res.status})`);
           }
 
-          if (!lineBuffer) {
-            throw new Error(`Không thể tạo câu thoại ${i + 1} sau các lần thử.`);
-          }
+          const wavBuf = await res.arrayBuffer();
+          const sr = wavBuf.byteLength >= 28 ? new DataView(wavBuf).getUint32(24, true) : 48000;
+          const durSec = Math.max(0.1, (wavBuf.byteLength - 44) / (sr * 2));
 
-          audioBuffers.push(lineBuffer);
+          if (seg.blobUrl) URL.revokeObjectURL(seg.blobUrl);
+          seg.audioBuffer = wavBuf;
+          seg.sampleRate = sr;
+          seg.durationSec = durSec;
+          seg.blobUrl = URL.createObjectURL(new Blob([wavBuf], { type: 'audio/wav' }));
 
-          // Fast pacing delay between speaker turns (0s for Free AI, 2s for Cheap-TTS Cloud)
-          if (!item.voice.startsWith('free-') && i < parsedLines.length - 1 && !dialogueCancelRequested) {
-            const waitSec = 2;
-            for (let s = waitSec; s > 0; s--) {
-              if (dialogueCancelRequested) break;
-              if (dialogueStatus) {
-                dialogueStatus.innerHTML = `<span class="text-slate-300">✓ Xong câu ${i + 1}/${parsedLines.length} (${item.speaker}). Chuyển tiếp sau <b class="text-cyan-400 font-mono">${s}s</b>...</span>`;
-              }
-              await new Promise(r => setTimeout(r, 1000));
-            }
+          renderParsedSegmentsPanel();
+
+          if (!isFree && i < parsedDialogueSegments.length - 1 && !dialogueCancelRequested) {
+            await new Promise(r => setTimeout(r, 1800));
           }
         }
 
-        if (dialogueCancelRequested) {
-          throw new Error('Đã hủy theo yêu cầu người dùng.');
-        }
+        if (dialogueCancelRequested) throw new Error('Đã dừng theo yêu cầu người dùng.');
 
         if (dialogueStatus) {
-          dialogueStatus.innerHTML = `<span class="text-purple-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang ghép nối âm thanh đối thoại...</span>`;
+          dialogueStatus.innerHTML = `<span class="text-purple-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang ghép bản Full Mix & tách riêng từng giọng nhân vật...</span>`;
         }
 
-        // Merge buffers using client WAV merger
-        if (typeof mergeWavBuffersClient !== 'function') {
-          throw new Error('Hệ thống ghép WAV chưa sẵn sàng.');
-        }
+        // Detect master sample rate from first segment (48000 Hz)
+        const masterSr = parsedDialogueSegments[0].sampleRate || 48000;
+        const turnGapSamples = Math.round(0.42 * masterSr);
+        const turnGapSilence = new Uint8Array(turnGapSamples * 2);
 
-        const mergedWavBlob = mergeWavBuffersClient(audioBuffers, 0.45, 22050);
+        // 1. Build Full Mix PCM & Timeline-Synced Per-Speaker PCM simultaneously!
+        const usedSpeakers = [...new Set(parsedDialogueSegments.map(s => s.speaker))];
+        const fullMixParts = [];
+        const timelinePartsBySpeaker = {};
+        const voiceOnlyPartsBySpeaker = {};
 
-        // Convert to lightweight MP3
-        if (dialogueStatus) {
-          dialogueStatus.innerHTML = `<span class="text-emerald-400 font-semibold"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang nén sang MP3 siêu nhẹ (48 kbps)...</span>`;
-        }
-
-        const mp3Res = await fetch('/api/audio/convert-to-mp3?bitrate=48k', {
-          method: 'POST',
-          headers: { 'Content-Type': 'audio/wav' },
-          body: mergedWavBlob
+        usedSpeakers.forEach(k => {
+          timelinePartsBySpeaker[k] = [];
+          voiceOnlyPartsBySpeaker[k] = [];
         });
 
-        let finalAudioBlob = mergedWavBlob;
-        let isMp3 = false;
-        if (mp3Res.ok) {
-          finalAudioBlob = await mp3Res.blob();
-          isMp3 = true;
+        for (let i = 0; i < parsedDialogueSegments.length; i++) {
+          const seg = parsedDialogueSegments[i];
+          const pcm = new Uint8Array(seg.audioBuffer, 44);
+          const segSilence = new Uint8Array(pcm.byteLength);
+
+          fullMixParts.push(pcm);
+
+          usedSpeakers.forEach(k => {
+            if (k === seg.speaker) {
+              timelinePartsBySpeaker[k].push(pcm);
+              if (voiceOnlyPartsBySpeaker[k].length > 0) {
+                voiceOnlyPartsBySpeaker[k].push(turnGapSilence);
+              }
+              voiceOnlyPartsBySpeaker[k].push(pcm);
+            } else {
+              timelinePartsBySpeaker[k].push(segSilence);
+            }
+          });
+
+          if (i < parsedDialogueSegments.length - 1) {
+            fullMixParts.push(turnGapSilence);
+            usedSpeakers.forEach(k => {
+              timelinePartsBySpeaker[k].push(turnGapSilence);
+            });
+          }
         }
 
-        const finalUrl = URL.createObjectURL(finalAudioBlob);
+        // Create Full Mix WAV + MP3
+        const fullMixWavBlob = createWavBlobFromPcmChunks(fullMixParts, masterSr);
+        const fullMixWavUrl = URL.createObjectURL(fullMixWavBlob);
+        const fullMixMp3Obj = await convertWavBlobToMp3(fullMixWavBlob, '64k');
+        const fullMixMp3Url = URL.createObjectURL(fullMixMp3Obj.blob);
+
         if (dialogueAudioPlayer) {
-          dialogueAudioPlayer.src = finalUrl;
+          dialogueAudioPlayer.src = fullMixMp3Url;
           dialogueAudioPlayer.play().catch(() => {});
         }
-        if (btnDownloadDialogueMp3) {
-          btnDownloadDialogueMp3.href = finalUrl;
-          btnDownloadDialogueMp3.download = `hoi-thoai-${Date.now()}.${isMp3 ? 'mp3' : 'wav'}`;
+        if (btnDownloadDialogueWav) {
+          btnDownloadDialogueWav.href = fullMixWavUrl;
+          btnDownloadDialogueWav.download = `hoi-thoai-full-48khz-${Date.now()}.wav`;
         }
+        if (btnDownloadDialogueMp3) {
+          btnDownloadDialogueMp3.href = fullMixMp3Url;
+          btnDownloadDialogueMp3.download = `hoi-thoai-full-${Date.now()}.${fullMixMp3Obj.ext}`;
+        }
+
+        // 2. Render Separated Per-Speaker Cards (Voice-Only MP3 + CapCut Timeline-Synced WAV)
+        separatedDownloadItems = [];
+        if (dialogueSeparatedTracksGrid) {
+          dialogueSeparatedTracksGrid.innerHTML = '';
+
+          for (const spkKey of usedSpeakers) {
+            const th = getTheme(spkKey);
+            const roleTitle = speakerNamesMap[spkKey] || `Nhân vật ${spkKey}`;
+            const voiceTitle = getSpeakerVoiceDisplayName(spkKey);
+            const lineCount = parsedDialogueSegments.filter(s => s.speaker === spkKey).length;
+            const safeSlug = roleTitle.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+
+            const voiceOnlyWav = createWavBlobFromPcmChunks(voiceOnlyPartsBySpeaker[spkKey], masterSr);
+            const voiceOnlyMp3 = await convertWavBlobToMp3(voiceOnlyWav, '64k');
+            const voiceOnlyUrl = URL.createObjectURL(voiceOnlyMp3.blob);
+            const voiceOnlyFilename = `TachRieng_${spkKey}_${safeSlug}_GiongGop.${voiceOnlyMp3.ext}`;
+
+            const timelineSyncWav = createWavBlobFromPcmChunks(timelinePartsBySpeaker[spkKey], masterSr);
+            const timelineSyncMp3 = await convertWavBlobToMp3(timelineSyncWav, '64k');
+            const timelineSyncUrl = URL.createObjectURL(timelineSyncMp3.blob);
+            const timelineSyncFilename = `TrackCapCut_DongBo_${spkKey}_${safeSlug}.${timelineSyncMp3.ext}`;
+
+            separatedDownloadItems.push({ url: voiceOnlyUrl, filename: voiceOnlyFilename });
+
+            const trackCard = document.createElement('div');
+            trackCard.className = `p-3.5 rounded-xl bg-slate-950/90 border ${th.border} flex flex-col gap-2.5 shadow-md`;
+            trackCard.innerHTML = `
+              <div class="flex items-center justify-between gap-2">
+                <div>
+                  <div class="text-xs font-bold ${th.text} flex items-center gap-1.5">
+                    <i class="fa-solid fa-microphone-lines"></i> ${escapeHtmlSafe(roleTitle)}
+                  </div>
+                  <div class="text-[11px] text-slate-400 mt-0.5">
+                    Giọng: <b class="text-slate-200">${escapeHtmlSafe(voiceTitle)}</b> • Đã tách <b>${lineCount}</b> đoạn
+                  </div>
+                </div>
+                <span class="text-[10px] px-2 py-0.5 rounded-full border font-mono ${th.badge}">Vai ${spkKey}</span>
+              </div>
+              <audio controls src="${voiceOnlyUrl}" class="w-full h-9 outline-none"></audio>
+              <div class="flex flex-wrap items-center gap-2 pt-1">
+                <a href="${voiceOnlyUrl}" download="${voiceOnlyFilename}" class="flex-1 text-center px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] transition flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-download"></i> Tải Giọng Riêng (.${voiceOnlyMp3.ext.toUpperCase()})
+                </a>
+                <a href="${timelineSyncUrl}" download="${timelineSyncFilename}" class="flex-1 text-center px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 font-semibold text-[11px] transition flex items-center justify-center gap-1" title="Giữ đúng khoảng im lặng khi người khác nói để kéo vào CapCut khớp 100% timeline">
+                  <i class="fa-solid fa-film"></i> Track Khớp CapCut
+                </a>
+              </div>
+            `;
+            dialogueSeparatedTracksGrid.appendChild(trackCard);
+          }
+        }
+
         if (dialogueOutputContainer) {
           dialogueOutputContainer.classList.remove('hidden');
+          dialogueOutputContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
         if (dialogueStatus) {
-          dialogueStatus.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check mr-1"></i> Hoàn thành! Đã tạo file đối thoại ${isMp3 ? 'MP3 siêu nhẹ' : 'WAV'}.</span>`;
+          dialogueStatus.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check mr-1"></i> Hoàn tất! Đã xuất 1 bản Full Mix & tách riêng ${usedSpeakers.length} file theo từng giọng nhân vật!</span>`;
         }
       } catch (err) {
-        console.error('Dialogue error:', err);
+        console.error('Dialogue studio error:', err);
         if (dialogueStatus) {
-          dialogueStatus.innerHTML = `<span class="text-rose-400 font-medium"><i class="fa-solid fa-triangle-exclamation mr-1"></i> ${err.message}</span>`;
+          dialogueStatus.innerHTML = `<span class="text-rose-400 font-medium"><i class="fa-solid fa-triangle-exclamation mr-1"></i> ${escapeHtmlSafe(err.message)}</span>`;
         }
       } finally {
         btnGenerateDialogue.disabled = false;
@@ -451,5 +995,5 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
     });
   }
 
-  console.log('VoiceViet Studio Pro extensions initialized successfully.');
+  console.log('VoiceViet Studio Pro v3.0 initialized.');
 })();

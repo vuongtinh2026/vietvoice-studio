@@ -258,9 +258,18 @@
             <textarea
               id="textInput"
               rows="9"
-              placeholder="Nhập hoặc dán nội dung văn bản, kịch bản, bài báo, hoặc toàn bộ truyện dài (hàng vạn từ) vào đây..."
+              placeholder="Nhập hoặc dán nội dung văn bản, kịch bản, bài báo, hoặc toàn bộ truyện dài (hàng vạn từ) vào đây... (Mẹo: Dùng dấu ... để ngắt nghỉ sâu lắng, hoặc chèn [cười], [thở dài] cho giọng Studio 48kHz)"
               class="w-full bg-[#0a0e17]/90 border border-slate-800 rounded-xl p-4 text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition resize-y text-base leading-relaxed font-normal"
             ></textarea>
+          </div>
+
+          <!-- Expressive Prosody & Emotion Quick Tags -->
+          <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
+            <span class="text-emerald-400 font-semibold"><i class="fa-solid fa-masks-theater mr-1"></i>Chèn biểu cảm & ngắt nhịp thật:</span>
+            <button type="button" class="insert-cue-btn px-2 py-0.5 rounded-md bg-slate-800/90 hover:bg-emerald-600/30 hover:text-emerald-300 border border-slate-700 transition cursor-pointer" data-cue="... "><code>...</code> Ngắt lửng (0.8s)</button>
+            <button type="button" class="insert-cue-btn px-2 py-0.5 rounded-md bg-slate-800/90 hover:bg-emerald-600/30 hover:text-emerald-300 border border-slate-700 transition cursor-pointer" data-cue="[cười] ">😄 <code>[cười]</code></button>
+            <button type="button" class="insert-cue-btn px-2 py-0.5 rounded-md bg-slate-800/90 hover:bg-emerald-600/30 hover:text-emerald-300 border border-slate-700 transition cursor-pointer" data-cue="[thở dài] ">😮‍💨 <code>[thở dài]</code></button>
+            <button type="button" class="insert-cue-btn px-2 py-0.5 rounded-md bg-slate-800/90 hover:bg-emerald-600/30 hover:text-emerald-300 border border-slate-700 transition cursor-pointer" data-cue="[hắng giọng] ">🎙️ <code>[hắng giọng]</code></button>
           </div>
 
           <!-- Stats & Preset samples -->
@@ -495,100 +504,134 @@
       <!-- ================= VIEW 2: HỘI THOẠI ĐA GIỌNG (MULTI-SPEAKER) ================= -->
       <div id="viewDialogue" class="content-view hidden flex flex-col gap-6">
         <div class="glass-panel rounded-2xl p-6 flex flex-col gap-4">
-          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
             <div>
               <h2 class="text-base font-bold text-white flex items-center gap-2">
-                <i class="fa-solid fa-comments text-cyan-400"></i> Hội Thoại Đa Giọng (Multi-Speaker Studio)
+                <i class="fa-solid fa-comments text-cyan-400"></i> Hội Thoại Đa Giọng & Tách Riêng Từng Giọng (Multi-Speaker Studio)
               </h2>
-              <p class="text-xs text-slate-400 mt-0.5">Tạo kịch bản đối đáp nhiều nhân vật và xuất 1 file audio hoàn chỉnh duy nhất.</p>
+              <p class="text-xs text-slate-400 mt-0.5">Tự động nhận diện lời thoại từ truyện dài, phân vai riêng biệt, xuất bản ghép chung & tách riêng file cho từng giọng!</p>
             </div>
-            <span class="text-xs px-2.5 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-full font-semibold">VoiceViet Exclusive</span>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                id="btnAddDialogueSpeaker"
+                class="text-xs px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-xl font-semibold transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <i class="fa-solid fa-user-plus text-[11px]"></i> Thêm nhân vật (D, E...)
+              </button>
+              <span class="text-xs px-2.5 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-full font-semibold">Studio 48kHz</span>
+            </div>
           </div>
 
           <!-- Character Configuration -->
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div id="dialogueSpeakerCardsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             <!-- Speaker A -->
-            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-purple-500/30 flex flex-col gap-2">
+            <div class="dialogue-speaker-card p-3.5 rounded-xl bg-slate-900/80 border border-purple-500/30 flex flex-col gap-2" data-speaker-key="A">
               <div class="flex items-center justify-between text-xs">
-                <span class="font-bold text-purple-400 flex items-center gap-1.5"><i class="fa-solid fa-user"></i> Nhân vật A</span>
-                <span class="text-[10px] text-slate-500">Ký hiệu `A:`</span>
+                <span class="font-bold text-purple-400 flex items-center gap-1.5"><i class="fa-solid fa-user"></i> <span class="speaker-role-title">Nhân vật Nữ (A)</span></span>
+                <span class="text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded font-mono">A:</span>
               </div>
-              <select id="dialogueVoiceA" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
-                <option value="free-vi-ngoc-huyen" selected>✨ Ngọc Huyền (Free Offline - Kể chuyện / Review)</option>
-                <option value="free-vi-hoaimy">✨ Hoài My (Free Neural - Ngôn tình)</option>
-                <option value="free-vi-ban-mai">✨ Ban Mai (Free Offline - Chuẩn giọng Bắc)</option>
-                <option value="free-vi-lac-phi">✨ Lạc Phi (Free Offline - Cổ trang)</option>
-                <option value="free-vi-thien-tam">✨ Thiện Tâm (Free Offline - Sâu lắng)</option>
-                <option value="vi-pro-podcast">Trúc Ly (Pro - Podcast / Trò chuyện)</option>
-                <option value="vi-pro-ngon-tinh">Mỹ Duyên (Pro - Ngôn tình / Truyền cảm)</option>
-                <option value="vi-pro-nu-hiep">Ngọc Linh (Pro - Nữ hiệp)</option>
-                <option value="vi-pro-tin-tuc">Mai Anh (Pro - Tin tức / Phổ thông)</option>
+              <select id="dialogueVoiceA" class="dialogue-voice-select w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
+                <option value="free-vi-ngoc-huyen" selected>✨ Ngọc Huyền (Studio 48kHz - Nữ Bắc tự nhiên)</option>
+                <option value="free-vi-truc-ly">✨ Trúc Ly (Studio 48kHz - Podcast gần gũi)</option>
+                <option value="free-vi-my-duyen">✨ Mỹ Duyên (Studio 48kHz - Ngôn tình miền Nam)</option>
+                <option value="free-vi-ngoc-linh">✨ Ngọc Linh (Studio 48kHz - Cổ trang)</option>
+                <option value="free-vi-mai-anh">✨ Mai Anh (Studio 48kHz - Tin tức)</option>
+                <option value="free-vi-hoaimy">✨ Hoài My (Free Neural - Ngọt ngào)</option>
+                <option value="free-vi-ban-mai">✨ Ban Mai (Siêu tốc Offline)</option>
               </select>
             </div>
 
             <!-- Speaker B -->
-            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-cyan-500/30 flex flex-col gap-2">
+            <div class="dialogue-speaker-card p-3.5 rounded-xl bg-slate-900/80 border border-cyan-500/30 flex flex-col gap-2" data-speaker-key="B">
               <div class="flex items-center justify-between text-xs">
-                <span class="font-bold text-cyan-400 flex items-center gap-1.5"><i class="fa-solid fa-user"></i> Nhân vật B</span>
-                <span class="text-[10px] text-slate-500">Ký hiệu `B:`</span>
+                <span class="font-bold text-cyan-400 flex items-center gap-1.5"><i class="fa-solid fa-user"></i> <span class="speaker-role-title">Nhân vật Nam (B)</span></span>
+                <span class="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded font-mono">B:</span>
               </div>
-              <select id="dialogueVoiceB" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
-                <option value="free-vi-minh-quan" selected>✨ Minh Quân (Free Offline - Dõng dạc / Nam)</option>
-                <option value="free-vi-adam-tiktok">✨ Adam TikTok (Free Offline - Trầm cuốn hút)</option>
+              <select id="dialogueVoiceB" class="dialogue-voice-select w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
+                <option value="free-vi-minh-quan" selected>✨ Minh Quân (Studio 48kHz - Nam dõng dạc)</option>
+                <option value="free-vi-pham-tuyen">✨ Phạm Tuyên (Studio 48kHz - Kiếm hiệp hào sảng)</option>
+                <option value="free-vi-adam-tiktok">✨ Adam TikTok (Studio 48kHz - Tự nhiên / [cười])</option>
+                <option value="free-vi-hai-dang">✨ Hải Đăng (Studio 48kHz - Chuẩn VTV)</option>
+                <option value="free-vi-thai-son">✨ Thái Sơn (Studio 48kHz - Nam miền Nam)</option>
                 <option value="free-vi-namminh">✨ Nam Minh (Free Neural - Phóng sự)</option>
-                <option value="free-vi-manh-dung">✨ Mạnh Dũng (Free Offline - Hào sảng)</option>
-                <option value="free-vi-duy-oryx">✨ Duy Oryx (Free Offline - Siêu trầm)</option>
-                <option value="vi-pro-review-phim">Mạnh Dũng (Pro - Review phim / Nam)</option>
-                <option value="vi-pro-kiem-hiep">Phạm Tuyên (Pro - Kiếm hiệp)</option>
-                <option value="vi-pro-truyen-ma">Anh Khôi (Pro - Truyện ma)</option>
+                <option value="free-vi-duy-oryx">✨ Duy Oryx (Siêu trầm điện ảnh)</option>
               </select>
             </div>
 
             <!-- Speaker C -->
-            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-amber-500/30 flex flex-col gap-2">
+            <div class="dialogue-speaker-card p-3.5 rounded-xl bg-slate-900/80 border border-amber-500/30 flex flex-col gap-2" data-speaker-key="C">
               <div class="flex items-center justify-between text-xs">
-                <span class="font-bold text-amber-400 flex items-center gap-1.5"><i class="fa-solid fa-user"></i> Người dẫn chuyện (C)</span>
-                <span class="text-[10px] text-slate-500">Ký hiệu `C:`</span>
+                <span class="font-bold text-amber-400 flex items-center gap-1.5"><i class="fa-solid fa-book-open"></i> <span class="speaker-role-title">Người dẫn chuyện (C)</span></span>
+                <span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-mono">C:</span>
               </div>
-              <select id="dialogueVoiceC" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
-                <option value="free-vi-thien-tam" selected>✨ Thiện Tâm (Free Offline - Dẫn truyện sâu lắng)</option>
-                <option value="free-vi-ngoc-ngan">✨ Ngọc Ngạn (Free Offline - Đêm khuya / Truyện ma)</option>
-                <option value="free-vi-tai-an">✨ Tài An (Free Offline - Lịch sử / Tài liệu)</option>
-                <option value="free-vi-google">✨ Chị Google (Free - Meme / Tin nhanh)</option>
-                <option value="free-vi-namminh">✨ Nam Minh (Free Neural - Thời sự)</option>
-                <option value="vi-pro-ke-chuyen-lich-su">Thái Sơn (Pro - Dẫn truyện / Lịch sử)</option>
-                <option value="vi-pro-truyen-ma">Anh Khôi (Pro - Truyện ma)</option>
-                <option value="vi-pro-kiem-hiep">Phạm Tuyên (Pro - Kiếm hiệp)</option>
+              <select id="dialogueVoiceC" class="dialogue-voice-select w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
+                <option value="free-vi-thien-tam" selected>✨ Thiện Tâm (Studio 48kHz - Dẫn truyện sâu lắng)</option>
+                <option value="free-vi-thien-minh">✨ Thiện Minh (Studio 48kHz - Kể chuyện ấm áp)</option>
+                <option value="free-vi-ngoc-ngan">✨ Ngọc Ngạn (Đêm khuya / Truyện ma)</option>
+                <option value="free-vi-tai-an">✨ Tài An (CD Media - Lịch sử / Tài liệu)</option>
+                <option value="free-vi-quang-son">✨ Quang Sơn (Studio 48kHz - Giọng miền Trung)</option>
+                <option value="free-vi-google">✨ Chị Google (Meme / Tin nhanh)</option>
               </select>
             </div>
           </div>
 
-          <!-- Dialogue Script Textarea -->
+          <!-- Dialogue Script Textarea + Smart Auto-Split Toolbar -->
           <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between text-xs text-slate-400">
-              <span>Kịch bản đối thoại (Viết theo định dạng <code>A: lời thoại</code>, <code>B: lời thoại</code>):</span>
-              <button id="btnLoadDialogueSample" class="text-cyan-400 hover:underline cursor-pointer">Nạp kịch bản mẫu</button>
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+              <span>Dán kịch bản (<code>A: ...</code>, <code>Tên: ...</code>) <b>HOẶC dán cả chương truyện dài</b> (có ngoặc kép <code>“...”</code> / gạch ngang <code>- ...</code>):</span>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" id="btnAutoParseStory" class="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 font-semibold transition cursor-pointer flex items-center gap-1">
+                  <i class="fa-solid fa-wand-sparkles text-amber-300"></i> Tự động phân vai & tách câu truyện dài
+                </button>
+                <button type="button" id="btnLoadLongStorySample" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition cursor-pointer">
+                  📖 Mẫu truyện dài (Tự tách vai)
+                </button>
+                <button type="button" id="btnLoadDialogueSample" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition cursor-pointer">
+                  💬 Mẫu đối thoại A-B-C
+                </button>
+              </div>
             </div>
             <textarea
               id="dialogueScriptInput"
-              rows="8"
+              rows="9"
               class="w-full bg-[#0a0e17] border border-slate-800 rounded-xl p-4 text-xs sm:text-sm font-mono text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 leading-relaxed"
-              placeholder="C: Buổi sáng tại quán cà phê cổ phố, hai người bạn gặp lại nhau sau mười năm xa cách.
-A: Chào bạn Quân! Đã lâu quá rồi chúng ta mới có dịp ngồi lại cùng nhau thế này.
-B: Chào Huyền! Trông cậu vẫn rạng rỡ như ngày xưa vậy, thời gian dường như bỏ quên cậu rồi.
-A: Cậu khéo miệng quá! Nghe nói gần đây cậu đang phát triển một dự án sách nói AI rất thành công?"
+              placeholder="Bạn có thể dán trực tiếp chương truyện dài có lời dẫn & dấu ngoặc kép “...”, hoặc viết theo vai:
+C: Buổi chiều cuối thu... gió thổi xào xạc qua khung cửa sổ nhỏ.
+A: Quân này... đã mười năm rồi chúng ta mới gặp lại nhau đúng không?
+B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
             ></textarea>
+            <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
+              <span class="text-cyan-400 font-semibold"><i class="fa-solid fa-masks-theater mr-1"></i>Chèn biểu cảm hội thoại:</span>
+              <button type="button" class="insert-dialogue-cue-btn px-2 py-0.5 rounded bg-slate-800 hover:bg-cyan-600/30 hover:text-cyan-300 border border-slate-700 cursor-pointer" data-cue="... "><code>...</code> Ngắt lửng</button>
+              <button type="button" class="insert-dialogue-cue-btn px-2 py-0.5 rounded bg-slate-800 hover:bg-cyan-600/30 hover:text-cyan-300 border border-slate-700 cursor-pointer" data-cue="[cười] ">😄 <code>[cười]</code></button>
+              <button type="button" class="insert-dialogue-cue-btn px-2 py-0.5 rounded bg-slate-800 hover:bg-cyan-600/30 hover:text-cyan-300 border border-slate-700 cursor-pointer" data-cue="[thở dài] ">😮‍💨 <code>[thở dài]</code></button>
+              <button type="button" class="insert-dialogue-cue-btn px-2 py-0.5 rounded bg-slate-800 hover:bg-cyan-600/30 hover:text-cyan-300 border border-slate-700 cursor-pointer" data-cue="[hắng giọng] ">🎙️ <code>[hắng giọng]</code></button>
+            </div>
+          </div>
+
+          <!-- Visual Parsed Segments & Role Distinction Panel -->
+          <div id="dialogueParsedPanel" class="hidden p-4 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col gap-3">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
+              <div class="flex items-center gap-2 text-xs font-bold text-slate-200">
+                <i class="fa-solid fa-layer-group text-purple-400"></i>
+                <span>Bảng Phân Biệt Từng Đoạn & Từng Giọng Đọc</span>
+                <span id="dialogueParsedCountBadge" class="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">0 đoạn</span>
+              </div>
+              <div id="dialogueRoleSummaryBadges" class="flex flex-wrap items-center gap-1.5 text-[11px]"></div>
+            </div>
+            <div id="dialogueSegmentsList" class="max-h-72 overflow-y-auto pr-1 flex flex-col gap-2"></div>
           </div>
 
           <!-- Dialogue Generate Button & Output -->
           <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
               <button
                 id="btnGenerateDialogue"
                 class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/25 transition flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
               >
                 <i id="btnGenerateDialogueIcon" class="fa-solid fa-wand-magic-sparkles"></i>
-                <span id="btnGenerateDialogueText">Ghép & Tạo File Hội Thoại MP3</span>
+                <span id="btnGenerateDialogueText">Tạo Bản Ghép Chung & Tách Riêng Từng Giọng</span>
               </button>
               <button
                 id="btnStopDialogue"
@@ -598,18 +641,48 @@ A: Cậu khéo miệng quá! Nghe nói gần đây cậu đang phát triển m�
                 <i class="fa-solid fa-pause"></i> Dừng
               </button>
             </div>
-            <div id="dialogueStatus" class="text-xs text-slate-400">Sẵn sàng tạo file đối thoại...</div>
+            <div id="dialogueStatus" class="text-xs text-slate-400">Sẵn sàng bóc tách & tạo hội thoại đa giọng...</div>
           </div>
 
-          <!-- Dialogue Audio Player Container -->
-          <div id="dialogueOutputContainer" class="hidden p-4 rounded-xl bg-slate-900 border border-cyan-500/40 flex flex-col gap-3">
-            <div class="flex items-center justify-between text-xs text-cyan-300">
-              <span class="font-semibold flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-400"></i> File hội thoại hoàn chỉnh đã sẵn sàng!</span>
-              <a id="btnDownloadDialogueMp3" download="hoi-thoai-voiceviet.mp3" class="px-3 py-1 bg-cyan-500 text-slate-950 font-bold rounded-lg hover:bg-cyan-400 cursor-pointer flex items-center gap-1">
-                <i class="fa-solid fa-download"></i> Tải MP3
-              </a>
+          <!-- Dialogue Audio Player Container (Full Mix + Separated Voice Tracks!) -->
+          <div id="dialogueOutputContainer" class="hidden p-4 rounded-xl bg-slate-900/95 border border-cyan-500/40 flex flex-col gap-4">
+            <!-- 1. Full Merged Audio -->
+            <div class="p-3.5 rounded-xl bg-slate-950/90 border border-cyan-500/30 flex flex-col gap-2.5">
+              <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-cyan-300">
+                <span class="font-bold flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-400"></i> 1. Bản Hội Thoại Ghép Chung Hoàn Chỉnh (Full Mix)</span>
+                <div class="flex items-center gap-2">
+                  <a id="btnDownloadDialogueWav" download="hoi-thoai-full-48khz.wav" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold rounded-lg cursor-pointer flex items-center gap-1">
+                    <i class="fa-solid fa-file-waveform"></i> Tải .WAV 48kHz
+                  </a>
+                  <a id="btnDownloadDialogueMp3" download="hoi-thoai-voiceviet.mp3" class="px-3 py-1 bg-cyan-500 text-slate-950 font-bold rounded-lg hover:bg-cyan-400 cursor-pointer flex items-center gap-1">
+                    <i class="fa-solid fa-download"></i> Tải Full .MP3
+                  </a>
+                </div>
+              </div>
+              <audio id="dialogueAudioPlayer" controls class="w-full h-10 outline-none"></audio>
             </div>
-            <audio id="dialogueAudioPlayer" controls class="w-full h-10 outline-none"></audio>
+
+            <!-- 2. Separated Individual Speaker Stem Tracks -->
+            <div class="flex flex-col gap-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 class="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                    <i class="fa-solid fa-sliders text-emerald-400"></i> 2. File Tách Riêng Từng Giọng / Từng Nhân Vật (Dựng Video CapCut / Premiere)
+                  </h4>
+                  <p class="text-[11px] text-slate-400 mt-0.5">
+                    Mỗi nhân vật được xuất riêng cả <b>File Giọng Gộp Liền Mạch</b> lẫn <b>Track Đồng Bộ Timeline</b> (giữ đúng khoảng lặng để kéo nhiều track vào CapCut khớp nhau 100%!).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  id="btnDownloadAllSeparatedTracks"
+                  class="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <i class="fa-solid fa-boxes-packing"></i> Tải Tất Cả Giọng Đã Tách
+                </button>
+              </div>
+              <div id="dialogueSeparatedTracksGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -1026,8 +1099,8 @@ A: Cậu khéo miệng quá! Nghe nói gần đây cậu đang phát triển m�
   <!-- Mammoth.js for Word (.docx) document parsing -->
   <script src="/mammoth.browser.min.js"></script>
   <!-- Main Logic -->
-  <script src="app.js?v=2.2"></script>
+  <script src="app.js?v=3.0"></script>
   <!-- Pro Studio Extensions (Navigation tabs, Multi-speaker dialogue, VietQR modal) -->
-  <script src="studio_pro.js?v=2.2"></script>
+  <script src="studio_pro.js?v=3.0"></script>
 </body>
 </html>
