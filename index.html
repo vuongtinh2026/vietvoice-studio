@@ -42,12 +42,20 @@
     <!-- Header Center: Engine Switcher -->
     <div class="flex items-center bg-slate-900/90 p-1 rounded-xl border border-slate-700/80 shadow-inner">
       <button
+        id="tabFreeTts"
+        class="engine-tab active px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition text-white bg-gradient-to-r from-emerald-600 to-teal-600 shadow cursor-pointer"
+      >
+        <i class="fa-solid fa-sparkles text-amber-300 text-xs"></i>
+        <span>✨ AI Miễn Phí (Không giới hạn)</span>
+        <span class="text-[9px] bg-amber-400 text-slate-950 font-black px-1.5 py-0.2 rounded-full uppercase">HOT</span>
+      </button>
+      <button
         id="tabCheapTts"
-        class="engine-tab active cheap-tts-active px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition cursor-pointer"
+        class="engine-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition text-slate-400 hover:text-white cursor-pointer"
       >
         <i class="fa-solid fa-bolt-lightning text-amber-400 text-xs"></i>
         <span>Cheap-TTS Cloud</span>
-        <span class="text-[9px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.2 rounded-full uppercase">128 Giọng (28 Pro VN)</span>
+        <span class="text-[9px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.2 rounded-full uppercase">128 Giọng</span>
       </button>
       <button
         id="tabWebSpeech"
@@ -506,7 +514,10 @@
                 <span class="text-[10px] text-slate-500">Ký hiệu `A:`</span>
               </div>
               <select id="dialogueVoiceA" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
-                <option value="vi-pro-podcast" selected>Trúc Ly (Pro - Podcast / Trò chuyện)</option>
+                <option value="free-vi-hoaimy" selected>✨ Hoài My (Free - Truyền cảm / Ngôn tình)</option>
+                <option value="free-vi-ngoc-huyen">✨ Ngọc Huyền (Free - Tâm sự / Kể chuyện)</option>
+                <option value="free-vi-thien-tam">✨ Thiện Tâm (Free - Trầm ấm / Sâu lắng)</option>
+                <option value="vi-pro-podcast">Trúc Ly (Pro - Podcast / Trò chuyện)</option>
                 <option value="vi-pro-ngon-tinh">Mỹ Duyên (Pro - Ngôn tình / Truyền cảm)</option>
                 <option value="vi-pro-nu-hiep">Ngọc Linh (Pro - Nữ hiệp)</option>
                 <option value="vi-pro-tin-tuc">Mai Anh (Pro - Tin tức / Phổ thông)</option>
@@ -524,7 +535,10 @@
                 <span class="text-[10px] text-slate-500">Ký hiệu `B:`</span>
               </div>
               <select id="dialogueVoiceB" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
-                <option value="vi-pro-review-phim" selected>Mạnh Dũng (Pro - Review phim / Nam)</option>
+                <option value="free-vi-namminh" selected>✨ Nam Minh (Free - Trầm ấm / Kiếm hiệp)</option>
+                <option value="free-vi-minh-quan">✨ Minh Quân (Free - Dõng dạc / Review)</option>
+                <option value="free-vi-adam-tiktok">✨ Adam TikTok (Free - Sôi nổi / Bắt trend)</option>
+                <option value="vi-pro-review-phim">Mạnh Dũng (Pro - Review phim / Nam)</option>
                 <option value="vi-pro-kiem-hiep">Phạm Tuyên (Pro - Kiếm hiệp)</option>
                 <option value="vi-pro-truyen-ma">Anh Khôi (Pro - Truyện ma)</option>
                 <option value="vi-pro-podcast">Trúc Ly (Pro - Podcast)</option>
@@ -541,7 +555,10 @@
                 <span class="text-[10px] text-slate-500">Ký hiệu `C:`</span>
               </div>
               <select id="dialogueVoiceC" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
-                <option value="vi-pro-ke-chuyen-lich-su" selected>Thái Sơn (Pro - Dẫn truyện / Lịch sử)</option>
+                <option value="free-vi-thien-tam" selected>✨ Thiện Tâm (Free - Dẫn truyện / Sâu lắng)</option>
+                <option value="free-vi-google">✨ Chị Google (Free - Meme / Tin nhanh)</option>
+                <option value="free-vi-namminh">✨ Nam Minh (Free - Thời sự)</option>
+                <option value="vi-pro-ke-chuyen-lich-su">Thái Sơn (Pro - Dẫn truyện / Lịch sử)</option>
                 <option value="vi-pro-truyen-ma">Anh Khôi (Pro - Truyện ma)</option>
                 <option value="vi-pro-kiem-hiep">Phạm Tuyên (Pro - Kiếm hiệp)</option>
                 <option value="vi-pro-tin-tuc">Mai Anh (Pro - Tin tức)</option>

@@ -109,17 +109,34 @@
       const data = await res.json();
       if (!data.success || !data.voices) return;
 
-      const viVoices = data.voices.filter(v => v.language === 'vi' || v.id.startsWith('vi'));
+      const viVoices = data.voices.filter(v => v.language === 'vi' || v.id.startsWith('vi') || v.id.startsWith('free-'));
       if (viVoices.length === 0) return;
 
       voiceCatalogGrid.innerHTML = '';
 
       viVoices.forEach(v => {
+        const isFree = v.id.startsWith('free-');
         const isPro = v.id.startsWith('vi-pro-');
         const initials = v.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-        const badgeColor = isPro ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30';
-        const avatarBg = isPro ? 'bg-gradient-to-tr from-purple-600 to-indigo-600 text-white' : 'bg-slate-800 text-amber-400 border border-slate-700';
-        const cardBorder = isPro ? 'border-purple-500/30 hover:border-purple-500' : 'border-slate-800 hover:border-amber-500/50';
+        let badgeColor = 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+        let avatarBg = 'bg-slate-800 text-amber-400 border border-slate-700';
+        let cardBorder = 'border-slate-800 hover:border-amber-500/50';
+        let badgeText = 'Tiêu Chuẩn';
+        let btnBg = 'bg-slate-800 hover:bg-slate-700 text-slate-200';
+
+        if (isFree) {
+          badgeColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+          avatarBg = 'bg-gradient-to-tr from-emerald-600 to-teal-600 text-white';
+          cardBorder = 'border-emerald-500/30 hover:border-emerald-400';
+          badgeText = v.badge || 'MIỄN PHÍ';
+          btnBg = 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white';
+        } else if (isPro) {
+          badgeColor = 'bg-purple-500/20 text-purple-300 border-purple-500/30';
+          avatarBg = 'bg-gradient-to-tr from-purple-600 to-indigo-600 text-white';
+          cardBorder = 'border-purple-500/30 hover:border-purple-500';
+          badgeText = 'PRO 48kHz';
+          btnBg = 'bg-purple-600 hover:bg-purple-500 text-white';
+        }
 
         const card = document.createElement('div');
         card.className = `p-4 rounded-xl bg-slate-900/80 border ${cardBorder} transition-all flex flex-col justify-between gap-3 shadow-lg`;
@@ -131,13 +148,13 @@
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between gap-1">
                 <h4 class="text-xs font-bold text-white truncate">${v.name}</h4>
-                <span class="text-[9px] ${badgeColor} border px-1.5 py-0.2 rounded font-mono shrink-0">${isPro ? 'PRO 48kHz' : 'Tiêu Chuẩn'}</span>
+                <span class="text-[9px] ${badgeColor} border px-1.5 py-0.2 rounded font-mono shrink-0">${badgeText}</span>
               </div>
               <p class="text-[11px] text-cyan-300 font-medium mt-0.5 truncate">${v.useCase || v.id}</p>
               <p class="text-[10px] text-slate-400 mt-0.5">Mã: <code class="text-slate-300">${v.id}</code></p>
             </div>
           </div>
-          <button class="select-voice-quick-btn w-full py-1.5 ${isPro ? 'bg-purple-600 hover:bg-purple-500 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-200'} rounded-lg text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${v.name}">
+          <button class="select-voice-quick-btn w-full py-1.5 ${btnBg} rounded-lg text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${v.name}">
             Chọn Giọng Này
           </button>
         `;

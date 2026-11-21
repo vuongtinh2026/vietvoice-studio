@@ -33,6 +33,7 @@ function resolvePythonBin() {
 
 const PYTHON_BIN = resolvePythonBin();
 const ENGINE_PRO_SCRIPT = path.join(__dirname, 'engine_pro.py');
+const ENGINE_FREE_SCRIPT = path.join(__dirname, 'engine_free.py');
 
 let cachedTts = null;
 let currentKey = DEFAULT_KEY;
@@ -121,6 +122,68 @@ function synthesizeWithPython(text, voice, rate = 1.0, key = DEFAULT_KEY) {
     });
 
     py.stdin.write(JSON.stringify({ text, voice, rate, key }));
+    py.stdin.end();
+  });
+}
+
+/**
+ * Free Engine (Open Source TTS Hub: Edge Neural, Google, TikTok, Thiện Tâm, Ngọc Huyền...)
+ */
+let cachedFreeVoices = null;
+
+function getVoicesFree() {
+  return new Promise((resolve, reject) => {
+    if (cachedFreeVoices && cachedFreeVoices.length > 0) {
+      return resolve(cachedFreeVoices);
+    }
+    const py = spawn(PYTHON_BIN, [ENGINE_FREE_SCRIPT, 'voices'], {
+      cwd: __dirname
+    });
+    let out = '';
+    let err = '';
+    py.stdout.on('data', d => { out += d; });
+    py.stderr.on('data', d => { err += d; });
+    py.on('error', (err) => {
+      reject(err);
+    });
+    py.on('close', code => {
+      if (code !== 0) return reject(new Error(err || `Free voices exited with ${code}`));
+      try {
+        const data = JSON.parse(out);
+        cachedFreeVoices = data.voices || [];
+        resolve(cachedFreeVoices);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+}
+
+function synthesizeFree(text, voice, rate = 1.0) {
+  return new Promise((resolve, reject) => {
+    const py = spawn(PYTHON_BIN, [ENGINE_FREE_SCRIPT], {
+      cwd: __dirname
+    });
+    const chunks = [];
+    const errChunks = [];
+
+    py.stdout.on('data', d => chunks.push(d));
+    py.stderr.on('data', d => errChunks.push(d));
+    py.on('error', (err) => {
+      reject(err);
+    });
+
+    py.on('close', code => {
+      if (code !== 0) {
+        const errMsg = Buffer.concat(errChunks).toString('utf-8');
+        return reject(new Error(errMsg || `Free engine exited with code ${code}`));
+      }
+      const audio = Buffer.concat(chunks);
+      const seconds = Math.max(1, audio.length / 8000);
+      resolve({ audio, seconds, voice: { id: voice, name: voice } });
+    });
+
+    py.stdin.write(JSON.stringify({ text, voice, rate }));
     py.stdin.end();
   });
 }
@@ -316,6 +379,12 @@ const server = http.createServer(async (req, res) => {
         const tts = getTtsClient(activeKey);
         voices = await tts.voices();
       }
+      try {
+        const freeVoices = await getVoicesFree();
+        voices = [...freeVoices, ...voices];
+      } catch (fErr) {
+        console.warn('Could not load free voices:', fErr.message);
+      }
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ success: true, voices }));
     } catch (err) {
@@ -323,6 +392,70 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ success: false, error: err.message }));
     }
+    return;
+  }
+
+  // 1.1 API: List Free Open Source Voices (Edge Neural, Google, TikTok, Thiện Tâm, Ngọc Huyền...)
+  if (pathname === '/api/free-tts/voices' && req.method === 'GET') {
+    try {
+      const voices = await getVoicesFree();
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true, voices }));
+    } catch (err) {
+      console.error('Error fetching free voices:', err);
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // 1.2 API: Synthesize Audio via Free Open Source Engine
+  if (pathname === '/api/free-tts/synthesize' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const rawText = payload.text?.trim();
+        const text = normalizeVietnameseText(rawText);
+        const voice = payload.voice || 'free-vi-hoaimy';
+        const rate = parseFloat(payload.rate) || 1.0;
+
+        if (!text) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'Vui lòng nhập văn bản cần đọc.' }));
+          return;
+        }
+
+        // Support free open source voices directly via same endpoint
+        if (voice.startsWith('free-')) {
+          console.log(`[Free Engine via Synthesize] Synthesizing ${text.length} chars (Voice: ${voice})...`);
+          const result = await synthesizeFree(text, voice, rate);
+          res.writeHead(200, {
+            'Content-Type': 'audio/mpeg',
+            'Content-Length': result.audio.length,
+            'X-Audio-Seconds': result.seconds.toFixed(1),
+            'X-Audio-Voice': voice
+          });
+          res.end(result.audio);
+          return;
+        }
+
+        console.log(`[Free Engine] Synthesizing ${text.length} chars with voice ${voice}...`);
+        const result = await synthesizeFree(text, voice, rate);
+        res.writeHead(200, {
+          'Content-Type': 'audio/mpeg',
+          'Content-Length': result.audio.length,
+          'X-Audio-Seconds': result.seconds.toFixed(1),
+          'X-Audio-Voice': voice
+        });
+        res.end(result.audio);
+      } catch (err) {
+        console.error('[Free Engine Error]:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: err.message }));
+      }
+    });
     return;
   }
 
@@ -343,6 +476,20 @@ const server = http.createServer(async (req, res) => {
         if (!text) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({ success: false, error: 'Vui lòng nhập văn bản cần đọc.' }));
+          return;
+        }
+
+        // Support free open source voices directly via same endpoint
+        if (voice.startsWith('free-')) {
+          console.log(`[Free Engine via Synthesize] Synthesizing ${text.length} chars (Voice: ${voice})...`);
+          const result = await synthesizeFree(text, voice, rate);
+          res.writeHead(200, {
+            'Content-Type': 'audio/mpeg',
+            'Content-Length': result.audio.length,
+            'X-Audio-Seconds': result.seconds.toFixed(1),
+            'X-Audio-Voice': voice
+          });
+          res.end(result.audio);
           return;
         }
 

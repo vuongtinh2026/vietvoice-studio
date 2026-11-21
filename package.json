@@ -41,6 +41,7 @@
       "mammoth.browser.min.js",
       "server.js",
       "engine_pro.py",
+      "engine_free.py",
       "electron-main.cjs",
       "package.json",
       "node_modules/**/*",

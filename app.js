@@ -7,6 +7,7 @@
  */
 
 // DOM Elements
+const tabFreeTts = document.getElementById('tabFreeTts');
 const tabCheapTts = document.getElementById('tabCheapTts');
 const tabWebSpeech = document.getElementById('tabWebSpeech');
 const cheapTtsConfigCard = document.getElementById('cheapTtsConfigCard');
@@ -163,6 +164,7 @@ async function init() {
   updateStats();
 
   await loadCheapTtsVoices();
+  switchEngine('free');
 
   if (synth && synth.onvoiceschanged !== undefined) {
     synth.onvoiceschanged = loadBrowserVoices;
@@ -951,14 +953,17 @@ async function loadCheapTtsVoices() {
 
 function populateCheapTtsVoiceList(voicesList) {
   voiceSelect.innerHTML = '';
-  const viCount = voicesList.filter(v => v.language === 'vi' || v.id.startsWith('vi')).length;
+  const viCount = voicesList.filter(v => v.language === 'vi' || v.id.startsWith('vi') || v.id.startsWith('free-vi')).length;
   voiceCountBadge.textContent = `${voicesList.length} giọng (${viCount} Giọng VN)`;
+
+  const groupFree = document.createElement('optgroup');
+  groupFree.label = '✨ Giọng AI Miễn Phí (Thiện Tâm, Ngọc Huyền, Minh Quân, Adam TikTok, Hoài My, Nam Minh, Chị Google)';
 
   const groupPro = document.createElement('optgroup');
   groupPro.label = '🌟 24 Giọng AI PRO Tiếng Việt Mới (Truyện Ma, Kiếm Hiệp, Podcast, Ngôn Tình...)';
 
   const groupStandard = document.createElement('optgroup');
-  groupStandard.label = '⚡ 4 Giọng Tiêu Chuẩn Tiếng Việt (Ngọc Huyền, Minh Quân, Mạnh Dũng, Adam)';
+  groupStandard.label = '⚡ 4 Giọng Tiêu Chuẩn Tiếng Việt';
 
   const groupOther = document.createElement('optgroup');
   groupOther.label = '🌐 Giọng AI Quốc Tế (Anh, Pháp, Đức, Nhật, ...)';
@@ -970,7 +975,9 @@ function populateCheapTtsVoiceList(voicesList) {
     opt.dataset.name = v.name;
     opt.dataset.lang = v.language;
 
-    if (v.id.startsWith('vi-pro-')) {
+    if (v.id.startsWith('free-')) {
+      groupFree.appendChild(opt);
+    } else if (v.id.startsWith('vi-pro-')) {
       groupPro.appendChild(opt);
     } else if (v.language === 'vi' || v.id.startsWith('vi-')) {
       groupStandard.appendChild(opt);
@@ -979,13 +986,15 @@ function populateCheapTtsVoiceList(voicesList) {
     }
   });
 
+  if (groupFree.children.length > 0) voiceSelect.appendChild(groupFree);
   if (groupPro.children.length > 0) voiceSelect.appendChild(groupPro);
   if (groupStandard.children.length > 0) voiceSelect.appendChild(groupStandard);
   if (groupOther.children.length > 0) voiceSelect.appendChild(groupOther);
 
-  // Default to a popular Pro voice or standard voice
-  voiceSelect.value = 'vi-pro-podcast';
-  if (!voiceSelect.value) voiceSelect.value = 'vi-entertainment';
+  // Default to Thiện Tâm or Hoài My or first free voice
+  voiceSelect.value = 'free-vi-thien-tam';
+  if (!voiceSelect.value) voiceSelect.value = 'free-vi-hoaimy';
+  if (!voiceSelect.value) voiceSelect.value = 'vi-pro-podcast';
 }
 
 async function startCheapTtsSynthesis(text) {
@@ -1049,7 +1058,8 @@ async function startCheapTtsSynthesis(text) {
     audioOutputCard.classList.remove('hidden');
     audioPlayer.src = blobUrl;
     btnDownloadAudio.href = blobUrl;
-    btnDownloadAudio.download = `cheap-tts-${selectedVoice}-${Date.now()}.wav`;
+    const isMp3Format = audioBlob.type.includes('mpeg') || selectedVoice.startsWith('free-');
+    btnDownloadAudio.download = `voiceviet-${selectedVoice}-${Date.now()}.${isMp3Format ? 'mp3' : 'wav'}`;
 
     const seconds = secondsHeader ? parseFloat(secondsHeader).toFixed(1) : ((audioBlob.size / 32000).toFixed(1));
     const chunkNote = parseInt(chunksHeader) > 1 ? ` • Đã ghép ${chunksHeader} đoạn liền mạch` : '';
@@ -1236,9 +1246,28 @@ function switchEngine(engine) {
   stopSpeaking();
   currentEngine = engine;
 
-  if (engine === 'cheaptts') {
+  if (tabFreeTts) {
+    tabFreeTts.classList.remove('active', 'bg-gradient-to-r', 'from-emerald-600', 'to-teal-600', 'text-white');
+    tabFreeTts.classList.add('text-slate-400');
+  }
+  tabCheapTts.classList.remove('active', 'cheap-tts-active');
+  tabWebSpeech.classList.remove('active');
+
+  if (engine === 'free') {
+    if (tabFreeTts) {
+      tabFreeTts.classList.add('active', 'bg-gradient-to-r', 'from-emerald-600', 'to-teal-600', 'text-white');
+      tabFreeTts.classList.remove('text-slate-400');
+    }
+    cheapTtsConfigCard.classList.add('hidden');
+    pitchControlGroup.classList.add('hidden');
+    cheapTtsPauseGroup.classList.add('hidden');
+    btnPause.classList.add('hidden');
+    btnSpeakText.textContent = '✨ Tạo Giọng AI Miễn Phí';
+    voiceNoteText.textContent = 'Giọng AI Miễn Phí (Thiện Tâm, Ngọc Huyền, Minh Quân, Adam TikTok, Hoài My, Nam Minh, Chị Google) - Không giới hạn ký tự!';
+    populateCheapTtsVoiceList(cheapTtsVoices);
+    showToast('Đã chuyển sang AI Miễn Phí (Không giới hạn)', 'success');
+  } else if (engine === 'cheaptts') {
     tabCheapTts.classList.add('active', 'cheap-tts-active');
-    tabWebSpeech.classList.remove('active');
     cheapTtsConfigCard.classList.remove('hidden');
     pitchControlGroup.classList.add('hidden');
     cheapTtsPauseGroup.classList.remove('hidden');
@@ -1249,7 +1278,6 @@ function switchEngine(engine) {
     showToast('Đã chuyển sang Cheap-TTS Cloud AI', 'info');
   } else {
     tabWebSpeech.classList.add('active');
-    tabCheapTts.classList.remove('active', 'cheap-tts-active');
     cheapTtsConfigCard.classList.add('hidden');
     pitchControlGroup.classList.remove('hidden');
     cheapTtsPauseGroup.classList.add('hidden');
@@ -1971,6 +1999,7 @@ async function startWordBatchQueue() {
 // 10. EVENT LISTENERS
 // ==========================================
 function setupEventListeners() {
+  if (tabFreeTts) tabFreeTts.addEventListener('click', () => switchEngine('free'));
   tabCheapTts.addEventListener('click', () => switchEngine('cheaptts'));
   tabWebSpeech.addEventListener('click', () => switchEngine('webspeech'));
 
