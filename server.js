@@ -159,7 +159,7 @@ function getVoicesFree() {
   });
 }
 
-function synthesizeFree(text, voice, rate = 1.0) {
+function synthesizeFree(text, voice, rate = 1.0, pause = 0.35) {
   return new Promise((resolve, reject) => {
     const py = spawn(PYTHON_BIN, [ENGINE_FREE_SCRIPT], {
       cwd: __dirname
@@ -175,15 +175,19 @@ function synthesizeFree(text, voice, rate = 1.0) {
 
     py.on('close', code => {
       if (code !== 0) {
-        const errMsg = Buffer.concat(errChunks).toString('utf-8');
+        const errMsg = Buffer.concat(errChunks).toString('utf-8').trim();
         return reject(new Error(errMsg || `Free engine exited with code ${code}`));
       }
       const audio = Buffer.concat(chunks);
-      const seconds = Math.max(1, audio.length / 8000);
-      resolve({ audio, seconds, voice: { id: voice, name: voice } });
+      const dataSize = Math.max(0, audio.length - 44);
+      const sampleRate = audio.length >= 28 ? audio.readUInt32LE(24) : 22050;
+      const seconds = Math.max(0.2, dataSize / (sampleRate * 2));
+      const found = (cachedFreeVoices || []).find(v => v.id === voice);
+      const voiceName = found ? found.name : voice;
+      resolve({ audio, seconds, voice: { id: voice, name: voiceName } });
     });
 
-    py.stdin.write(JSON.stringify({ text, voice, rate }));
+    py.stdin.write(JSON.stringify({ text, voice, rate, pause }));
     py.stdin.end();
   });
 }
@@ -418,8 +422,9 @@ const server = http.createServer(async (req, res) => {
         const payload = JSON.parse(body || '{}');
         const rawText = payload.text?.trim();
         const text = normalizeVietnameseText(rawText);
-        const voice = payload.voice || 'free-vi-hoaimy';
+        const voice = payload.voice || 'free-vi-ngoc-huyen';
         const rate = parseFloat(payload.rate) || 1.0;
+        const pause = payload.pauses?.sentence ? parseFloat(payload.pauses.sentence) : 0.35;
 
         if (!text) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -427,27 +432,19 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // Support free open source voices directly via same endpoint
-        if (voice.startsWith('free-')) {
-          console.log(`[Free Engine via Synthesize] Synthesizing ${text.length} chars (Voice: ${voice})...`);
-          const result = await synthesizeFree(text, voice, rate);
-          res.writeHead(200, {
-            'Content-Type': 'audio/mpeg',
-            'Content-Length': result.audio.length,
-            'X-Audio-Seconds': result.seconds.toFixed(1),
-            'X-Audio-Voice': voice
-          });
-          res.end(result.audio);
-          return;
+        if (!cachedFreeVoices) {
+          await getVoicesFree().catch(() => {});
         }
 
         console.log(`[Free Engine] Synthesizing ${text.length} chars with voice ${voice}...`);
-        const result = await synthesizeFree(text, voice, rate);
+        const result = await synthesizeFree(text, voice, rate, pause);
         res.writeHead(200, {
-          'Content-Type': 'audio/mpeg',
+          'Content-Type': 'audio/wav',
           'Content-Length': result.audio.length,
           'X-Audio-Seconds': result.seconds.toFixed(1),
-          'X-Audio-Voice': voice
+          'X-Audio-Voice': voice,
+          'X-Voice-Name': encodeURIComponent(result.voice.name || voice),
+          'X-Total-Chunks': '1'
         });
         res.end(result.audio);
       } catch (err) {
@@ -468,7 +465,7 @@ const server = http.createServer(async (req, res) => {
         const payload = JSON.parse(body || '{}');
         const rawText = payload.text?.trim();
         const text = normalizeVietnameseText(rawText);
-        const voice = payload.voice || 'vi-entertainment';
+        const voice = payload.voice || 'free-vi-ngoc-huyen';
         const rate = parseFloat(payload.rate) || 1.0;
         const pauses = payload.pauses;
         const key = payload.key || req.headers.authorization?.replace(/^Bearer\s+/i, '') || DEFAULT_KEY;
@@ -479,15 +476,21 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        // Support free open source voices directly via same endpoint
+        // Support free open source voices directly via same endpoint (returns WAV 22050Hz)
         if (voice.startsWith('free-')) {
+          if (!cachedFreeVoices) {
+            await getVoicesFree().catch(() => {});
+          }
+          const pause = pauses?.sentence ? parseFloat(pauses.sentence) : 0.35;
           console.log(`[Free Engine via Synthesize] Synthesizing ${text.length} chars (Voice: ${voice})...`);
-          const result = await synthesizeFree(text, voice, rate);
+          const result = await synthesizeFree(text, voice, rate, pause);
           res.writeHead(200, {
-            'Content-Type': 'audio/mpeg',
+            'Content-Type': 'audio/wav',
             'Content-Length': result.audio.length,
             'X-Audio-Seconds': result.seconds.toFixed(1),
-            'X-Audio-Voice': voice
+            'X-Audio-Voice': voice,
+            'X-Voice-Name': encodeURIComponent(result.voice.name || voice),
+            'X-Total-Chunks': '1'
           });
           res.end(result.audio);
           return;

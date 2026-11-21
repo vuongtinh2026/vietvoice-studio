@@ -154,11 +154,32 @@
               <p class="text-[10px] text-slate-400 mt-0.5">Mã: <code class="text-slate-300">${v.id}</code></p>
             </div>
           </div>
-          <button class="select-voice-quick-btn w-full py-1.5 ${btnBg} rounded-lg text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${v.name}">
-            Chọn Giọng Này
-          </button>
+          <div class="flex items-center gap-2">
+            <button class="preview-voice-quick-btn px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0" data-voice-id="${v.id}" data-voice-name="${v.name}" title="Nghe thử mẫu giọng">
+              <i class="fa-solid fa-volume-high mr-1"></i>Nghe thử
+            </button>
+            <button class="select-voice-quick-btn flex-1 py-1.5 ${btnBg} rounded-lg text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${v.name}">
+              Chọn Giọng Này
+            </button>
+          </div>
         `;
         voiceCatalogGrid.appendChild(card);
+      });
+
+      // Bind preview buttons
+      voiceCatalogGrid.querySelectorAll('.preview-voice-quick-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const vId = btn.getAttribute('data-voice-id');
+          const vName = btn.getAttribute('data-voice-name');
+          if (typeof window.previewSpecificVoice === 'function') {
+            const orig = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            await window.previewSpecificVoice(vId, vName);
+            btn.disabled = false;
+            btn.innerHTML = orig;
+          }
+        });
       });
 
       // Bind quick select buttons
@@ -167,6 +188,9 @@
           const vId = btn.getAttribute('data-voice-id');
           const vName = btn.getAttribute('data-voice-name');
           if (voiceSelect && vId) {
+            if (typeof window.switchEngine === 'function') {
+              window.switchEngine(vId.startsWith('free-') ? 'free' : 'cheaptts');
+            }
             voiceSelect.value = vId;
             voiceSelect.dispatchEvent(new Event('change'));
             switchView('viewStudio');
@@ -353,8 +377,8 @@ C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng cườ
 
           audioBuffers.push(lineBuffer);
 
-          // Fast pacing delay between speaker turns (1.5s instead of 15s!)
-          if (i < parsedLines.length - 1 && !dialogueCancelRequested) {
+          // Fast pacing delay between speaker turns (0s for Free AI, 2s for Cheap-TTS Cloud)
+          if (!item.voice.startsWith('free-') && i < parsedLines.length - 1 && !dialogueCancelRequested) {
             const waitSec = 2;
             for (let s = waitSec; s > 0; s--) {
               if (dialogueCancelRequested) break;
