@@ -1,12 +1,14 @@
 {
-  "name": "vietvoice-studio",
+  "name": "voiceviet-studio",
   "version": "2.0.0",
-  "description": "Ứng dụng web chuyển đổi văn bản thành giọng nói (Text-to-Speech) đa chế độ - Tích hợp Cheap-TTS AI",
+  "description": "VoiceViet Studio Pro - Ứng dụng đọc giọng AI chuẩn Studio Đa Nền Tảng (Windows & Mac)",
   "type": "module",
-  "main": "server.js",
+  "main": "electron-main.cjs",
   "scripts": {
     "start": "node server.js",
-    "test-voice": "node -e \"import('./server.js')\""
+    "desktop": "electron electron-main.cjs",
+    "build:mac": "electron-builder --mac --arm64 --x64",
+    "build:win": "electron-builder --win nsis portable"
   },
   "keywords": [
     "tts",
@@ -14,11 +16,52 @@
     "speech-synthesis",
     "vietnamese-voice"
   ],
-  "author": "",
+  "author": "VoiceViet Studio",
   "license": "MIT",
   "dependencies": {
     "@cheap-tts/node": "^0.2.0",
     "localtunnel": "^2.0.2",
     "mammoth": "^1.13.0"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.voiceviet.studio",
+    "productName": "VoiceViet Studio",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "index.html",
+      "style.css",
+      "app.js",
+      "studio_pro.js",
+      "mammoth.browser.min.js",
+      "server.js",
+      "engine_pro.py",
+      "electron-main.cjs",
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/electron/**/*",
+      "!node_modules/electron-builder/**/*",
+      "!dist-desktop/**/*",
+      "!venv/**/*"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "identity": null
+    },
+    "win": {
+      "target": [
+        "portable",
+        "zip"
+      ]
+    }
   }
 }

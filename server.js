@@ -15,9 +15,23 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 3000;
 const DEFAULT_KEY = process.env.CHEAP_TTS_KEY || 'sk_live_I_cohehhbgkJqZjJiB-JifshNNcIgSCumq07SIpMsIQ';
 
-const PYTHON_BIN = fs.existsSync(path.join(__dirname, 'venv', 'bin', 'python3'))
-  ? path.join(__dirname, 'venv', 'bin', 'python3')
-  : 'python3';
+function resolvePythonBin() {
+  const isWin = process.platform === 'win32';
+  const venvMac = path.join(__dirname, 'venv', 'bin', 'python3');
+  const venvWin = path.join(__dirname, 'venv', 'Scripts', 'python.exe');
+  const embedWin = path.join(__dirname, 'python_embed', 'python.exe');
+
+  if (isWin) {
+    if (fs.existsSync(embedWin)) return embedWin;
+    if (fs.existsSync(venvWin)) return venvWin;
+    return 'python';
+  } else {
+    if (fs.existsSync(venvMac)) return venvMac;
+    return 'python3';
+  }
+}
+
+const PYTHON_BIN = resolvePythonBin();
 const ENGINE_PRO_SCRIPT = path.join(__dirname, 'engine_pro.py');
 
 let cachedTts = null;
@@ -54,7 +68,12 @@ function getVoicesWithPython(key) {
     let err = '';
     py.stdout.on('data', d => { out += d; });
     py.stderr.on('data', d => { err += d; });
-    py.on('error', reject);
+    py.on('error', (err) => {
+      if (err.code === 'ENOENT') {
+        return reject(new Error('Chưa tìm thấy môi trường Python trên máy để chạy giọng AI Pro. Vui lòng cài Python (hoặc chạy cai_dat_tu_dong.bat) hoặc chọn giọng Tiêu Chuẩn để sử dụng ngay.'));
+      }
+      reject(err);
+    });
     py.on('close', code => {
       if (code !== 0) return reject(new Error(err || `Python voices exited with ${code}`));
       try {
@@ -81,7 +100,12 @@ function synthesizeWithPython(text, voice, rate = 1.0, key = DEFAULT_KEY) {
 
     py.stdout.on('data', d => chunks.push(d));
     py.stderr.on('data', d => errChunks.push(d));
-    py.on('error', reject);
+    py.on('error', (err) => {
+      if (err.code === 'ENOENT') {
+        return reject(new Error('Chưa tìm thấy môi trường Python trên máy để chạy giọng AI Pro. Vui lòng cài Python (hoặc chạy cai_dat_tu_dong.bat) hoặc chọn giọng Tiêu Chuẩn để sử dụng ngay.'));
+      }
+      reject(err);
+    });
 
     py.on('close', code => {
       if (code !== 0) {
