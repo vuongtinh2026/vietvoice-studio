@@ -6,7 +6,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { CheapTts, CheapTtsApiError } from '@cheap-tts/node';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +14,11 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
 const DEFAULT_KEY = process.env.CHEAP_TTS_KEY || 'sk_live_I_cohehhbgkJqZjJiB-JifshNNcIgSCumq07SIpMsIQ';
+
+const PYTHON_BIN = fs.existsSync(path.join(__dirname, 'venv', 'bin', 'python3'))
+  ? path.join(__dirname, 'venv', 'bin', 'python3')
+  : 'python3';
+const ENGINE_PRO_SCRIPT = path.join(__dirname, 'engine_pro.py');
 
 let cachedTts = null;
 let currentKey = DEFAULT_KEY;
@@ -31,6 +36,70 @@ function getTtsClient(key) {
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Fetch voices catalog using Python SDK 0.3.0+ (includes all 24 new Pro Vietnamese voices)
+ */
+let cachedPythonVoices = null;
+
+function getVoicesWithPython(key) {
+  return new Promise((resolve, reject) => {
+    if (cachedPythonVoices && cachedPythonVoices.length > 0) {
+      return resolve(cachedPythonVoices);
+    }
+    const py = spawn(PYTHON_BIN, [ENGINE_PRO_SCRIPT, 'voices', key || DEFAULT_KEY], {
+      cwd: __dirname
+    });
+    let out = '';
+    let err = '';
+    py.stdout.on('data', d => { out += d; });
+    py.stderr.on('data', d => { err += d; });
+    py.on('error', reject);
+    py.on('close', code => {
+      if (code !== 0) return reject(new Error(err || `Python voices exited with ${code}`));
+      try {
+        const data = JSON.parse(out);
+        cachedPythonVoices = data.voices || [];
+        resolve(cachedPythonVoices);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+}
+
+/**
+ * Synthesizes a chunk using the Python SDK 0.3.0+ engine (Pro voices support)
+ */
+function synthesizeWithPython(text, voice, rate = 1.0, key = DEFAULT_KEY) {
+  return new Promise((resolve, reject) => {
+    const py = spawn(PYTHON_BIN, [ENGINE_PRO_SCRIPT], {
+      cwd: __dirname
+    });
+    const chunks = [];
+    const errChunks = [];
+
+    py.stdout.on('data', d => chunks.push(d));
+    py.stderr.on('data', d => errChunks.push(d));
+    py.on('error', reject);
+
+    py.on('close', code => {
+      if (code !== 0) {
+        const errMsg = Buffer.concat(errChunks).toString('utf-8');
+        return reject(new Error(errMsg || `Python engine exited with code ${code}`));
+      }
+      const audio = Buffer.concat(chunks);
+      // WAV duration: (pcm bytes) / (sample_rate * 2)
+      const dataSize = Math.max(0, audio.length - 44);
+      const sampleRate = audio.length >= 28 ? audio.readUInt32LE(24) : 48000;
+      const seconds = dataSize / (sampleRate * 2);
+      resolve({ audio, seconds, voice: { id: voice, name: voice } });
+    });
+
+    py.stdin.write(JSON.stringify({ text, voice, rate, key }));
+    py.stdin.end();
+  });
+}
 
 // Rate limit queue manager (Cheap-TTS allows ~3 requests per minute)
 let lastRequestTime = 0;
@@ -131,7 +200,8 @@ function mergeWavBuffers(wavBuffers, silenceSec = 0.25, sampleRate = 22050) {
   if (wavBuffers.length === 0) return Buffer.alloc(0);
   if (wavBuffers.length === 1) return wavBuffers[0];
 
-  const silenceSamples = Math.round(silenceSec * sampleRate);
+  const detectedSampleRate = wavBuffers[0].length >= 28 ? wavBuffers[0].readUInt32LE(24) : sampleRate;
+  const silenceSamples = Math.round(silenceSec * detectedSampleRate);
   const silenceBytes = Buffer.alloc(silenceSamples * 2);
 
   const pcmList = [];
@@ -209,12 +279,19 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
   const pathname = parsedUrl.pathname;
 
-  // 1. API: Get Voices Catalog
+  // 1. API: Get Voices Catalog (includes all 24 new Pro Vietnamese voices)
   if (pathname === '/api/cheap-tts/voices' && req.method === 'GET') {
     try {
       const keyHeader = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-      const tts = getTtsClient(keyHeader || DEFAULT_KEY);
-      const voices = await tts.voices();
+      const activeKey = keyHeader || DEFAULT_KEY;
+      let voices = [];
+      try {
+        voices = await getVoicesWithPython(activeKey);
+      } catch (pyErr) {
+        console.warn('Python voices catalog fallback to Node:', pyErr.message);
+        const tts = getTtsClient(activeKey);
+        voices = await tts.voices();
+      }
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ success: true, voices }));
     } catch (err) {
@@ -256,11 +333,13 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        const tts = getTtsClient(key);
+        const isProVoice = voice.startsWith('vi-pro-');
+        const tts = isProVoice ? null : getTtsClient(key);
 
-        // Split text into chunks up to 4,800 chars (1 request for up to ~1,000 words in 5-7s!)
-        const chunks = splitTextIntoSafeChunks(text, 4800);
-        console.log(`[Cheap-TTS] Synthesizing ${text.length} chars in ${chunks.length} chunk(s) (Voice: ${voice})...`);
+        // Pro voices accept up to 1,000 chars/call; Standard voices accept up to 4,800 chars
+        const maxChunkChars = isProVoice ? 950 : 4800;
+        const chunks = splitTextIntoSafeChunks(text, maxChunkChars);
+        console.log(`[Cheap-TTS] Synthesizing ${text.length} chars in ${chunks.length} chunk(s) (Voice: ${voice}, Pro: ${isProVoice})...`);
 
         const wavBuffers = [];
         let totalSeconds = 0;
@@ -268,24 +347,32 @@ const server = http.createServer(async (req, res) => {
 
         for (let i = 0; i < chunks.length; i++) {
           const chunkText = chunks[i];
-          const synthOptions = {
-            text: chunkText,
-            voice,
-            rate
-          };
-          if (pauses) {
-            synthOptions.pauses = pauses;
+          let result;
+
+          if (isProVoice) {
+            console.log(`[Cheap-TTS Pro] Processing chunk ${i + 1}/${chunks.length} (${chunkText.length} chars) with Python engine...`);
+            result = await synthesizeWithPython(chunkText, voice, rate, key);
+          } else {
+            console.log(`[Cheap-TTS Standard] Processing chunk ${i + 1}/${chunks.length} (${chunkText.length} chars)...`);
+            const synthOptions = {
+              text: chunkText,
+              voice,
+              rate
+            };
+            if (pauses) {
+              synthOptions.pauses = pauses;
+            }
+            result = await synthesizeWithRateLimit(tts, synthOptions);
           }
 
-          console.log(`[Cheap-TTS] Processing chunk ${i + 1}/${chunks.length} (${chunkText.length} chars)...`);
-          const result = await synthesizeWithRateLimit(tts, synthOptions);
           wavBuffers.push(result.audio);
           totalSeconds += result.seconds;
           voiceInfo = result.voice;
 
           if (i < chunks.length - 1) {
-            console.log(`[Cheap-TTS] Waiting 15s between large sub-chunks to stay within rate limit...`);
-            await sleep(15000);
+            const gap = isProVoice ? 2000 : 15000;
+            console.log(`[Cheap-TTS] Waiting ${gap}ms between sub-chunks...`);
+            await sleep(gap);
           }
         }
 

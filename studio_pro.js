@@ -97,28 +97,76 @@
     });
   }
 
-  // 3. Voice Library Quick Select
+  // 3 & 4. Dynamic Voice Library Rendering & Search (24 Pro Voices + 4 Standard)
   const voiceSelect = document.getElementById('voiceSelect');
-  const quickVoiceBtns = document.querySelectorAll('.select-voice-quick-btn');
-
-  quickVoiceBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const voiceId = btn.getAttribute('data-voice-id');
-      if (voiceSelect && voiceId) {
-        voiceSelect.value = voiceId;
-        voiceSelect.dispatchEvent(new Event('change'));
-        switchView('viewStudio');
-        if (typeof showToast === 'function') {
-          showToast(`Đã chọn giọng: ${voiceId}`);
-        }
-      }
-    });
-  });
-
-  // 4. Voice Catalog Search Filter
-  const voiceSearchInput = document.getElementById('voiceSearchInput');
   const voiceCatalogGrid = document.getElementById('voiceCatalogGrid');
+  const voiceSearchInput = document.getElementById('voiceSearchInput');
 
+  async function loadAndRenderVoiceCatalog() {
+    if (!voiceCatalogGrid) return;
+    try {
+      const res = await fetch('/api/cheap-tts/voices');
+      const data = await res.json();
+      if (!data.success || !data.voices) return;
+
+      const viVoices = data.voices.filter(v => v.language === 'vi' || v.id.startsWith('vi'));
+      if (viVoices.length === 0) return;
+
+      voiceCatalogGrid.innerHTML = '';
+
+      viVoices.forEach(v => {
+        const isPro = v.id.startsWith('vi-pro-');
+        const initials = v.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+        const badgeColor = isPro ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+        const avatarBg = isPro ? 'bg-gradient-to-tr from-purple-600 to-indigo-600 text-white' : 'bg-slate-800 text-amber-400 border border-slate-700';
+        const cardBorder = isPro ? 'border-purple-500/30 hover:border-purple-500' : 'border-slate-800 hover:border-amber-500/50';
+
+        const card = document.createElement('div');
+        card.className = `p-4 rounded-xl bg-slate-900/80 border ${cardBorder} transition-all flex flex-col justify-between gap-3 shadow-lg`;
+        card.innerHTML = `
+          <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-full ${avatarBg} flex items-center justify-center font-bold text-xs shrink-0 shadow-md">
+              ${initials}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-1">
+                <h4 class="text-xs font-bold text-white truncate">${v.name}</h4>
+                <span class="text-[9px] ${badgeColor} border px-1.5 py-0.2 rounded font-mono shrink-0">${isPro ? 'PRO 48kHz' : 'Tiêu Chuẩn'}</span>
+              </div>
+              <p class="text-[11px] text-cyan-300 font-medium mt-0.5 truncate">${v.useCase || v.id}</p>
+              <p class="text-[10px] text-slate-400 mt-0.5">Mã: <code class="text-slate-300">${v.id}</code></p>
+            </div>
+          </div>
+          <button class="select-voice-quick-btn w-full py-1.5 ${isPro ? 'bg-purple-600 hover:bg-purple-500 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-200'} rounded-lg text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${v.name}">
+            Chọn Giọng Này
+          </button>
+        `;
+        voiceCatalogGrid.appendChild(card);
+      });
+
+      // Bind quick select buttons
+      voiceCatalogGrid.querySelectorAll('.select-voice-quick-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const vId = btn.getAttribute('data-voice-id');
+          const vName = btn.getAttribute('data-voice-name');
+          if (voiceSelect && vId) {
+            voiceSelect.value = vId;
+            voiceSelect.dispatchEvent(new Event('change'));
+            switchView('viewStudio');
+            if (typeof showToast === 'function') {
+              showToast(`Đã chọn: ${vName} (${vId})`, 'success');
+            }
+          }
+        });
+      });
+    } catch (e) {
+      console.warn('Cannot render dynamic voice catalog:', e);
+    }
+  }
+
+  loadAndRenderVoiceCatalog();
+
+  // Voice Catalog Search Filter
   if (voiceSearchInput && voiceCatalogGrid) {
     voiceSearchInput.addEventListener('input', (e) => {
       const query = e.target.value.toLowerCase().trim();

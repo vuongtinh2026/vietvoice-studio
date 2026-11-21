@@ -645,7 +645,8 @@ function mergeWavBuffersClient(arrayBuffers, silenceSec = 0.35, sampleRate = 220
   if (!arrayBuffers || arrayBuffers.length === 0) return null;
   if (arrayBuffers.length === 1) return new Blob([arrayBuffers[0]], { type: 'audio/wav' });
 
-  const silenceSamples = Math.round(silenceSec * sampleRate);
+  const detectedSampleRate = arrayBuffers[0].byteLength >= 28 ? new DataView(arrayBuffers[0]).getUint32(24, true) : sampleRate;
+  const silenceSamples = Math.round(silenceSec * detectedSampleRate);
   // 16-bit mono PCM = 2 bytes per sample
   const silenceBytes = new Uint8Array(silenceSamples * 2);
 
@@ -950,10 +951,14 @@ async function loadCheapTtsVoices() {
 
 function populateCheapTtsVoiceList(voicesList) {
   voiceSelect.innerHTML = '';
-  voiceCountBadge.textContent = `${voicesList.length} giọng AI`;
+  const viCount = voicesList.filter(v => v.language === 'vi' || v.id.startsWith('vi')).length;
+  voiceCountBadge.textContent = `${voicesList.length} giọng (${viCount} Giọng VN)`;
 
-  const groupVi = document.createElement('optgroup');
-  groupVi.label = '⭐ Giọng AI Tiếng Việt Nổi Bật (Cheap-TTS)';
+  const groupPro = document.createElement('optgroup');
+  groupPro.label = '🌟 24 Giọng AI PRO Tiếng Việt Mới (Truyện Ma, Kiếm Hiệp, Podcast, Ngôn Tình...)';
+
+  const groupStandard = document.createElement('optgroup');
+  groupStandard.label = '⚡ 4 Giọng Tiêu Chuẩn Tiếng Việt (Ngọc Huyền, Minh Quân, Mạnh Dũng, Adam)';
 
   const groupOther = document.createElement('optgroup');
   groupOther.label = '🌐 Giọng AI Quốc Tế (Anh, Pháp, Đức, Nhật, ...)';
@@ -965,17 +970,22 @@ function populateCheapTtsVoiceList(voicesList) {
     opt.dataset.name = v.name;
     opt.dataset.lang = v.language;
 
-    if (v.language === 'vi' || v.id.startsWith('vi')) {
-      groupVi.appendChild(opt);
+    if (v.id.startsWith('vi-pro-')) {
+      groupPro.appendChild(opt);
+    } else if (v.language === 'vi' || v.id.startsWith('vi-')) {
+      groupStandard.appendChild(opt);
     } else {
       groupOther.appendChild(opt);
     }
   });
 
-  if (groupVi.children.length > 0) voiceSelect.appendChild(groupVi);
+  if (groupPro.children.length > 0) voiceSelect.appendChild(groupPro);
+  if (groupStandard.children.length > 0) voiceSelect.appendChild(groupStandard);
   if (groupOther.children.length > 0) voiceSelect.appendChild(groupOther);
 
-  voiceSelect.value = 'vi-entertainment';
+  // Default to a popular Pro voice or standard voice
+  voiceSelect.value = 'vi-pro-podcast';
+  if (!voiceSelect.value) voiceSelect.value = 'vi-entertainment';
 }
 
 async function startCheapTtsSynthesis(text) {
