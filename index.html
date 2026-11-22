@@ -72,7 +72,7 @@
       <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs">
         <i class="fa-solid fa-coins text-amber-400"></i>
         <span class="text-slate-300">Điểm:</span>
-        <span id="userPointsDisplay" class="font-bold text-amber-300 font-mono">500.000</span>
+        <span id="userPointsDisplay" class="font-bold text-amber-300 font-mono">100.000</span>
         <span class="text-[10px] text-purple-300">ký tự</span>
       </div>
 
@@ -144,8 +144,8 @@
             <div class="bg-gradient-to-r from-purple-500 to-emerald-400 h-full w-full"></div>
           </div>
           <div class="flex items-center justify-between text-[10px] text-slate-500 mt-1.5">
-            <span>Còn lại: <b>500.000</b> ký tự</span>
-            <span class="text-amber-400/90 cursor-pointer hover:underline" id="btnSidebarUpgrade">Mua thêm</span>
+            <span>Gói Miễn Phí: <b>100.000</b> ký tự</span>
+            <span class="text-amber-400/90 cursor-pointer hover:underline" id="btnSidebarUpgrade">Nâng cấp</span>
           </div>
         </div>
 
@@ -985,64 +985,108 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
       <!-- ================= VIEW 5: BẢNG GIÁ & NÂNG CẤP VIP ================= -->
       <div id="viewPricing" class="content-view hidden flex flex-col gap-6">
         <div class="glass-panel rounded-2xl p-6 flex flex-col gap-6">
-          <div class="text-center max-w-xl mx-auto flex flex-col gap-2">
+          <div class="text-center max-w-2xl mx-auto flex flex-col gap-2">
             <h2 class="text-xl font-extrabold text-white">Bảng Giá Gói Cước VoiceViet Studio</h2>
-            <p class="text-xs text-slate-400">Chọn gói cước phù hợp để đọc không giới hạn ký tự và kích hoạt API tự động qua VietQR.</p>
+            <p class="text-xs text-slate-400">Linh hoạt cho mọi nhu cầu từ trải nghiệm miễn phí đến sản xuất truyện dài không giới hạn — Kích hoạt tự động 24/7 qua VietQR.</p>
           </div>
 
-          <!-- Pricing Grid 3 Cards -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <!-- Tier 1: Free Trial -->
-            <div class="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-4">
+          <!-- Pricing Grid: 5 Plans (3 Top Cards + 2 Flagship VIP/Unlimited Cards) -->
+          <div class="grid grid-cols-1 md:grid-cols-6 gap-5">
+            <!-- Plan 1: Gói Miễn Phí -->
+            <div class="md:col-span-2 p-5 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-4">
               <div>
-                <span class="text-[11px] font-bold text-slate-400 uppercase">Dùng Thử</span>
-                <div class="text-2xl font-black text-white mt-1">0 <span class="text-xs font-normal text-slate-400">VNĐ</span></div>
-                <p class="text-[11px] text-slate-400 mt-2">Dành cho người mới trải nghiệm chất lượng giọng đọc.</p>
+                <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Gói Miễn Phí</span>
+                <div class="text-2xl font-black text-white mt-1">0 <span class="text-xs font-normal text-slate-400">VNĐ / tháng</span></div>
+                <p class="text-[11px] text-slate-400 mt-2">Dành cho người mới trải nghiệm chất lượng giọng đọc Studio.</p>
                 <ul class="text-xs text-slate-300 space-y-2 mt-4">
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> 6.000 ký tự / ngày</li>
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Các giọng đọc cơ bản</li>
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Xuất file MP3 chuẩn</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> <b>100.000</b> ký tự / 1 tháng</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Nghe thử & tạo giọng AI tiêu chuẩn</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Xuất file âm thanh MP3 / WAV</li>
                 </ul>
               </div>
-              <button class="w-full py-2 bg-slate-800 text-slate-400 rounded-xl text-xs font-semibold cursor-default">
-                Gói Hiện Tại
+              <button class="w-full py-2.5 bg-slate-800 text-slate-400 rounded-xl text-xs font-semibold cursor-default">
+                Gói Hiện Tại (Miễn Phí)
               </button>
             </div>
 
-            <!-- Tier 2: VIP Gold (Most Popular) -->
-            <div class="p-5 rounded-2xl bg-gradient-to-b from-purple-950/40 via-slate-900 to-slate-900 border-2 border-purple-500 shadow-xl shadow-purple-500/10 flex flex-col justify-between gap-4 relative">
-              <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-[10px] font-extrabold px-3 py-0.5 rounded-full uppercase">Phổ Biến Nhất</div>
+            <!-- Plan 2: Gói Thường (25.000đ) -->
+            <div class="md:col-span-2 p-5 rounded-2xl bg-slate-900/90 border border-cyan-500/40 hover:border-cyan-400 transition flex flex-col justify-between gap-4">
               <div>
-                <span class="text-[11px] font-bold text-purple-400 uppercase">Gói VIP Tháng</span>
-                <div class="text-2xl font-black text-white mt-1">25.000 <span class="text-xs font-normal text-slate-400">VNĐ/tháng</span></div>
-                <p class="text-[11px] text-slate-400 mt-2">Dành cho người làm kênh YouTube, TikTok truyện dài.</p>
+                <span class="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">Gói Thường</span>
+                <div class="text-2xl font-black text-white mt-1">25.000 <span class="text-xs font-normal text-slate-400">VNĐ / tháng</span></div>
+                <p class="text-[11px] text-slate-400 mt-2">Tiết kiệm cho làm video ngắn TikTok, Reels, YouTube Shorts.</p>
                 <ul class="text-xs text-slate-300 space-y-2 mt-4">
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> <b>8.000.000</b> ký tự / tháng</li>
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Toàn bộ 110+ giọng Studio & 32 ngôn ngữ</li>
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Tự động băm nhỏ file >70.000 từ</li>
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Xuất MP3 Mono 48k siêu nhẹ</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> <b>1.000.000</b> ký tự / 1 tháng</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Mở khóa giọng Studio 48kHz & Quốc tế</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Nạp file Word (.docx) & chia chương</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Xuất MP3 Mono siêu nhẹ</li>
                 </ul>
               </div>
-              <button class="btn-buy-plan w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 text-white font-bold rounded-xl text-xs transition shadow-lg shadow-purple-500/20 cursor-pointer" data-plan="VIP Tháng (25.000đ)" data-amount="25000">
-                Kích Hoạt Ngay Qua VietQR
+              <button class="btn-buy-plan w-full py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold rounded-xl text-xs transition shadow-lg shadow-cyan-500/20 cursor-pointer" data-plan="Gói Thường - 1.000.000 ký tự/tháng" data-amount="25000">
+                Đăng Ký Gói Thường
               </button>
             </div>
 
-            <!-- Tier 3: Lifetime 500M -->
-            <div class="p-5 rounded-2xl bg-slate-900/80 border border-amber-500/50 flex flex-col justify-between gap-4">
+            <!-- Plan 3: Gói Phổ Thông (75.000đ - Phổ Biến Nhất) -->
+            <div class="md:col-span-2 p-5 rounded-2xl bg-gradient-to-b from-purple-950/50 via-slate-900 to-slate-900 border-2 border-purple-500 shadow-xl shadow-purple-500/15 flex flex-col justify-between gap-4 relative">
+              <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-[10px] font-extrabold px-3 py-0.5 rounded-full uppercase whitespace-nowrap">Phổ Biến Nhất</div>
               <div>
-                <span class="text-[11px] font-bold text-amber-400 uppercase">Trọn Đời (Lifetime)</span>
-                <div class="text-2xl font-black text-amber-300 mt-1">318.000 <span class="text-xs font-normal text-slate-400">VNĐ (Mua 1 lần)</span></div>
-                <p class="text-[11px] text-slate-400 mt-2">Dành cho dân chuyên nghiệp, không giới hạn thời gian.</p>
+                <span class="text-[11px] font-bold text-purple-400 uppercase tracking-wider">Gói Phổ Thông</span>
+                <div class="text-2xl font-black text-white mt-1">75.000 <span class="text-xs font-normal text-slate-400">VNĐ / tháng</span></div>
+                <p class="text-[11px] text-slate-400 mt-2">Tối ưu nhất cho người xây kênh Review phim, Kể chuyện đều đặn.</p>
                 <ul class="text-xs text-slate-300 space-y-2 mt-4">
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> <b>500.000.000</b> ký tự vĩnh viễn</li>
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Không bị hết hạn, cộng dồn điểm</li>
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Hàng đợi nhiều file Word không giới hạn</li>
-                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Hỗ trợ kỹ thuật 24/7</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> <b>10.000.000</b> ký tự / 1 tháng</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Toàn bộ 1.177 giọng & 142 ngôn ngữ</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Hội thoại đa giọng & Track khớp CapCut</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Tự động băm nhỏ truyện >70.000 từ</li>
                 </ul>
               </div>
-              <button class="btn-buy-plan w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 text-slate-950 font-bold rounded-xl text-xs transition shadow-lg shadow-amber-500/20 cursor-pointer" data-plan="Trọn Đời (318.000đ)" data-amount="318000">
-                Mua Gói Trọn Đời
+              <button class="btn-buy-plan w-full py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 text-white font-bold rounded-xl text-xs transition shadow-lg shadow-purple-500/25 cursor-pointer" data-plan="Gói Phổ Thông - 10.000.000 ký tự/tháng" data-amount="75000">
+                Kích Hoạt Qua VietQR
+              </button>
+            </div>
+
+            <!-- Plan 4: Gói VIP (150.000đ) -->
+            <div class="md:col-span-3 p-5 rounded-2xl bg-gradient-to-br from-indigo-950/45 via-slate-900 to-slate-900 border border-indigo-400/60 hover:border-indigo-400 shadow-lg flex flex-col justify-between gap-4 relative">
+              <div>
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <i class="fa-solid fa-gem text-indigo-400"></i> Gói VIP
+                  </span>
+                  <span class="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2.5 py-0.5 rounded-full font-bold">Chuyên Nghiệp</span>
+                </div>
+                <div class="text-2xl font-black text-white mt-1.5">150.000 <span class="text-xs font-normal text-slate-400">VNĐ / tháng</span></div>
+                <p class="text-[11px] text-slate-400 mt-1.5">Dành cho hệ thống nhiều kênh Audiobook, Tiên hiệp, Truyện tranh dài tập.</p>
+                <ul class="text-xs text-slate-300 space-y-2 mt-4">
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> <b>100.000.000</b> ký tự / 1 tháng</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Hàng đợi xử lý hàng loạt nhiều file Word tự động</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Mở khóa Nhân bản giọng nói cá nhân 48kHz</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Ưu tiên luồng xử lý tốc độ cao</li>
+                </ul>
+              </div>
+              <button class="btn-buy-plan w-full py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-bold rounded-xl text-xs transition shadow-lg shadow-indigo-500/20 cursor-pointer" data-plan="Gói VIP - 100.000.000 ký tự/tháng" data-amount="150000">
+                Đăng Ký Gói VIP (150.000đ)
+              </button>
+            </div>
+
+            <!-- Plan 5: Gói Không Giới Hạn (299.000đ) -->
+            <div class="md:col-span-3 p-5 rounded-2xl bg-gradient-to-br from-amber-950/35 via-slate-900 to-slate-900 border-2 border-amber-500/80 shadow-xl shadow-amber-500/15 flex flex-col justify-between gap-4 relative">
+              <div class="absolute -top-3 right-5 bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 text-[10px] font-black px-3 py-0.5 rounded-full uppercase">👑 Không Giới Hạn</div>
+              <div>
+                <span class="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <i class="fa-solid fa-crown text-amber-400"></i> Gói Không Giới Hạn
+                </span>
+                <div class="text-2xl font-black text-amber-300 mt-1.5">299.000 <span class="text-xs font-normal text-slate-400">VNĐ / tháng</span></div>
+                <p class="text-[11px] text-slate-400 mt-1.5">Dành cho Studio & Team sản xuất công nghiệp, chạy full công suất cả tháng.</p>
+                <ul class="text-xs text-slate-300 space-y-2 mt-4">
+                  <li><i class="fa-solid fa-infinity text-amber-400 mr-2"></i> <b>Không giới hạn ký tự</b> suốt 1 tháng</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Toàn bộ tính năng VIP, Đa giọng & 110 Quốc gia</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Không giới hạn hàng đợi file Word & Nhân bản giọng</li>
+                  <li><i class="fa-solid fa-check text-emerald-400 mr-2"></i> Hỗ trợ kỹ thuật VIP ưu tiên 24/7</li>
+                </ul>
+              </div>
+              <button class="btn-buy-plan w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-amber-500/25 cursor-pointer" data-plan="Gói Không Giới Hạn 1 Tháng" data-amount="299000">
+                Mua Gói Không Giới Hạn (299.000đ)
               </button>
             </div>
           </div>
