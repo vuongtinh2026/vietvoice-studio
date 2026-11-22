@@ -669,7 +669,8 @@ function updateChapterCardUI(chap) {
     badgeSpan.innerHTML = '<span class="text-[10px] bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1"><i class="fa-solid fa-spinner fa-spin text-[9px]"></i> Đang xử lý...</span>';
     synthBtn.disabled = true;
   } else if (chap.status === 'done') {
-    badgeSpan.innerHTML = `<span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1"><i class="fa-solid fa-check text-[9px]"></i> Đã xong (${chap.duration})</span>`;
+    const genTag = chap.genTime ? ` • ⚡ ${chap.genTime}` : '';
+    badgeSpan.innerHTML = `<span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1"><i class="fa-solid fa-check text-[9px]"></i> Đã xong (🎧 ${chap.duration}${genTag})</span>`;
     synthBtn.disabled = false;
     synthBtn.innerHTML = '<i class="fa-solid fa-rotate-right text-[10px]"></i> Tạo lại';
     playBtn.classList.remove('hidden');
@@ -683,6 +684,13 @@ function updateChapterCardUI(chap) {
 }
 
 async function synthesizeSingleChapter(chap) {
+  const chapCharLen = (chap.content || '').length;
+  if (window.VoiceVietQuota && !window.VoiceVietQuota.checkCanGenerate(chapCharLen)) {
+    chap.status = 'pending';
+    updateChapterCardUI(chap);
+    return false;
+  }
+
   const selectedVoice = voiceSelect.value || 'free-vi-ngoc-huyen';
   if (selectedVoice.startsWith('private-')) {
     const authOk = await window.ensurePrivateVoiceAuthorized(selectedVoice);
@@ -700,6 +708,7 @@ async function synthesizeSingleChapter(chap) {
   const rate = parseFloat(rateRange.value) || 1.0;
   const pauseSec = parseFloat(pauseDurationRange.value) || 0.4;
   const key = cheapTtsKeyInput.value.trim();
+  const chapStartMs = performance.now();
 
   try {
     const headers = { 'Content-Type': 'application/json' };
@@ -735,17 +744,25 @@ async function synthesizeSingleChapter(chap) {
     const secondsHeader = res.headers.get('X-Audio-Seconds');
     const durationSeconds = secondsHeader ? parseFloat(secondsHeader) : (blob.size / 44100);
     const seconds = `${durationSeconds.toFixed(1)}s`;
+    const genElapsedStr = window.VoiceVietQuota
+      ? window.VoiceVietQuota.formatGenerationSpeed(performance.now() - chapStartMs)
+      : `${((performance.now() - chapStartMs) / 1000).toFixed(2)}s`;
+
+    if (window.VoiceVietQuota) {
+      window.VoiceVietQuota.deductCharacters(chapCharLen);
+    }
 
     chap.blob = blob;
     chap.arrayBuffer = arrayBuffer;
     chap.durationSeconds = durationSeconds;
     chap.blobUrl = URL.createObjectURL(blob);
     chap.duration = seconds;
+    chap.genTime = genElapsedStr;
     chap.status = 'done';
     updateChapterCardUI(chap);
     updateMergedCardState();
 
-    showToast(`Đã tạo xong "${chap.title}" (${seconds})!`, 'success');
+    showToast(`✓ Xong "${chap.title}" trong ${genElapsedStr} • Thời lượng ${seconds} • Trừ ${chapCharLen.toLocaleString('vi-VN')} ký tự!`, 'success');
     return true;
   } catch (err) {
     console.error(`Error synthesizing chapter ${chap.title}:`, err);
@@ -1327,12 +1344,17 @@ function populateCheapTtsVoiceList(voicesList) {
   syncSelectedVoiceNoteAndSample();
 }
 
-async function startCheapTtsSynthesis(text) {
+async function startCheapTtsSynthesis(text, rawCharCount = 0) {
   // If user submits a massive text via the main button, prompt them to use Chapter mode
   const words = text.trim().split(/\s+/).filter(Boolean).length;
   if (words > 2500) {
     showToast(`Văn bản này rất dài (${words.toLocaleString()} từ). Vui lòng dùng Bộ chia chương bên dưới để tạo từng chương an toàn!`, 'warning');
     audiobookCard.scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+
+  const charCost = rawCharCount > 0 ? rawCharCount : text.length;
+  if (window.VoiceVietQuota && !window.VoiceVietQuota.checkCanGenerate(charCost)) {
     return;
   }
 
@@ -1363,6 +1385,8 @@ async function startCheapTtsSynthesis(text) {
       : (isLocal ? 'Đang tạo âm thanh AI Studio 48kHz...' : 'Đang tạo âm thanh AI...'),
     'info'
   );
+
+  const synthStartMs = performance.now();
 
   try {
     const endpoint = isLocal ? '/api/free-tts/synthesize' : '/api/cheap-tts/synthesize';
@@ -1395,9 +1419,14 @@ async function startCheapTtsSynthesis(text) {
     }
 
     const audioBlob = await response.blob();
+    const genElapsedMs = performance.now() - synthStartMs;
     const secondsHeader = response.headers.get('X-Audio-Seconds');
     const chunksHeader = response.headers.get('X-Total-Chunks') || '1';
     const voiceNameHeader = decodeURIComponent(response.headers.get('X-Voice-Name') || selectedVoice);
+
+    // Deduct character quota immediately!
+    const qApi = window.VoiceVietQuota;
+    const snap = qApi ? qApi.deductCharacters(charCost) : null;
 
     if (lastGeneratedBlobUrl) {
       URL.revokeObjectURL(lastGeneratedBlobUrl);
@@ -1413,23 +1442,51 @@ async function startCheapTtsSynthesis(text) {
     const isMp3Format = audioBlob.type.includes('mpeg');
     btnDownloadAudio.download = `voiceviet-${selectedVoice}-${Date.now()}.${isMp3Format ? 'mp3' : 'wav'}`;
 
-    const seconds = secondsHeader ? parseFloat(secondsHeader).toFixed(1) : ((audioBlob.size / 96000).toFixed(1));
+    const secondsFloat = secondsHeader ? parseFloat(secondsHeader) : (audioBlob.size / 96000);
+    const durDetailed = qApi ? qApi.formatAudioDurationDetailed(secondsFloat) : `${secondsFloat.toFixed(1)}s`;
+    const genSpeedStr = qApi ? qApi.formatGenerationSpeed(genElapsedMs) : `${(genElapsedMs / 1000).toFixed(2)}s`;
+    const clockStr = qApi ? qApi.formatClockTimestamp(new Date()) : new Date().toLocaleTimeString('vi-VN');
     const chunkNote = parseInt(chunksHeader) > 1 ? ` • Đã ghép ${chunksHeader} đoạn liền mạch` : '';
-    audioDurationBadge.textContent = `${seconds}s`;
+
+    audioDurationBadge.textContent = `🎧 ${qApi ? qApi.t('audio_len_label') : 'Thời lượng đọc:'} ${durDetailed}`;
+    const genSpeedBadge = document.getElementById('audioGenSpeedBadge');
+    if (genSpeedBadge) {
+      genSpeedBadge.textContent = `⚡ ${qApi ? qApi.t('gen_done_in') : 'Tạo xong trong'} ${genSpeedStr}`;
+    }
+
+    const completedMetaBadge = document.getElementById('audioCompletedMetaBadge');
+    if (completedMetaBadge && snap) {
+      const remStr = snap.unlimited ? `♾️ ${qApi.t('unlimited_text')}` : `${qApi.formatNumberLocale(snap.remaining)} ${qApi.t('chars_unit')}`;
+      completedMetaBadge.innerHTML = `
+        <span>🕒 ${qApi.t('completed_at')} <b>${clockStr}</b></span>
+        <span>•</span>
+        <span class="text-rose-300">−<b>${qApi.formatNumberLocale(charCost)}</b> ${qApi.t('chars_unit')}</span>
+        <span>•</span>
+        <span class="text-emerald-300">${qApi.t('remaining_label')}: <b>${remStr}</b></span>
+      `;
+    }
+
     audioVoiceInfo.textContent = `Giọng đọc: ${voiceNameHeader} • Dung lượng: ${(audioBlob.size / 1024).toFixed(1)} KB${chunkNote}`;
+    saveToHistory(textInput.value.trim() || text, genSpeedStr, charCost);
 
     audioPlayer.volume = parseFloat(volumeRange.value) || 1.0;
-    await audioPlayer.play();
+    await audioPlayer.play().catch(() => {});
 
     startVisualizer();
-    showToast(`Tạo thành công ${seconds}s âm thanh (${voiceNameHeader})!`, 'success');
+    showToast(`⚡ Xong trong ${genSpeedStr} (Đọc ${secondsFloat.toFixed(1)}s) • Đã trừ ${charCost.toLocaleString('vi-VN')} ký tự!`, 'success');
   } catch (err) {
     console.error('TTS synthesis error:', err);
     showToast(`Lỗi tạo giọng nói: ${err.message}`, 'error');
   } finally {
     btnSpeak.disabled = false;
     btnSpeakIcon.className = 'fa-solid fa-play text-sm';
-    btnSpeakText.textContent = currentEngine === 'free' ? '✨ Tạo Giọng AI Miễn Phí' : 'Tạo giọng nói AI';
+    if (window.VoiceVietQuota) {
+      btnSpeakText.textContent = currentEngine === 'free'
+        ? window.VoiceVietQuota.t('btn_speak_free')
+        : (currentEngine === 'cheaptts' ? window.VoiceVietQuota.t('btn_speak_cloud') : window.VoiceVietQuota.t('btn_speak_web'));
+    } else {
+      btnSpeakText.textContent = currentEngine === 'free' ? '✨ Tạo Giọng AI Miễn Phí' : 'Tạo giọng nói AI';
+    }
   }
 }
 
@@ -1498,10 +1555,19 @@ function splitTextIntoChunks(text) {
 // Keep-alive timer for Web Speech API in Chrome/Safari (prevents abrupt stopping after 15s)
 let webSpeechKeepAlive = null;
 
-function startWebSpeech(text) {
+function startWebSpeech(text, rawCharCount = 0) {
+  const charCost = rawCharCount > 0 ? rawCharCount : text.length;
+  if (window.VoiceVietQuota && !window.VoiceVietQuota.checkCanGenerate(charCost)) {
+    return;
+  }
   stopSpeaking();
   textChunks = splitTextIntoChunks(text);
   if (textChunks.length === 0) return;
+
+  if (window.VoiceVietQuota) {
+    window.VoiceVietQuota.deductCharacters(charCost);
+  }
+  saveToHistory(textInput.value.trim() || text, 'Trực tiếp', charCost);
 
   currentChunkIndex = 0;
   isSpeaking = true;
@@ -1655,14 +1721,18 @@ async function handleSpeakAction() {
     return;
   }
 
+  const rawCharCount = rawText.length;
+  if (window.VoiceVietQuota && !window.VoiceVietQuota.checkCanGenerate(rawCharCount)) {
+    return;
+  }
+
   const activeVoice = voiceSelect ? voiceSelect.value : '';
   const text = normalizeTextSmart(rawText, activeVoice);
-  saveToHistory(text);
 
   if (currentEngine === 'cheaptts' || currentEngine === 'free') {
-    await startCheapTtsSynthesis(text);
+    await startCheapTtsSynthesis(text, rawCharCount);
   } else {
-    startWebSpeech(text);
+    startWebSpeech(text, rawCharCount);
   }
 }
 
@@ -2060,15 +2130,17 @@ function stopVisualizer() {
 // ==========================================
 // 8. HISTORY MANAGEMENT
 // ==========================================
-function saveToHistory(text) {
+function saveToHistory(text, genSpeed = '', charsUsed = 0) {
   if (!text || text.length < 3) return;
   let history = JSON.parse(localStorage.getItem('vietvoice_history') || '[]');
-  history = history.filter(item => item.text !== text);
+  history = history.filter(item => item.fullText !== text && item.text !== text);
   history.unshift({
     text: text.slice(0, 150) + (text.length > 150 ? '...' : ''),
     fullText: text,
-    time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-    engine: currentEngine === 'free' ? 'AI Miễn Phí' : (currentEngine === 'cheaptts' ? 'Cheap-TTS AI' : 'Web Speech')
+    time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    genSpeed: genSpeed || '',
+    charsUsed: charsUsed || text.length,
+    engine: currentEngine === 'free' ? 'Studio 48kHz' : (currentEngine === 'cheaptts' ? 'Cheap-TTS AI' : 'Web Speech')
   });
   if (history.length > 10) history = history.slice(0, 10);
   localStorage.setItem('vietvoice_history', JSON.stringify(history));
@@ -2084,11 +2156,13 @@ function renderHistory() {
   }
   history.forEach((item, index) => {
     const el = document.createElement('div');
-    el.className = 'history-item flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-slate-700/50 cursor-pointer group';
+    el.className = 'history-item flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60 border border-slate-700/50 cursor-pointer group';
+    const speedPart = item.genSpeed ? ` • ⚡ ${escapeHtml(item.genSpeed)}` : '';
+    const charPart = item.charsUsed ? ` • −${Number(item.charsUsed).toLocaleString('vi-VN')} ký tự` : '';
     el.innerHTML = `
       <div class="flex-1 truncate mr-2">
         <p class="text-xs text-slate-200 truncate group-hover:text-amber-300 font-medium">${escapeHtml(item.text)}</p>
-        <span class="text-[10px] text-slate-500">${item.time} • ${item.engine}</span>
+        <span class="text-[10px] text-slate-400">${item.time}${speedPart}${charPart}</span>
       </div>
       <button class="delete-history opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 text-slate-500 transition text-xs" title="Xóa">
         <i class="fa-solid fa-xmark"></i>
@@ -2149,8 +2223,9 @@ function showToast(message, type = 'info') {
   toastTimer = setTimeout(() => {
     toast.classList.remove('translate-y-0', 'opacity-100');
     toast.classList.add('translate-y-20', 'opacity-0');
-  }, 3200);
+  }, 3600);
 }
+window.showToast = showToast;
 
 function escapeHtml(string) {
   return String(string)
@@ -2463,6 +2538,10 @@ async function startWordBatchQueue() {
         throw new Error('File không có nội dung chữ');
       }
 
+      if (window.VoiceVietQuota && !window.VoiceVietQuota.checkCanGenerate(text.length)) {
+        throw new Error('Không đủ hạn mức ký tự cho file này');
+      }
+
       const selectedVoice = voiceSelect ? (voiceSelect.value || 'free-vi-ngoc-huyen') : 'free-vi-ngoc-huyen';
       if (selectedVoice.startsWith('private-')) {
         const authOk = await window.ensurePrivateVoiceAuthorized(selectedVoice);
@@ -2522,6 +2601,9 @@ async function startWordBatchQueue() {
         const secondsHeader = synthRes.headers.get('X-Audio-Seconds');
         const durationSec = secondsHeader ? parseFloat(secondsHeader) : (wavBlob.size / 96000);
         itemTotalDurationSec += durationSec;
+        if (window.VoiceVietQuota) {
+          window.VoiceVietQuota.deductCharacters(part.content.length);
+        }
 
         // Nghỉ làm mát API giữa các phần của file dài (chỉ áp dụng cho Cheap-TTS trả phí)
         if (!isLocalVoice && pIdx < parts.length - 1 && !wordBatchCancelRequested) {

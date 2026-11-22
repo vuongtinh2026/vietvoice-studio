@@ -43,53 +43,82 @@
         </div>
         <p class="text-[11px] text-slate-400 hidden sm:flex items-center gap-1.5">
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
-          <span>Phòng thu AI 48kHz • Nhân bản giọng độc quyền • 110 Quốc gia</span>
+          <span data-i18n="brand_sub">Phòng thu AI 48kHz • Nhân bản giọng độc quyền • 110 Quốc gia</span>
         </p>
       </div>
     </div>
 
     <!-- Header Center: Segmented AI Engine Switcher -->
-    <div class="hidden lg:flex items-center bg-[#060913]/95 p-1 rounded-2xl border border-white/10 shadow-[inset_0_2px_8px_rgba(0,0,0,0.7)]">
+    <div class="hidden 2xl:flex items-center bg-[#060913]/95 p-1 rounded-2xl border border-white/10 shadow-[inset_0_2px_8px_rgba(0,0,0,0.7)] shrink-0">
       <button
         id="tabFreeTts"
-        class="engine-tab active px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition text-white bg-gradient-to-r from-emerald-600 to-teal-600 shadow cursor-pointer"
+        class="engine-tab active px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition text-white bg-gradient-to-r from-emerald-600 to-teal-600 shadow cursor-pointer whitespace-nowrap"
       >
         <i class="fa-solid fa-wand-magic-sparkles text-amber-200 text-xs"></i>
-        <span>✨ Studio 48kHz & Quốc Tế</span>
+        <span data-i18n="tab_free">✨ Studio 48kHz & Quốc Tế</span>
         <span class="text-[9px] bg-amber-300 text-slate-950 font-black px-1.5 py-0.2 rounded-full uppercase shadow-sm">FREE</span>
       </button>
       <button
         id="tabCheapTts"
-        class="engine-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition text-slate-400 hover:text-white cursor-pointer"
+        class="engine-tab px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition text-slate-400 hover:text-white cursor-pointer whitespace-nowrap"
       >
         <i class="fa-solid fa-bolt-lightning text-amber-400 text-xs"></i>
-        <span>Cheap-TTS Cloud</span>
-        <span class="text-[9px] bg-amber-500/90 text-slate-950 font-black px-1.5 py-0.2 rounded-full uppercase">128 Giọng</span>
+        <span data-i18n="tab_cheap">Cheap-TTS Cloud</span>
+        <span class="text-[9px] bg-amber-500/90 text-slate-950 font-black px-1.5 py-0.2 rounded-full uppercase" data-i18n="tab_cheap_badge">128 Giọng</span>
       </button>
       <button
         id="tabWebSpeech"
-        class="engine-tab px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition text-slate-400 hover:text-white cursor-pointer"
+        class="engine-tab px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition text-slate-400 hover:text-white cursor-pointer whitespace-nowrap"
       >
         <i class="fa-solid fa-laptop-code text-xs"></i>
-        <span>Web Speech</span>
+        <span data-i18n="tab_web">Web Speech</span>
       </button>
     </div>
 
-    <!-- Header Right: Quota Capsule & Imperial VIP CTA -->
-    <div class="flex items-center gap-2.5 sm:gap-3">
-      <div class="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-gradient-to-r from-purple-950/60 to-slate-900/80 border border-purple-400/30 text-xs shadow-inner">
+    <!-- Header Right: Global UI Language + User Guide + Live Quota Capsule + VIP CTA -->
+    <div class="flex items-center gap-2 sm:gap-2.5 shrink-0">
+      <!-- Global Interface Language Selector -->
+      <div class="relative flex items-center shrink-0">
+        <select
+          id="uiLangSelect"
+          title="Select Website Language / Chọn Ngôn Ngữ Giao Diện"
+          class="bg-[#0a1022] hover:bg-[#111936] border border-cyan-400/35 rounded-xl px-2.5 py-1.5 text-xs font-bold text-cyan-200 focus:outline-none focus:ring-1 focus:ring-cyan-400 cursor-pointer transition whitespace-nowrap"
+        >
+          <option value="vi">🇻🇳 Tiếng Việt</option>
+          <option value="en">🇺🇸 English</option>
+          <option value="zh">🇨🇳 中文</option>
+          <option value="ja">🇯🇵 日本語</option>
+          <option value="ko">🇰🇷 한국어</option>
+          <option value="es">🇪🇸 Español</option>
+          <option value="fr">🇫🇷 Français</option>
+          <option value="ru">🇷🇺 Русский</option>
+        </select>
+      </div>
+
+      <!-- Built-in Quick Guide Button -->
+      <button
+        type="button"
+        id="btnHeaderGuide"
+        class="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-xs font-bold text-slate-200 transition cursor-pointer whitespace-nowrap shrink-0"
+      >
+        <i class="fa-solid fa-book-open text-cyan-400 text-[11px]"></i>
+        <span data-i18n="btn_help_guide">Hướng Dẫn</span>
+      </button>
+
+      <!-- Live Character Quota Capsule -->
+      <div class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-gradient-to-r from-purple-950/60 to-slate-900/80 border border-purple-400/30 text-xs shadow-inner whitespace-nowrap shrink-0">
         <i class="fa-solid fa-gem text-amber-400"></i>
-        <span class="text-slate-300">Hạn mức:</span>
-        <span id="userPointsDisplay" class="font-extrabold text-amber-300 font-mono tracking-tight">100.000</span>
-        <span class="text-[10px] text-purple-200/90">ký tự</span>
+        <span class="text-slate-300" data-i18n="quota_label">Còn lại:</span>
+        <span id="userPointsDisplay" class="font-extrabold text-amber-300 font-mono tracking-tight transition-all duration-300">100.000</span>
+        <span class="text-[10px] text-purple-200/90" data-i18n="chars_unit">ký tự</span>
       </div>
 
       <button
         id="btnHeaderPricing"
-        class="btn-gold-imperial px-4 py-2 rounded-2xl text-slate-950 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer"
+        class="btn-gold-imperial px-3.5 py-2 rounded-2xl text-slate-950 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
       >
         <i class="fa-solid fa-crown text-xs"></i>
-        <span>Nâng Cấp VIP</span>
+        <span data-i18n="btn_upgrade_vip">Nâng Cấp VIP</span>
       </button>
     </div>
   </header>
@@ -98,27 +127,31 @@
   <nav class="mobile-nav-strip md:hidden flex items-center gap-1.5 px-3 py-2 bg-[#080c18]/90 border-b border-white/10 overflow-x-auto no-scrollbar sticky top-[68px] z-20 backdrop-blur-xl">
     <button class="nav-tab active" data-view="viewStudio">
       <i class="fa-solid fa-wand-magic-sparkles text-purple-400 text-xs"></i>
-      <span>Studio</span>
+      <span data-i18n="nav_studio">Studio</span>
     </button>
     <button class="nav-tab" data-view="viewVoiceClone">
       <i class="fa-solid fa-fingerprint text-amber-400 text-xs"></i>
-      <span>Nhân Bản Giọng</span>
+      <span data-i18n="nav_clone">Nhân Bản Giọng</span>
     </button>
     <button class="nav-tab" data-view="viewDialogue">
       <i class="fa-solid fa-comments text-cyan-400 text-xs"></i>
-      <span>Đa Giọng</span>
+      <span data-i18n="nav_dialogue">Đa Giọng</span>
     </button>
     <button class="nav-tab" data-view="viewBatchWord">
       <i class="fa-solid fa-file-word text-blue-400 text-xs"></i>
-      <span>File Word</span>
+      <span data-i18n="nav_batch">File Word</span>
     </button>
     <button class="nav-tab" data-view="viewVoices">
       <i class="fa-solid fa-earth-americas text-emerald-400 text-xs"></i>
-      <span>110 Quốc Gia</span>
+      <span data-i18n="nav_voices">110 Quốc Gia</span>
     </button>
     <button class="nav-tab" data-view="viewPricing">
       <i class="fa-solid fa-crown text-amber-400 text-xs"></i>
-      <span>Bảng Giá</span>
+      <span data-i18n="nav_pricing">Bảng Giá</span>
+    </button>
+    <button class="nav-tab" data-view="viewGuide">
+      <i class="fa-solid fa-book-open text-cyan-400 text-xs"></i>
+      <span data-i18n="nav_guide">Hướng Dẫn</span>
     </button>
   </nav>
 
@@ -129,67 +162,76 @@
     <aside class="w-[274px] border-r border-white/10 bg-[#080d1a]/75 backdrop-blur-xl p-3.5 hidden md:flex flex-col justify-between shrink-0">
       <div class="flex flex-col gap-1.5">
         <div class="text-[10px] font-extrabold text-slate-400/90 uppercase tracking-[0.14em] px-3 mb-1.5 flex items-center justify-between">
-          <span>Phòng Thu Sáng Tạo</span>
+          <span data-i18n="sidebar_sec_studio">Phòng Thu Sáng Tạo</span>
           <span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
         </div>
 
         <button class="nav-tab active" data-view="viewStudio">
           <span class="nav-icon-box"><i class="fa-solid fa-wand-magic-sparkles text-xs text-purple-400"></i></span>
-          <span class="whitespace-nowrap">Studio Soạn Thảo</span>
+          <span class="whitespace-nowrap" data-i18n="nav_studio">Studio Soạn Thảo</span>
         </button>
 
         <button class="nav-tab" data-view="viewVoiceClone">
           <span class="nav-icon-box"><i class="fa-solid fa-fingerprint text-xs text-amber-400"></i></span>
-          <span class="whitespace-nowrap">Nhân Bản Giọng</span>
+          <span class="whitespace-nowrap" data-i18n="nav_clone">Nhân Bản Giọng</span>
           <span id="sidebarVaultBadge" class="text-[9px] bg-rose-500/20 text-rose-300 border border-rose-500/35 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">🔒 Khóa</span>
         </button>
 
         <button class="nav-tab" data-view="viewDialogue">
           <span class="nav-icon-box"><i class="fa-solid fa-comments text-xs text-cyan-400"></i></span>
-          <span class="whitespace-nowrap">Hội Thoại Đa Giọng</span>
+          <span class="whitespace-nowrap" data-i18n="nav_dialogue">Hội Thoại Đa Giọng</span>
           <span class="text-[9px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/35 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">CapCut</span>
         </button>
 
         <button class="nav-tab" data-view="viewBatchWord">
           <span class="nav-icon-box"><i class="fa-solid fa-file-word text-xs text-blue-400"></i></span>
-          <span class="whitespace-nowrap">Hàng Đợi File Word</span>
+          <span class="whitespace-nowrap" data-i18n="nav_batch">Hàng Đợi File Word</span>
           <span class="text-[9px] bg-blue-500/20 text-blue-300 border border-blue-500/35 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">>70k từ</span>
         </button>
 
         <button class="nav-tab" data-view="viewVoices">
           <span class="nav-icon-box"><i class="fa-solid fa-earth-americas text-xs text-emerald-400"></i></span>
-          <span class="whitespace-nowrap">Thư Viện Toàn Cầu</span>
-          <span class="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/35 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">110 Nước</span>
+          <span class="whitespace-nowrap" data-i18n="nav_voices">Thư Viện Toàn Cầu</span>
+          <span class="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/35 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap" data-i18n="nav_voices_badge">110 Nước</span>
         </button>
 
-        <div class="text-[10px] font-extrabold text-slate-400/90 uppercase tracking-[0.14em] px-3 mt-5 mb-1.5 flex items-center justify-between">
-          <span>Thương Mại & VIP</span>
+        <div class="text-[10px] font-extrabold text-slate-400/90 uppercase tracking-[0.14em] px-3 mt-4 mb-1.5 flex items-center justify-between">
+          <span data-i18n="sidebar_sec_biz">Thương Mại & Hỗ Trợ</span>
           <i class="fa-solid fa-bolt text-[9px] text-amber-400"></i>
         </div>
 
         <button class="nav-tab" data-view="viewPricing">
           <span class="nav-icon-box"><i class="fa-solid fa-crown text-xs text-amber-400"></i></span>
-          <span class="whitespace-nowrap">Bảng Giá & Gói Cước</span>
-          <span class="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">VietQR</span>
+          <span class="whitespace-nowrap" data-i18n="nav_pricing">Bảng Giá & Gói Cước</span>
+          <span class="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">VIP</span>
+        </button>
+
+        <button class="nav-tab" data-view="viewGuide">
+          <span class="nav-icon-box"><i class="fa-solid fa-book-open text-xs text-cyan-400"></i></span>
+          <span class="whitespace-nowrap" data-i18n="nav_guide">Hướng Dẫn Sử Dụng</span>
+          <span class="text-[9px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">A-Z</span>
         </button>
       </div>
 
-      <!-- Sidebar Bottom: Luxury Quota Card & Live Engine Telemetry -->
+      <!-- Sidebar Bottom: Live Monthly Quota Card & Engine Telemetry -->
       <div class="flex flex-col gap-3 pt-4 border-t border-white/10">
         <!-- Monthly Quota Card -->
         <div class="p-3.5 rounded-2xl bg-gradient-to-br from-slate-900/95 via-purple-950/25 to-slate-950/95 border border-purple-500/25 shadow-lg">
           <div class="flex items-center justify-between text-xs mb-2">
             <span class="text-slate-300 font-semibold flex items-center gap-1.5">
-              <i class="fa-solid fa-chart-pie text-purple-400 text-[11px]"></i> Hạn mức tháng
+              <i class="fa-solid fa-chart-pie text-purple-400 text-[11px]"></i> <span data-i18n="quota_month_title">Hạn mức tháng</span>
             </span>
-            <span class="text-emerald-400 font-bold font-mono text-[11px]">100%</span>
+            <span id="sidebarQuotaPercent" class="text-emerald-400 font-bold font-mono text-[11px]">100%</span>
           </div>
           <div class="w-full bg-slate-800/90 rounded-full h-2 overflow-hidden p-[1px] border border-white/5">
-            <div class="bg-gradient-to-r from-purple-500 via-cyan-400 to-emerald-400 h-full w-full rounded-full"></div>
+            <div id="sidebarQuotaBar" class="bg-gradient-to-r from-purple-500 via-cyan-400 to-emerald-400 h-full w-full rounded-full transition-all duration-500"></div>
           </div>
-          <div class="flex items-center justify-between text-[10px] text-slate-400 mt-2">
-            <span>Gói Miễn Phí: <b class="text-slate-200">100.000</b> ký tự</span>
-            <span class="text-amber-300 font-bold cursor-pointer hover:text-amber-200 hover:underline" id="btnSidebarUpgrade">Nâng cấp →</span>
+          <div class="flex items-center justify-between text-[10px] text-slate-300 mt-2 gap-1">
+            <span id="sidebarQuotaPlanText" class="truncate">Gói Miễn Phí: <b class="text-slate-100">100.000</b> / 100.000</span>
+            <span class="text-amber-300 font-bold cursor-pointer hover:text-amber-200 hover:underline shrink-0" id="btnSidebarUpgrade" data-i18n="sidebar_upgrade_link">Nâng cấp →</span>
+          </div>
+          <div id="sidebarQuotaUsedSub" class="text-[10px] text-slate-400 mt-1">
+            Đã dùng: <b class="text-purple-300 font-mono">0</b> ký tự
           </div>
         </div>
 
@@ -219,7 +261,7 @@
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/15 backdrop-blur-md text-[11px] font-bold text-cyan-200">
               <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>AI AUDIO MASTERING STUDIO • CHUẨN ĐIỆN ẢNH 48.000 Hz</span>
+              <span data-i18n="hero_eyebrow">AI AUDIO MASTERING STUDIO • CHUẨN ĐIỆN ẢNH 48.000 Hz</span>
             </div>
             <button
               type="button"
@@ -228,7 +270,7 @@
               title="Thu gọn / Mở rộng bảng giới thiệu"
             >
               <i id="heroToggleIcon" class="fa-solid fa-chevron-up text-[10px]"></i>
-              <span id="heroToggleText">Thu gọn</span>
+              <span id="heroToggleText" data-i18n="hero_collapse">Thu gọn</span>
             </button>
           </div>
 
@@ -236,11 +278,11 @@
           <div id="studioHeroBody" class="flex flex-col gap-5">
             <div class="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
               <div class="max-w-3xl">
-                <h1 class="text-xl sm:text-2xl lg:text-[28px] font-extrabold font-display text-gradient-aurora leading-tight tracking-tight">
+                <h1 class="text-xl sm:text-2xl lg:text-[28px] font-extrabold font-display text-gradient-aurora leading-tight tracking-tight" data-i18n="hero_title">
                   Đánh Thức Mọi Câu Chữ Thành Giọng Nói AI Sống Động & Đầy Cảm Xúc
                 </h1>
-                <p class="text-xs sm:text-sm text-slate-300/90 mt-2 leading-relaxed">
-                  Tạo Audiobook hàng vạn từ, nhân bản giọng chính chủ khóa mật mã riêng tư, tự động phân vai truyện dài xuất thẳng Track CapCut và lồng tiếng đa quốc gia trên <b>110 nước • 142 ngôn ngữ</b> chỉ trong tích tắc.
+                <p class="text-xs sm:text-sm text-slate-300/90 mt-2 leading-relaxed" data-i18n="hero_desc">
+                  Tạo Audiobook hàng vạn từ, nhân bản giọng chính chủ khóa mật mã riêng tư, tự động phân vai truyện dài xuất thẳng Track CapCut và lồng tiếng đa quốc gia trên 110 nước • 142 ngôn ngữ chỉ trong tích tắc.
                 </p>
               </div>
               <div class="flex flex-wrap items-center gap-2 shrink-0">
@@ -249,14 +291,14 @@
                   data-jump-view="viewVoiceClone"
                   class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500/25 to-orange-500/20 hover:from-amber-500/35 hover:to-orange-500/30 text-amber-200 border border-amber-400/40 text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-lg"
                 >
-                  <i class="fa-solid fa-fingerprint text-amber-400"></i> Giọng Độc Quyền Của Tôi
+                  <i class="fa-solid fa-fingerprint text-amber-400"></i> <span data-i18n="hero_btn_clone">Giọng Độc Quyền Của Tôi</span>
                 </button>
                 <button
                   type="button"
                   data-jump-view="viewVoices"
                   class="px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-lg"
                 >
-                  <i class="fa-solid fa-earth-americas text-emerald-400"></i> Kho 1.177 Giọng Quốc Tế
+                  <i class="fa-solid fa-earth-americas text-emerald-400"></i> <span data-i18n="hero_btn_voices">Kho 1.177 Giọng Quốc Tế</span>
                 </button>
               </div>
             </div>
@@ -269,10 +311,10 @@
                 </div>
                 <div class="min-w-0">
                   <div class="text-xs font-extrabold text-white flex items-center gap-1.5">
-                    <span>1.177+ Giọng Toàn Cầu</span>
+                    <span data-i18n="feat1_title">1.177+ Giọng Toàn Cầu</span>
                     <i class="fa-solid fa-arrow-up-right-from-square text-[9px] text-emerald-400"></i>
                   </div>
-                  <p class="text-[11px] text-slate-300/80 mt-0.5 leading-snug">110 Quốc gia & 142 ngôn ngữ bản xứ nghe thử tức thì &lt;0.05s</p>
+                  <p class="text-[11px] text-slate-300/80 mt-0.5 leading-snug" data-i18n="feat1_desc">110 Quốc gia & 142 ngôn ngữ bản xứ nghe thử tức thì &lt;0.05s</p>
                 </div>
               </div>
 
@@ -282,10 +324,10 @@
                 </div>
                 <div class="min-w-0">
                   <div class="text-xs font-extrabold text-white flex items-center gap-1.5">
-                    <span>Két Sắt Nhân Bản 48kHz</span>
+                    <span data-i18n="feat2_title">Két Sắt Nhân Bản 48kHz</span>
                     <i class="fa-solid fa-lock text-[9px] text-amber-400"></i>
                   </div>
-                  <p class="text-[11px] text-slate-300/80 mt-0.5 leading-snug">Mã hóa PBKDF2-SHA256 độc quyền chỉ mình chủ sở hữu dùng</p>
+                  <p class="text-[11px] text-slate-300/80 mt-0.5 leading-snug" data-i18n="feat2_desc">Mã hóa PBKDF2-SHA256 độc quyền chỉ mình chủ sở hữu dùng</p>
                 </div>
               </div>
 
@@ -295,10 +337,10 @@
                 </div>
                 <div class="min-w-0">
                   <div class="text-xs font-extrabold text-white flex items-center gap-1.5">
-                    <span>Đa Giọng & Stem CapCut</span>
+                    <span data-i18n="feat3_title">Đa Giọng & Stem CapCut</span>
                     <span class="text-[9px] px-1.5 rounded bg-cyan-500/25 text-cyan-200">PRO</span>
                   </div>
-                  <p class="text-[11px] text-slate-300/80 mt-0.5 leading-snug">Tự bóc lời thoại truyện dài & xuất riêng từng nhân vật</p>
+                  <p class="text-[11px] text-slate-300/80 mt-0.5 leading-snug" data-i18n="feat3_desc">Tự bóc lời thoại truyện dài & xuất riêng từng nhân vật</p>
                 </div>
               </div>
 
@@ -308,10 +350,10 @@
                 </div>
                 <div class="min-w-0">
                   <div class="text-xs font-extrabold text-white flex items-center gap-1.5">
-                    <span>Audiobook Hàng Vạn Từ</span>
+                    <span data-i18n="feat4_title">Audiobook Hàng Vạn Từ</span>
                     <span class="text-[9px] px-1.5 rounded bg-purple-500/25 text-purple-200">AUTO</span>
                   </div>
-                  <p class="text-[11px] text-slate-300/80 mt-0.5 leading-snug">Nạp hàng loạt file Word .docx, tự chia chương & gộp MP3</p>
+                  <p class="text-[11px] text-slate-300/80 mt-0.5 leading-snug" data-i18n="feat4_desc">Nạp hàng loạt file Word .docx, tự chia chương & gộp MP3</p>
                 </div>
               </div>
             </div>
@@ -389,8 +431,8 @@
                 <i class="fa-solid fa-pen-nib text-xs"></i>
               </div>
               <div>
-                <span class="text-sm font-extrabold text-white tracking-tight">Bàn Soạn Thảo Kịch Bản & Truyện Chữ</span>
-                <span class="hidden sm:inline-block ml-2 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 font-semibold">Chuẩn hóa thông minh</span>
+                <span class="text-sm font-extrabold text-white tracking-tight" data-i18n="editor_title">Bàn Soạn Thảo Kịch Bản & Truyện Chữ</span>
+                <span class="hidden sm:inline-block ml-2 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 font-semibold" data-i18n="editor_badge">Chuẩn hóa thông minh</span>
               </div>
             </div>
 
@@ -398,24 +440,24 @@
             <div class="flex flex-wrap items-center gap-2">
               <input type="file" id="fileBatchWordInput" multiple accept=".docx,.txt,.md" class="hidden">
               <button id="btnBatchWord" class="text-xs px-3 py-1.5 bg-blue-500/15 hover:bg-blue-500/30 text-blue-200 border border-blue-400/30 rounded-xl font-semibold transition flex items-center gap-1.5 cursor-pointer" title="Nạp nhiều file Word (.docx) để tạo hàng loạt">
-                <i class="fa-solid fa-file-word text-blue-400"></i> Nạp nhiều Word
+                <i class="fa-solid fa-file-word text-blue-400"></i> <span data-i18n="btn_batch_word">Nạp nhiều Word</span>
               </button>
 
               <input type="file" id="fileTxtInput" accept=".docx,.txt,.text,.md" class="hidden">
               <button id="btnImportTxt" class="text-xs px-3 py-1.5 bg-purple-500/15 hover:bg-purple-500/30 text-purple-200 border border-purple-400/30 rounded-xl font-semibold transition flex items-center gap-1.5 cursor-pointer" title="Nạp 1 file Word hoặc TXT">
-                <i class="fa-solid fa-file-arrow-up text-purple-300"></i> Đọc file (.docx/.txt)
+                <i class="fa-solid fa-file-arrow-up text-purple-300"></i> <span data-i18n="btn_import_txt">Đọc file (.docx/.txt)</span>
               </button>
 
               <button id="btnNormalizeCaps" class="text-xs px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/30 text-amber-200 border border-amber-400/30 rounded-xl font-semibold transition flex items-center gap-1.5 cursor-pointer" title="Sửa lỗi chữ IN HOA bị đánh vần">
-                <i class="fa-solid fa-spell-check text-amber-400"></i> Sửa chữ IN HOA
+                <i class="fa-solid fa-spell-check text-amber-400"></i> <span data-i18n="btn_fix_caps">Sửa chữ IN HOA</span>
               </button>
 
               <button id="btnPaste" class="text-xs px-3 py-1.5 bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 rounded-xl transition flex items-center gap-1.5 cursor-pointer" title="Dán nội dung">
-                <i class="fa-regular fa-paste"></i> Dán
+                <i class="fa-regular fa-paste"></i> <span data-i18n="btn_paste">Dán</span>
               </button>
 
               <button id="btnClear" class="text-xs px-3 py-1.5 bg-white/5 hover:bg-rose-500/20 hover:text-rose-300 hover:border-rose-500/35 text-slate-300 border border-white/10 rounded-xl transition flex items-center gap-1.5 cursor-pointer" title="Xóa nội dung">
-                <i class="fa-regular fa-trash-can"></i> Xóa
+                <i class="fa-regular fa-trash-can"></i> <span data-i18n="btn_clear">Xóa</span>
               </button>
             </div>
           </div>
@@ -425,6 +467,7 @@
             <textarea
               id="textInput"
               rows="9"
+              data-i18n-placeholder="editor_placeholder"
               placeholder="Nhập hoặc dán kịch bản video, lời bình, bài báo, hoặc toàn bộ tiểu thuyết hàng vạn từ vào đây...&#10;💡 Mẹo đạo diễn thanh âm: Dùng dấu ... để ngắt nghỉ sâu lắng (0.8s), hoặc chèn [cười], [thở dài], [hắng giọng] để giọng AI diễn xuất như người thật!"
               class="w-full bg-[#050811]/95 border border-white/10 rounded-2xl p-4 lg:p-5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-400/60 transition resize-y text-[15px] leading-relaxed font-normal shadow-inner"
             ></textarea>
@@ -433,29 +476,29 @@
           <!-- Expressive Prosody & Emotion Director Bar -->
           <div class="flex flex-wrap items-center justify-between gap-2 bg-[#070b16]/80 px-3.5 py-2.5 rounded-2xl border border-white/5">
             <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-300">
-              <span class="text-emerald-400 font-bold mr-1"><i class="fa-solid fa-masks-theater mr-1"></i>Đạo diễn biểu cảm:</span>
-              <button type="button" class="insert-cue-btn px-2.5 py-1 rounded-lg bg-white/5 hover:bg-emerald-500/25 hover:text-emerald-200 border border-white/10 transition cursor-pointer font-medium" data-cue="... "><code>...</code> Ngắt sâu (0.8s)</button>
+              <span class="text-emerald-400 font-bold mr-1"><i class="fa-solid fa-masks-theater mr-1"></i><span data-i18n="prosody_label">Đạo diễn biểu cảm:</span></span>
+              <button type="button" class="insert-cue-btn px-2.5 py-1 rounded-lg bg-white/5 hover:bg-emerald-500/25 hover:text-emerald-200 border border-white/10 transition cursor-pointer font-medium" data-cue="... "><code>...</code> <span data-i18n="cue_pause">Ngắt sâu (0.8s)</span></button>
               <button type="button" class="insert-cue-btn px-2.5 py-1 rounded-lg bg-white/5 hover:bg-emerald-500/25 hover:text-emerald-200 border border-white/10 transition cursor-pointer font-medium" data-cue="[cười] ">😄 <code>[cười]</code></button>
               <button type="button" class="insert-cue-btn px-2.5 py-1 rounded-lg bg-white/5 hover:bg-emerald-500/25 hover:text-emerald-200 border border-white/10 transition cursor-pointer font-medium" data-cue="[thở dài] ">😮‍💨 <code>[thở dài]</code></button>
               <button type="button" class="insert-cue-btn px-2.5 py-1 rounded-lg bg-white/5 hover:bg-emerald-500/25 hover:text-emerald-200 border border-white/10 transition cursor-pointer font-medium" data-cue="[hắng giọng] ">🎙️ <code>[hắng giọng]</code></button>
             </div>
 
             <div class="flex items-center gap-1.5 text-xs">
-              <span class="text-slate-400 text-[11px]">Kịch bản mẫu:</span>
-              <button class="sample-btn px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/30 text-purple-200 border border-purple-500/25 transition text-[11px] font-semibold cursor-pointer" data-sample="intro">Lời chào</button>
-              <button class="sample-btn px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/30 text-purple-200 border border-purple-500/25 transition text-[11px] font-semibold cursor-pointer" data-sample="novel">Tiên hiệp (3 chương)</button>
-              <button class="sample-btn px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/30 text-purple-200 border border-purple-500/25 transition text-[11px] font-semibold cursor-pointer" data-sample="news">Bản tin AI</button>
+              <span class="text-slate-400 text-[11px]" data-i18n="sample_label">Kịch bản mẫu:</span>
+              <button class="sample-btn px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/30 text-purple-200 border border-purple-500/25 transition text-[11px] font-semibold cursor-pointer" data-sample="intro" data-i18n="sample_intro">Lời chào</button>
+              <button class="sample-btn px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/30 text-purple-200 border border-purple-500/25 transition text-[11px] font-semibold cursor-pointer" data-sample="novel" data-i18n="sample_novel">Tiên hiệp (3 chương)</button>
+              <button class="sample-btn px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/30 text-purple-200 border border-purple-500/25 transition text-[11px] font-semibold cursor-pointer" data-sample="news" data-i18n="sample_news">Bản tin AI</button>
             </div>
           </div>
 
           <!-- Live Telemetry Metrics Footer -->
           <div class="flex flex-wrap items-center justify-between text-xs text-slate-400 pt-1 gap-2">
             <div class="flex flex-wrap items-center gap-3 sm:gap-5">
-              <span class="flex items-center gap-1.5"><i class="fa-regular fa-keyboard text-purple-400"></i> <b id="charCount" class="text-white font-mono">0</b> ký tự</span>
-              <span class="flex items-center gap-1.5"><i class="fa-solid fa-align-left text-cyan-400"></i> <b id="wordCount" class="text-white font-mono">0</b> từ</span>
-              <span class="flex items-center gap-1.5"><i class="fa-regular fa-clock text-amber-400"></i> Thời lượng ước tính: ~<b id="estTime" class="text-amber-300 font-mono">0s</b></span>
+              <span class="flex items-center gap-1.5"><i class="fa-regular fa-keyboard text-purple-400"></i> <b id="charCount" class="text-white font-mono">0</b> <span data-i18n="stat_chars">ký tự</span></span>
+              <span class="flex items-center gap-1.5"><i class="fa-solid fa-align-left text-cyan-400"></i> <b id="wordCount" class="text-white font-mono">0</b> <span data-i18n="stat_words">từ</span></span>
+              <span class="flex items-center gap-1.5"><i class="fa-regular fa-clock text-amber-400"></i> <span data-i18n="stat_est">Thời lượng ước tính:</span> ~<b id="estTime" class="text-amber-300 font-mono">0s</b></span>
             </div>
-            <span class="text-[11px] text-slate-400 hidden sm:inline">Kéo thả trực tiếp file <code>.docx</code> hoặc <code>.txt</code> vào khung soạn thảo</span>
+            <span class="text-[11px] text-slate-400 hidden sm:inline" data-i18n="drop_hint">Kéo thả trực tiếp file .docx hoặc .txt vào khung soạn thảo</span>
           </div>
         </div>
 
@@ -468,7 +511,7 @@
               <span class="w-6 h-6 rounded-full bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300">
                 <i class="fa-solid fa-waveform-lines text-[11px]"></i>
               </span>
-              <span>Phổ âm Aurora 48kHz sẵn sàng — Nhấn <b>Tạo Giọng Nói AI</b> để xuất bản âm thanh</span>
+              <span data-i18n="idle_wave">Phổ âm Aurora 48kHz sẵn sàng — Nhấn Tạo Giọng Nói AI để xuất bản âm thanh</span>
             </div>
           </div>
 
@@ -481,7 +524,7 @@
                 class="btn-aurora-primary px-7 py-3.5 rounded-2xl text-white font-extrabold text-sm active:scale-95 flex items-center gap-2.5 cursor-pointer disabled:opacity-50"
               >
                 <i id="btnSpeakIcon" class="fa-solid fa-play text-xs"></i>
-                <span id="btnSpeakText">✨ Tạo Giọng AI Miễn Phí</span>
+                <span id="btnSpeakText" data-i18n="btn_speak_free">✨ Tạo Giọng AI Miễn Phí</span>
               </button>
 
               <!-- Pause Button (Web Speech) -->
@@ -503,48 +546,52 @@
                 title="Dừng phát"
               >
                 <i class="fa-solid fa-stop"></i>
-                <span>Dừng</span>
+                <span data-i18n="btn_stop">Dừng</span>
               </button>
             </div>
 
             <!-- Keyboard Shortcut Pill -->
             <div class="text-xs text-slate-400 flex items-center gap-2">
               <span class="px-2.5 py-1 bg-[#060913] rounded-lg border border-white/10 text-purple-200 font-mono text-[11px] shadow-inner">⌘ / Ctrl + Enter</span>
-              <span>xuất âm thanh tức thì</span>
+              <span data-i18n="shortcut_hint">xuất âm thanh tức thì</span>
             </div>
           </div>
         </div>
 
-        <!-- GENERATED MASTER AUDIO OUTPUT CARD -->
+        <!-- GENERATED MASTER AUDIO OUTPUT CARD (WITH GENERATION SPEED + AUDIO DURATION + QUOTA USED) -->
         <div id="audioOutputCard" class="hidden glass-panel border-purple-400/50 rounded-3xl p-5 lg:p-6 shadow-2xl">
           <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div class="flex items-center gap-3.5">
-              <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600/30 via-indigo-500/30 to-cyan-500/30 border border-purple-400/40 flex items-center justify-center text-purple-300 shadow-lg">
+            <div class="flex items-start gap-3.5">
+              <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600/30 via-indigo-500/30 to-cyan-500/30 border border-purple-400/40 flex items-center justify-center text-purple-300 shadow-lg shrink-0">
                 <i class="fa-solid fa-compact-disc text-2xl"></i>
               </div>
               <div>
-                <h4 class="text-sm font-extrabold text-white flex items-center gap-2">
-                  <span>Bản Thu Master Đã Xuất Xưởng</span>
-                  <span id="audioDurationBadge" class="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-mono font-bold">0.0s</span>
+                <h4 class="text-sm font-extrabold text-white flex flex-wrap items-center gap-2">
+                  <span data-i18n="out_title">Bản Thu Master Đã Xuất Xưởng</span>
+                  <span id="audioDurationBadge" class="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/35 px-2.5 py-0.5 rounded-full font-mono font-bold">🎧 0.0s</span>
+                  <span id="audioGenSpeedBadge" class="text-[10px] bg-cyan-500/20 text-cyan-200 border border-cyan-400/35 px-2.5 py-0.5 rounded-full font-mono font-bold">⚡ Tạo xong trong 0.00s</span>
                 </h4>
-                <p id="audioVoiceInfo" class="text-xs text-slate-300 mt-0.5">Giọng đọc: Ngọc Huyền (Studio 48kHz)</p>
+                <p id="audioVoiceInfo" class="text-xs text-slate-300 mt-1">Giọng đọc: Ngọc Huyền (Studio 48kHz)</p>
+                <p id="audioCompletedMetaBadge" class="text-[11px] text-amber-300/95 font-medium mt-1 flex flex-wrap items-center gap-2">
+                  <span>🕒 Hoàn tất lúc --:--:--</span>
+                </p>
               </div>
             </div>
 
-            <div class="flex flex-wrap items-center gap-2.5">
+            <div class="flex flex-wrap items-center gap-2.5 shrink-0">
               <a
                 id="btnDownloadAudio"
                 download="voiceviet-studio-48khz.wav"
                 class="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-100 font-bold text-xs border border-white/15 transition flex items-center gap-2 cursor-pointer active:scale-95"
               >
-                <i class="fa-solid fa-cloud-arrow-down text-cyan-400 text-sm"></i> Tải .WAV Gốc 48kHz
+                <i class="fa-solid fa-cloud-arrow-down text-cyan-400 text-sm"></i> <span data-i18n="btn_dl_wav">Tải .WAV Gốc 48kHz</span>
               </a>
               <button
                 id="btnDownloadAudioMp3"
                 class="btn-aurora-primary px-4 py-2.5 rounded-xl text-white font-bold text-xs flex items-center gap-2 cursor-pointer active:scale-95"
                 title="Tải file định dạng .MP3 siêu nhẹ"
               >
-                <i class="fa-solid fa-file-audio text-sm"></i> <span id="singleMp3Text">Tải .MP3 (Siêu nhẹ)</span>
+                <i class="fa-solid fa-file-audio text-sm"></i> <span id="singleMp3Text" data-i18n="btn_dl_mp3">Tải .MP3 (Siêu nhẹ)</span>
               </button>
             </div>
           </div>
@@ -1151,19 +1198,19 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
           <!-- Commercial Pricing Header -->
           <div class="text-center max-w-3xl mx-auto flex flex-col items-center gap-3 relative">
             <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/15 border border-amber-400/35 text-[11px] font-extrabold text-amber-300 uppercase tracking-wider">
-              <i class="fa-solid fa-crown"></i> Bảng Giá Chính Thức • Tự Động Kích Hoạt 24/7
+              <i class="fa-solid fa-crown"></i> <span data-i18n="pricing_eyebrow">Bảng Giá Chính Thức • Tự Động Kích Hoạt Toàn Cầu 24/7</span>
             </div>
-            <h2 class="text-2xl sm:text-3xl font-extrabold font-display text-gradient-aurora">
+            <h2 class="text-2xl sm:text-3xl font-extrabold font-display text-gradient-aurora" data-i18n="pricing_title">
               Bảng Giá Gói Cước VoiceViet Studio
             </h2>
-            <p class="text-xs sm:text-sm text-slate-300/90 leading-relaxed">
-              Chi phí siêu tiết kiệm dành riêng cho nhà sáng tạo YouTube, TikTok, Review Phim & Studio Audiobook chuyên nghiệp — Thanh toán quét mã <b>VietQR</b> cộng hạn mức tự động chỉ trong <b>3 giây</b>.
+            <p class="text-xs sm:text-sm text-slate-300/90 leading-relaxed" data-i18n="pricing_sub">
+              Chi phí siêu tiết kiệm dành riêng cho nhà sáng tạo YouTube, TikTok, Review Phim & Studio Audiobook chuyên nghiệp — Hỗ trợ thanh toán VietQR (Việt Nam) & Quốc Tế (Visa / Mastercard / PayPal).
             </p>
 
             <!-- Trust Guarantees -->
             <div class="flex flex-wrap items-center justify-center gap-2 sm:gap-3 mt-1 text-[11px] text-slate-300">
               <span class="px-3 py-1 rounded-full bg-white/5 border border-white/10 flex items-center gap-1.5"><i class="fa-solid fa-bolt text-amber-400"></i> Kích hoạt tự động 3s</span>
-              <span class="px-3 py-1 rounded-full bg-white/5 border border-white/10 flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-400"></i> Bản quyền thương mại YouTube/TikTok</span>
+              <span class="px-3 py-1 rounded-full bg-white/5 border border-white/10 flex items-center gap-1.5"><i class="fa-solid fa-globe text-cyan-400"></i> VietQR + Visa/Mastercard/PayPal</span>
               <span class="px-3 py-1 rounded-full bg-white/5 border border-white/10 flex items-center gap-1.5"><i class="fa-solid fa-shield-halved text-purple-400"></i> Bảo mật Két sắt giọng riêng</span>
             </div>
           </div>
@@ -1175,146 +1222,291 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
             <div class="pricing-card-base xl:col-span-2 p-6 rounded-3xl border border-white/10 flex flex-col justify-between gap-5">
               <div>
                 <div class="flex items-center justify-between">
-                  <span class="text-xs font-extrabold text-slate-300 uppercase tracking-wider">Gói Miễn Phí</span>
-                  <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-white/5 text-slate-300 border border-white/10 font-semibold">Khởi đầu</span>
+                  <span class="text-xs font-extrabold text-slate-300 uppercase tracking-wider"><span class="lang-only-vi">Gói Miễn Phí</span><span class="lang-only-global hidden">Free Starter</span></span>
+                  <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-white/5 text-slate-300 border border-white/10 font-semibold">Starter</span>
                 </div>
                 <div class="mt-3 flex flex-wrap items-baseline gap-1.5">
-                  <span class="text-3xl font-black font-display text-white">0</span>
-                  <span class="text-xs font-semibold text-slate-400">VNĐ / 1 tháng</span>
+                  <span id="planPriceFree" class="text-3xl font-black font-display text-white">0</span>
+                  <span class="plan-currency-unit text-xs font-semibold text-slate-400">VNĐ / 1 tháng</span>
                 </div>
                 <div class="mt-2 inline-block px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-bold text-emerald-300">
-                  🎁 100.000 ký tự / 1 tháng
+                  <span class="lang-only-vi">🎁 100.000 ký tự / 1 tháng</span>
+                  <span class="lang-only-global hidden">🎁 100,000 characters / month</span>
                 </div>
-                <p class="text-xs text-slate-400 mt-2.5">Trải nghiệm ngay chất lượng phòng thu 48kHz không tốn chi phí.</p>
-                <ul class="text-xs text-slate-200 space-y-2.5 mt-4 pt-4 border-t border-white/10">
+                <p class="text-xs text-slate-400 mt-2.5">
+                  <span class="lang-only-vi">Trải nghiệm ngay chất lượng phòng thu 48kHz không tốn chi phí.</span>
+                  <span class="lang-only-global hidden">Test studio-quality 48kHz AI voices across 142 languages for free.</span>
+                </p>
+                <ul class="lang-only-vi text-xs text-slate-200 space-y-2.5 mt-4 pt-4 border-t border-white/10">
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span><b>100.000</b> ký tự dùng cho 1 tháng</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span>Nghe thử tức thì & tạo giọng AI chuẩn</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span>Tải xuống định dạng MP3 / WAV</span></li>
                 </ul>
+                <ul class="lang-only-global hidden text-xs text-slate-200 space-y-2.5 mt-4 pt-4 border-t border-white/10">
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span><b>100,000</b> characters / month</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span>&lt;0.05s instant preview & standard AI voices</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span>Download compact MP3 & 48kHz WAV</span></li>
+                </ul>
               </div>
               <button class="w-full py-3 bg-white/5 text-slate-300 border border-white/10 rounded-2xl text-xs font-bold cursor-default">
-                Đang Kích Hoạt Sẵn
+                <span class="lang-only-vi">Đang Kích Hoạt Sẵn</span>
+                <span class="lang-only-global hidden">Current Active Plan</span>
               </button>
             </div>
 
-            <!-- Plan 2: Gói Thường (1.000.000 ký tự / 1 tháng - 25.000 VNĐ) -->
+            <!-- Plan 2: Gói Thường (1.000.000 ký tự / 1 tháng - 25.000 VNĐ / $1.99) -->
             <div class="pricing-card-base xl:col-span-2 p-6 rounded-3xl border border-cyan-400/40 hover:border-cyan-300 flex flex-col justify-between gap-5">
               <div>
                 <div class="flex items-center justify-between">
-                  <span class="text-xs font-extrabold text-cyan-300 uppercase tracking-wider">Gói Thường</span>
-                  <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-200 border border-cyan-400/30 font-bold">Tiết kiệm</span>
+                  <span class="text-xs font-extrabold text-cyan-300 uppercase tracking-wider"><span class="lang-only-vi">Gói Thường</span><span class="lang-only-global hidden">Basic Creator</span></span>
+                  <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-200 border border-cyan-400/30 font-bold">Creator</span>
                 </div>
                 <div class="mt-3 flex flex-wrap items-baseline gap-1.5">
-                  <span class="text-3xl font-black font-display text-white">25.000</span>
-                  <span class="text-xs font-semibold text-slate-400">VNĐ / 1 tháng</span>
+                  <span id="planPriceBasic" class="text-3xl font-black font-display text-white">25.000</span>
+                  <span class="plan-currency-unit text-xs font-semibold text-slate-400">VNĐ / 1 tháng</span>
                 </div>
                 <div class="mt-2 inline-block px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-400/30 text-[11px] font-bold text-cyan-200">
-                  ⚡ 1.000.000 ký tự / 1 tháng
+                  <span class="lang-only-vi">⚡ 1.000.000 ký tự / 1 tháng</span>
+                  <span class="lang-only-global hidden">⚡ 1,000,000 characters / month</span>
                 </div>
-                <p class="text-xs text-slate-400 mt-2.5">Lý tưởng cho kênh TikTok, Reels, Shorts và thuyết minh clip ngắn.</p>
-                <ul class="text-xs text-slate-200 space-y-2.5 mt-4 pt-4 border-t border-white/10">
+                <p class="text-xs text-slate-400 mt-2.5">
+                  <span class="lang-only-vi">Lý tưởng cho kênh TikTok, Reels, Shorts và thuyết minh clip ngắn.</span>
+                  <span class="lang-only-global hidden">Ideal for TikTok, YouTube Shorts, Reels & short-form creators.</span>
+                </p>
+                <ul class="lang-only-vi text-xs text-slate-200 space-y-2.5 mt-4 pt-4 border-t border-white/10">
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-cyan-400"></i> <span><b>1.000.000</b> ký tự / 1 tháng</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-cyan-400"></i> <span>Mở khóa giọng Studio 48kHz & Quốc tế</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-cyan-400"></i> <span>Đọc file Word (.docx) & chia chương</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-cyan-400"></i> <span>Xuất MP3 Mono siêu nhẹ chất lượng cao</span></li>
                 </ul>
+                <ul class="lang-only-global hidden text-xs text-slate-200 space-y-2.5 mt-4 pt-4 border-t border-white/10">
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-cyan-400"></i> <span><b>1,000,000</b> characters / month</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-cyan-400"></i> <span>48kHz Studio & 110-Country Global Voices</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-cyan-400"></i> <span>Word (.docx) import & chapter splitter</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-cyan-400"></i> <span>Commercial YouTube & TikTok license</span></li>
+                </ul>
               </div>
               <button class="btn-buy-plan w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold rounded-2xl text-xs transition shadow-lg shadow-cyan-500/25 cursor-pointer" data-plan="Gói Thường - 1.000.000 ký tự/tháng" data-amount="25000">
-                Đăng Ký Gói Thường (25.000đ)
+                <span class="lang-only-vi">Đăng Ký Gói Thường (25.000đ)</span>
+                <span class="lang-only-global hidden">Get Basic Creator ($1.99/mo)</span>
               </button>
             </div>
 
-            <!-- Plan 3: Gói Phổ Thông (10.000.000 ký tự / 1 tháng - 75.000 VNĐ) -->
+            <!-- Plan 3: Gói Phổ Thông (10.000.000 ký tự / 1 tháng - 75.000 VNĐ / $4.99) -->
             <div class="pricing-card-base pricing-popular-card xl:col-span-2 p-6 rounded-3xl flex flex-col justify-between gap-5 relative">
               <div class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-500 via-fuchsia-500 to-indigo-500 text-white text-[10px] font-black px-3.5 py-1 rounded-full uppercase tracking-wider shadow-lg whitespace-nowrap">
-                🔥 Phổ Biến Nhất
+                <span class="lang-only-vi">🔥 Phổ Biến Nhất</span>
+                <span class="lang-only-global hidden">🔥 Most Popular</span>
               </div>
               <div>
                 <div class="flex items-center justify-between">
-                  <span class="text-xs font-extrabold text-purple-300 uppercase tracking-wider">Gói Phổ Thông</span>
+                  <span class="text-xs font-extrabold text-purple-300 uppercase tracking-wider"><span class="lang-only-vi">Gói Phổ Thông</span><span class="lang-only-global hidden">Standard Pro</span></span>
                   <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-purple-500/25 text-purple-200 border border-purple-400/40 font-bold">Best Value</span>
                 </div>
                 <div class="mt-3 flex flex-wrap items-baseline gap-1.5">
-                  <span class="text-3xl font-black font-display text-white">75.000</span>
-                  <span class="text-xs font-semibold text-slate-300">VNĐ / 1 tháng</span>
+                  <span id="planPriceStandard" class="text-3xl font-black font-display text-white">75.000</span>
+                  <span class="plan-currency-unit text-xs font-semibold text-slate-300">VNĐ / 1 tháng</span>
                 </div>
                 <div class="mt-2 inline-block px-2.5 py-1 rounded-lg bg-purple-500/25 border border-purple-400/40 text-[11px] font-bold text-purple-100">
-                  🚀 10.000.000 ký tự / 1 tháng
+                  <span class="lang-only-vi">🚀 10.000.000 ký tự / 1 tháng</span>
+                  <span class="lang-only-global hidden">🚀 10,000,000 characters / month</span>
                 </div>
-                <p class="text-xs text-slate-300 mt-2.5">Chuẩn vàng cho người xây kênh Review Phim, Kể Chuyện Đêm Khuya mỗi ngày.</p>
-                <ul class="text-xs text-slate-100 space-y-2.5 mt-4 pt-4 border-t border-white/15">
+                <p class="text-xs text-slate-300 mt-2.5">
+                  <span class="lang-only-vi">Chuẩn vàng cho người xây kênh Review Phim, Kể Chuyện Đêm Khuya mỗi ngày.</span>
+                  <span class="lang-only-global hidden">Best choice for daily Faceless YouTube, Movie Recap & Storytelling channels.</span>
+                </p>
+                <ul class="lang-only-vi text-xs text-slate-100 space-y-2.5 mt-4 pt-4 border-t border-white/15">
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-300"></i> <span><b>10.000.000</b> ký tự / 1 tháng</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-300"></i> <span>Trọn bộ 1.177 giọng • 110 Quốc gia</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-300"></i> <span>Hội thoại đa giọng & tách Stem CapCut</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-300"></i> <span>Tự động băm & gộp truyện dài &gt;70.000 từ</span></li>
                 </ul>
+                <ul class="lang-only-global hidden text-xs text-slate-100 space-y-2.5 mt-4 pt-4 border-t border-white/15">
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-300"></i> <span><b>10,000,000</b> characters / month</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-300"></i> <span>All 1,177 Voices • 110 Countries • 142 Languages</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-300"></i> <span>Multi-Speaker Dialogue & CapCut Synced Stems</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-300"></i> <span>Auto-split & merge 70,000+ word Audiobooks</span></li>
+                </ul>
               </div>
               <button class="btn-buy-plan btn-aurora-primary w-full py-3 text-white font-extrabold rounded-2xl text-xs cursor-pointer" data-plan="Gói Phổ Thông - 10.000.000 ký tự/tháng" data-amount="75000">
-                Kích Hoạt Gói Phổ Thông (75.000đ)
+                <span class="lang-only-vi">Kích Hoạt Gói Phổ Thông (75.000đ)</span>
+                <span class="lang-only-global hidden">Get Standard Pro ($4.99/mo)</span>
               </button>
             </div>
 
-            <!-- Plan 4: Gói VIP (100.000.000 ký tự / 1 tháng - 150.000 VNĐ) -->
+            <!-- Plan 4: Gói VIP (100.000.000 ký tự / 1 tháng - 150.000 VNĐ / $9.99) -->
             <div class="pricing-card-base xl:col-span-3 p-6 lg:p-7 rounded-3xl bg-gradient-to-br from-indigo-950/60 via-[#0b1022] to-[#090d1a] border border-indigo-400/55 hover:border-indigo-300 flex flex-col justify-between gap-5 relative">
               <div>
                 <div class="flex items-center justify-between">
                   <span class="text-xs font-extrabold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <i class="fa-solid fa-gem text-indigo-400"></i> Gói VIP
+                    <i class="fa-solid fa-gem text-indigo-400"></i> <span class="lang-only-vi">Gói VIP</span><span class="lang-only-global hidden">VIP Studio</span>
                   </span>
-                  <span class="text-[10px] bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 px-3 py-0.5 rounded-full font-bold">Chuyên Nghiệp</span>
+                  <span class="text-[10px] bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 px-3 py-0.5 rounded-full font-bold">Professional</span>
                 </div>
                 <div class="mt-3 flex flex-wrap items-baseline gap-1.5">
-                  <span class="text-3xl sm:text-4xl font-black font-display text-white">150.000</span>
-                  <span class="text-xs font-semibold text-slate-400">VNĐ / 1 tháng</span>
+                  <span id="planPriceVip" class="text-3xl sm:text-4xl font-black font-display text-white">150.000</span>
+                  <span class="plan-currency-unit text-xs font-semibold text-slate-400">VNĐ / 1 tháng</span>
                 </div>
                 <div class="mt-2 inline-block px-3 py-1 rounded-lg bg-indigo-500/20 border border-indigo-400/40 text-xs font-bold text-indigo-200">
-                  💎 100.000.000 ký tự / 1 tháng
+                  <span class="lang-only-vi">💎 100.000.000 ký tự / 1 tháng</span>
+                  <span class="lang-only-global hidden">💎 100,000,000 characters / month</span>
                 </div>
-                <p class="text-xs text-slate-300 mt-2.5">Sức mạnh khổng lồ cho hệ thống đa kênh Audiobook Tiên Hiệp, Ngôn Tình dài tập.</p>
-                <ul class="text-xs text-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-4 pt-4 border-t border-white/10">
+                <p class="text-xs text-slate-300 mt-2.5">
+                  <span class="lang-only-vi">Sức mạnh khổng lồ cho hệ thống đa kênh Audiobook Tiên Hiệp, Ngôn Tình dài tập.</span>
+                  <span class="lang-only-global hidden">Massive capacity for multi-channel Audiobook networks & dubbing studios.</span>
+                </p>
+                <ul class="lang-only-vi text-xs text-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-4 pt-4 border-t border-white/10">
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span><b>100.000.000</b> ký tự / 1 tháng</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span>Hàng đợi hàng loạt File Word tự động</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span>Nhân bản giọng cá nhân khóa Két sắt 48kHz</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span>Luồng kết xuất ưu tiên tốc độ cao</span></li>
                 </ul>
+                <ul class="lang-only-global hidden text-xs text-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-4 pt-4 border-t border-white/10">
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span><b>100,000,000</b> characters / month</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span>Automated Multi-File .docx Batch Queue</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span>48kHz Private Encrypted Voice Cloning</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-400"></i> <span>High-priority turbo synthesis lane</span></li>
+                </ul>
               </div>
               <button class="btn-buy-plan w-full py-3.5 bg-gradient-to-r from-indigo-500 via-purple-600 to-indigo-500 hover:from-indigo-400 hover:to-purple-500 text-white font-extrabold rounded-2xl text-xs transition shadow-xl shadow-indigo-500/25 cursor-pointer" data-plan="Gói VIP - 100.000.000 ký tự/tháng" data-amount="150000">
-                Đăng Ký Gói VIP (150.000đ)
+                <span class="lang-only-vi">Đăng Ký Gói VIP (150.000đ)</span>
+                <span class="lang-only-global hidden">Get VIP Studio ($9.99/mo)</span>
               </button>
             </div>
 
-            <!-- Plan 5: Gói Không Giới Hạn (299.000 VNĐ / 1 tháng) -->
+            <!-- Plan 5: Gói Không Giới Hạn (299.000 VNĐ / $19.99 / 1 tháng) -->
             <div class="pricing-card-base pricing-crown-card xl:col-span-3 p-6 lg:p-7 rounded-3xl flex flex-col justify-between gap-5 relative">
               <div class="absolute -top-3.5 right-6 bg-gradient-to-r from-amber-300 via-amber-400 to-orange-500 text-slate-950 text-[10px] font-black px-3.5 py-1 rounded-full uppercase tracking-wider shadow-lg">
-                👑 Flagship Không Giới Hạn
+                👑 Flagship Unlimited
               </div>
               <div>
                 <div class="flex items-center justify-between">
                   <span class="text-xs font-extrabold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <i class="fa-solid fa-crown text-amber-400"></i> Gói Không Giới Hạn
+                    <i class="fa-solid fa-crown text-amber-400"></i> <span class="lang-only-vi">Gói Không Giới Hạn</span><span class="lang-only-global hidden">Unlimited Enterprise</span>
                   </span>
                   <span class="text-[10px] bg-amber-500/20 text-amber-200 border border-amber-400/40 px-3 py-0.5 rounded-full font-bold">Enterprise Studio</span>
                 </div>
                 <div class="mt-3 flex flex-wrap items-baseline gap-1.5">
-                  <span class="text-3xl sm:text-4xl font-black font-display text-gradient-amber">299.000</span>
-                  <span class="text-xs font-semibold text-slate-300">VNĐ / 1 tháng</span>
+                  <span id="planPriceUnlimited" class="text-3xl sm:text-4xl font-black font-display text-gradient-amber">299.000</span>
+                  <span class="plan-currency-unit text-xs font-semibold text-slate-300">VNĐ / 1 tháng</span>
                 </div>
                 <div class="mt-2 inline-block px-3 py-1 rounded-lg bg-amber-500/20 border border-amber-400/45 text-xs font-extrabold text-amber-200">
-                  ♾️ Không giới hạn ký tự suốt 1 tháng
+                  <span class="lang-only-vi">♾️ Không giới hạn ký tự suốt 1 tháng</span>
+                  <span class="lang-only-global hidden">♾️ Unlimited characters all month</span>
                 </div>
-                <p class="text-xs text-slate-200/90 mt-2.5">Đỉnh cao tự do sản xuất công nghiệp cho Team Media & Hệ thống hàng chục kênh lớn.</p>
-                <ul class="text-xs text-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-4 pt-4 border-t border-amber-400/20">
+                <p class="text-xs text-slate-200/90 mt-2.5">
+                  <span class="lang-only-vi">Đỉnh cao tự do sản xuất công nghiệp cho Team Media & Hệ thống hàng chục kênh lớn.</span>
+                  <span class="lang-only-global hidden">Unrestricted industrial production for Media Agencies & large YouTube MCNs.</span>
+                </p>
+                <ul class="lang-only-vi text-xs text-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-4 pt-4 border-t border-amber-400/20">
                   <li class="flex items-center gap-2"><i class="fa-solid fa-infinity text-amber-400"></i> <span><b>Không giới hạn ký tự</b> suốt 1 tháng</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-amber-300"></i> <span>Full tính năng VIP, Đa giọng & 110 Nước</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-amber-300"></i> <span>Không giới hạn Batch Word & Nhân bản giọng</span></li>
                   <li class="flex items-center gap-2"><i class="fa-solid fa-check text-amber-300"></i> <span>Hỗ trợ kỹ thuật VIP 1-1 ưu tiên 24/7</span></li>
                 </ul>
+                <ul class="lang-only-global hidden text-xs text-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-4 pt-4 border-t border-amber-400/20">
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-infinity text-amber-400"></i> <span><b>Unlimited characters</b> for 30 days</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-amber-300"></i> <span>All VIP features, CapCut Stems & 110 Countries</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-amber-300"></i> <span>Unlimited .docx Batch Queue & Voice Clones</span></li>
+                  <li class="flex items-center gap-2"><i class="fa-solid fa-check text-amber-300"></i> <span>24/7 Priority 1-on-1 VIP Support</span></li>
+                </ul>
               </div>
               <button class="btn-buy-plan btn-gold-imperial w-full py-3.5 text-slate-950 font-black rounded-2xl text-xs cursor-pointer" data-plan="Gói Không Giới Hạn 1 Tháng" data-amount="299000">
-                <i class="fa-solid fa-crown mr-1"></i> Mua Gói Không Giới Hạn (299.000đ)
+                <i class="fa-solid fa-crown mr-1"></i>
+                <span class="lang-only-vi">Mua Gói Không Giới Hạn (299.000đ)</span>
+                <span class="lang-only-global hidden">Get Unlimited Enterprise ($19.99/mo)</span>
               </button>
             </div>
 
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= VIEW 6: CẨM NANG HƯỚNG DẪN SỬ DỤNG CHI TIẾT (VIETNAMESE & GLOBAL ENGLISH) ================= -->
+      <div id="viewGuide" class="content-view hidden flex flex-col gap-6">
+        <div class="glass-panel rounded-3xl p-6 lg:p-8 flex flex-col gap-6">
+          <!-- Vietnamese Guide -->
+          <div id="guideContentVi" class="flex flex-col gap-6">
+            <div class="border-b border-white/10 pb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span class="text-[11px] font-extrabold text-cyan-300 uppercase tracking-wider">📘 Cẩm Nang Dành Cho Người Dùng Mới</span>
+                <h2 class="text-xl sm:text-2xl font-extrabold font-display text-gradient-aurora mt-1">Hướng Dẫn Sử Dụng VoiceViet Studio A–Z Trong 60 Giây</h2>
+                <p class="text-xs text-slate-300 mt-1">Làm chủ toàn bộ tính năng tạo giọng đọc AI 48kHz, làm truyện dài tập, tách vai hội thoại CapCut và lồng tiếng 110 quốc gia.</p>
+              </div>
+              <button type="button" data-jump-view="viewStudio" class="btn-aurora-primary px-4 py-2.5 rounded-xl text-white text-xs font-extrabold cursor-pointer">
+                <i class="fa-solid fa-play mr-1"></i> Bắt đầu thực hành ngay
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="p-5 rounded-2xl bg-[#060913]/90 border border-purple-500/30 flex flex-col gap-2">
+                <div class="text-sm font-extrabold text-purple-300 flex items-center gap-2"><span class="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center text-xs">1</span> Tạo Giọng Đọc Nhanh & Chèn Cảm Xúc Thật</div>
+                <ul class="text-xs text-slate-300 space-y-1.5 leading-relaxed">
+                  <li>• Chọn quốc gia & giọng đọc bên cột phải <b>Bàn Tinh Chỉnh Giọng AI</b>, nhấn <b>Nghe Thử Tức Thì</b> để kiểm tra màu giọng.</li>
+                  <li>• Dán kịch bản vào ô soạn thảo. Dùng dấu <code>...</code> để giọng nghỉ sâu 0.8s, hoặc bấm chèn <code>[cười]</code>, <code>[thở dài]</code>, <code>[hắng giọng]</code>.</li>
+                  <li>• Bấm <b>✨ Tạo Giọng AI</b> (hoặc <code>Ctrl + Enter</code>). Ngay khi xong, hệ thống hiển thị <b>thời gian tạo</b>, <b>thời lượng đọc</b>, trừ số ký tự tương ứng và cho tải cả <code>.MP3</code> nhẹ lẫn <code>.WAV</code> 48kHz gốc!</li>
+                </ul>
+              </div>
+
+              <div class="p-5 rounded-2xl bg-[#060913]/90 border border-indigo-500/30 flex flex-col gap-2">
+                <div class="text-sm font-extrabold text-indigo-300 flex items-center gap-2"><span class="w-6 h-6 rounded-full bg-indigo-500/20 flex items-center justify-center text-xs">2</span> Làm Audiobook Truyện Dài & Hàng Đợi File Word</div>
+                <ul class="text-xs text-slate-300 space-y-1.5 leading-relaxed">
+                  <li>• Khi dán truyện dài (&gt;600 từ hoặc có tiêu đề <i>Chương 1, Chương 2...</i>), hệ thống tự động mở <b>Trung Tâm Sản Xuất Audiobook</b>.</li>
+                  <li>• Bấm <b>Tự động tạo tất cả các chương</b> rồi nhấn <b>Gộp & Tải Toàn Bộ .MP3</b> để nhận 1 file hoàn chỉnh duy nhất.</li>
+                  <li>• Có hàng chục file <code>.docx</code>? Vào tab <b>Hàng Đợi File Word</b> nạp cùng lúc để máy tự đọc và tự tải file MP3 về máy!</li>
+                </ul>
+              </div>
+
+              <div class="p-5 rounded-2xl bg-[#060913]/90 border border-cyan-500/30 flex flex-col gap-2">
+                <div class="text-sm font-extrabold text-cyan-300 flex items-center gap-2"><span class="w-6 h-6 rounded-full bg-cyan-500/20 flex items-center justify-center text-xs">3</span> Hội Thoại Đa Giọng & Xuất Stem Khớp CapCut</div>
+                <ul class="text-xs text-slate-300 space-y-1.5 leading-relaxed">
+                  <li>• Mở tab <b>Hội Thoại Đa Giọng</b>, chọn giọng riêng cho Nữ (A), Nam (B), Dẫn truyện (C) hoặc thêm nhân vật D, E...</li>
+                  <li>• Dán nguyên chương truyện có ngoặc kép <code>“...”</code> hoặc gạch đầu dòng <code>- ...</code> rồi bấm <b>Tự động phân vai</b>.</li>
+                  <li>• Xuất ra cả <b>Bản Full Mix</b> lẫn <b>Track Khớp CapCut</b> riêng cho từng nhân vật để kéo vào phần mềm dựng phim khớp từng giây!</li>
+                </ul>
+              </div>
+
+              <div class="p-5 rounded-2xl bg-[#060913]/90 border border-emerald-500/30 flex flex-col gap-2">
+                <div class="text-sm font-extrabold text-emerald-300 flex items-center gap-2"><span class="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center text-xs">4</span> Đa Ngôn Ngữ Quốc Tế & Đổi Ngôn Ngữ Giao Diện</div>
+                <ul class="text-xs text-slate-300 space-y-1.5 leading-relaxed">
+                  <li>• Khách hàng nước ngoài chỉ cần bấm menu cờ quốc gia <b>🌐 Tiếng Việt / English / 中文 / 日本語 / 한국어...</b> góc trên bên phải để chuyển toàn bộ giao diện & bảng giá USD!</li>
+                  <li>• Trong <b>Thư Viện Toàn Cầu</b> có sẵn <b>1.177 giọng đọc của 110 quốc gia (142 ngôn ngữ)</b> để làm kênh YouTube ngoại ngữ kiếm tiền toàn cầu.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- International English Guide -->
+          <div id="guideContentEn" class="hidden flex flex-col gap-6">
+            <div class="border-b border-white/10 pb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span class="text-[11px] font-extrabold text-cyan-300 uppercase tracking-wider">📘 Quick-Start Customer Manual</span>
+                <h2 class="text-xl sm:text-2xl font-extrabold font-display text-gradient-aurora mt-1">How to Master VoiceViet Studio Pro in 60 Seconds</h2>
+                <p class="text-xs text-slate-300 mt-1">Generate 48kHz lifelike voiceovers in 142 languages, produce full Audiobooks, and export synced CapCut dialogue stems.</p>
+              </div>
+              <button type="button" data-jump-view="viewStudio" class="btn-aurora-primary px-4 py-2.5 rounded-xl text-white text-xs font-extrabold cursor-pointer">
+                <i class="fa-solid fa-play mr-1"></i> Open Studio Editor
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="p-5 rounded-2xl bg-[#060913]/90 border border-purple-500/30 flex flex-col gap-2">
+                <div class="text-sm font-extrabold text-purple-300">1. Instant 48kHz Voiceover in 142 Languages</div>
+                <p class="text-xs text-slate-300 leading-relaxed">Pick any country/language on the right <b>Voice Mastering Controls</b> panel, click <b>Instant Preview (&lt;0.05s)</b>, paste your script in the native language, and press <b>Generate 48kHz AI Voice</b>. Generation speed, audio duration, and remaining character credits are displayed immediately.</p>
+              </div>
+              <div class="p-5 rounded-2xl bg-[#060913]/90 border border-indigo-500/30 flex flex-col gap-2">
+                <div class="text-sm font-extrabold text-indigo-300">2. Full-Length Audiobooks & Word (.docx) Batch Queue</div>
+                <p class="text-xs text-slate-300 leading-relaxed">Paste long novels (&gt;600 words or <i>Chapter 1, Chapter 2...</i>) to automatically split chapters and merge into a single compact <code>.MP3</code>, or upload dozens of <code>.docx</code> files in <b>Word Batch Queue</b> for hands-free batch downloading.</p>
+              </div>
+              <div class="p-5 rounded-2xl bg-[#060913]/90 border border-cyan-500/30 flex flex-col gap-2">
+                <div class="text-sm font-extrabold text-cyan-300">3. Multi-Speaker Dialogue & CapCut Synced Stems</div>
+                <p class="text-xs text-slate-300 leading-relaxed">Assign distinct voices to Narrator & Characters (A, B, C, D...) in <b>Multi-Speaker Studio</b>. Export both a complete Full Mix and individual timeline-synced character stems for CapCut, Premiere, or DaVinci Resolve.</p>
+              </div>
+              <div class="p-5 rounded-2xl bg-[#060913]/90 border border-amber-500/30 flex flex-col gap-2">
+                <div class="text-sm font-extrabold text-amber-300">4. Global Plans & Instant Credit Top-Up</div>
+                <p class="text-xs text-slate-300 leading-relaxed">Every account starts with <b>100,000 free characters/month</b>. Upgrade anytime in <b>Pricing & Plans</b> via International Card / PayPal (from $1.99/mo to $19.99/mo Unlimited) or VietQR.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1331,18 +1523,18 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
             <span class="w-6 h-6 rounded-lg bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300">
               <i class="fa-solid fa-sliders text-[11px]"></i>
             </span>
-            <span>Bàn Tinh Chỉnh Giọng AI</span>
+            <span data-i18n="right_title">Bàn Tinh Chỉnh Giọng AI</span>
           </span>
           <button id="btnResetSettings" class="text-[11px] text-slate-400 hover:text-purple-300 transition cursor-pointer" title="Đặt lại mặc định">
-            <i class="fa-solid fa-rotate-left"></i> Mặc định
+            <i class="fa-solid fa-rotate-left"></i> <span data-i18n="btn_reset">Mặc định</span>
           </button>
         </div>
 
         <!-- Global Country & Language Filter -->
         <div id="languageFilterContainer" class="flex flex-col gap-1.5">
           <label for="languageFilterSelect" class="text-[10px] font-extrabold text-emerald-300 uppercase tracking-wider flex items-center justify-between">
-            <span><i class="fa-solid fa-globe mr-1"></i>Quốc Gia & Ngôn Ngữ</span>
-            <span class="text-[9px] bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 px-1.5 py-0.2 rounded-full font-mono">142 Ngôn ngữ</span>
+            <span><i class="fa-solid fa-globe mr-1"></i><span data-i18n="lbl_country_lang">Quốc Gia & Ngôn Ngữ</span></span>
+            <span class="text-[9px] bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 px-1.5 py-0.2 rounded-full font-mono">142 Locales</span>
           </label>
           <select
             id="languageFilterSelect"
@@ -1366,6 +1558,7 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
             <input
               type="text"
               id="quickVoiceSearchInput"
+              data-i18n-placeholder="search_voice_ph"
               placeholder="Gõ nhanh tên nước, ngôn ngữ, giọng..."
               class="w-full bg-[#050811] border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-[11px] text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-400"
             />
@@ -1375,7 +1568,7 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
         <!-- Voice Selector -->
         <div class="flex flex-col gap-1.5">
           <label for="voiceSelect" class="text-[10px] font-extrabold text-slate-300 uppercase tracking-wider flex items-center justify-between">
-            <span>Giọng Đọc Đang Chọn</span>
+            <span data-i18n="lbl_selected_voice">Giọng Đọc Đang Chọn</span>
             <span id="voiceCountBadge" class="text-[9px] bg-purple-500/20 text-purple-200 border border-purple-400/30 px-2 py-0.2 rounded-full font-mono">1.177 giọng</span>
           </label>
           <div class="relative">
@@ -1401,13 +1594,13 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
 
         <!-- Instant Preview Voice Button -->
         <button id="btnTestVoice" class="w-full py-2.5 bg-gradient-to-r from-purple-500/20 via-indigo-500/20 to-cyan-500/20 hover:from-purple-500/35 hover:to-cyan-500/35 border border-purple-400/40 rounded-xl text-xs font-extrabold text-purple-100 transition flex items-center justify-center gap-2 cursor-pointer shadow">
-          <i class="fa-solid fa-volume-high text-amber-300"></i> Nghe Thử Tức Thì (&lt;0.05s)
+          <i class="fa-solid fa-volume-high text-amber-300"></i> <span data-i18n="btn_test_voice">Nghe Thử Tức Thì (&lt;0.05s)</span>
         </button>
 
         <!-- Speed / Rate Slider -->
         <div class="flex flex-col gap-1.5 pt-1">
           <div class="flex items-center justify-between text-xs">
-            <span class="text-slate-300 text-[11px] font-medium">Tốc độ đọc (Speed)</span>
+            <span class="text-slate-300 text-[11px] font-medium" data-i18n="lbl_speed">Tốc độ đọc (Speed)</span>
             <span id="rateValue" class="text-purple-200 font-bold font-mono text-[11px] bg-purple-500/20 px-2 py-0.2 rounded-md border border-purple-400/30">1.0x</span>
           </div>
           <input
@@ -1420,9 +1613,9 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
             class="w-full cursor-pointer"
           >
           <div class="flex justify-between text-[9px] text-slate-500 font-mono">
-            <span>0.5x Chậm</span>
-            <span>1.0x Chuẩn</span>
-            <span>2.0x Nhanh</span>
+            <span>0.5x</span>
+            <span>1.0x</span>
+            <span>2.0x</span>
           </div>
         </div>
 
@@ -1446,7 +1639,7 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
         <!-- Sentence Pause Slider -->
         <div id="cheapTtsPauseGroup" class="flex flex-col gap-1.5 pt-2 border-t border-white/10">
           <div class="flex items-center justify-between text-xs">
-            <span class="text-slate-300 text-[11px] font-medium">Độ nghỉ hết câu (Pauses)</span>
+            <span class="text-slate-300 text-[11px] font-medium" data-i18n="lbl_pauses">Độ nghỉ hết câu (Pauses)</span>
             <span id="pauseDurationValue" class="text-amber-300 font-bold font-mono text-[11px] bg-amber-500/15 px-2 py-0.2 rounded-md border border-amber-400/30">0.4s</span>
           </div>
           <input
@@ -1463,7 +1656,7 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
         <!-- Master Volume Slider -->
         <div class="flex flex-col gap-1.5">
           <div class="flex items-center justify-between text-xs">
-            <span class="text-slate-300 text-[11px] font-medium">Âm lượng (Master Gain)</span>
+            <span class="text-slate-300 text-[11px] font-medium" data-i18n="lbl_volume">Âm lượng (Master Gain)</span>
             <span id="volumeValue" class="text-cyan-300 font-bold font-mono text-[11px]">100%</span>
           </div>
           <input
@@ -1481,7 +1674,7 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
         <div class="flex flex-col gap-1.5 pt-2 border-t border-white/10">
           <div class="flex items-center justify-between text-xs">
             <span class="text-slate-300 text-[11px] font-medium flex items-center gap-1.5">
-              <i class="fa-solid fa-file-zipper text-purple-400"></i> Chuẩn nén MP3
+              <i class="fa-solid fa-file-zipper text-purple-400"></i> <span data-i18n="lbl_mp3">Chuẩn nén MP3</span>
             </span>
             <span id="mp3QualityBadge" class="text-[9px] bg-purple-500/20 text-purple-200 border border-purple-400/30 px-2 py-0.2 rounded-md font-mono font-bold">48 kbps</span>
           </div>
@@ -1501,9 +1694,9 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
       <div class="glass-panel p-4 rounded-3xl flex flex-col gap-3">
         <div class="flex items-center justify-between pb-2 border-b border-white/10">
           <span class="text-xs font-extrabold text-white flex items-center gap-1.5">
-            <i class="fa-solid fa-clock-rotate-left text-amber-400"></i> Lịch Sử Bản Thu Gần Đây
+            <i class="fa-solid fa-clock-rotate-left text-amber-400"></i> <span data-i18n="hist_title">Lịch Sử Bản Thu Gần Đây</span>
           </span>
-          <button id="btnClearHistory" class="text-[10px] text-slate-400 hover:text-rose-300 transition cursor-pointer">Xóa hết</button>
+          <button id="btnClearHistory" class="text-[10px] text-slate-400 hover:text-rose-300 transition cursor-pointer" data-i18n="btn_clear_hist">Xóa hết</button>
         </div>
         <div id="historyList" class="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1">
           <p class="text-xs text-slate-500 italic py-2 text-center">Chưa có file audio nào.</p>
@@ -1514,34 +1707,89 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
 
   </div>
 
-  <!-- ================= VIETQR AUTOMATED PAYMENT MODAL ================= -->
+  <!-- ================= GLOBAL + VIETQR PAYMENT MODAL ================= -->
   <div id="vietqrModal" class="fixed inset-0 z-50 modal-backdrop hidden flex items-center justify-center p-4">
     <div class="glass-panel border-purple-400/50 rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 relative">
       <button id="btnCloseVietqrModal" class="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white text-sm flex items-center justify-center cursor-pointer transition">
         <i class="fa-solid fa-xmark"></i>
       </button>
 
-      <div class="text-center flex flex-col items-center gap-1.5">
-        <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-cyan-500 flex items-center justify-center text-white text-xl shadow-lg shadow-purple-500/30 mb-1">
-          <i class="fa-solid fa-qrcode"></i>
+      <!-- Payment Region Switcher (Vietnam VietQR vs International Card/PayPal) -->
+      <div class="flex items-center gap-1 p-1 rounded-2xl bg-[#050811] border border-white/10 mt-2">
+        <button type="button" id="payTabVietQr" class="flex-1 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold transition cursor-pointer">
+          🇻🇳 Ngân Hàng VN (VietQR)
+        </button>
+        <button type="button" id="payTabGlobal" class="flex-1 py-2 rounded-xl text-slate-400 hover:text-white text-xs font-semibold transition cursor-pointer">
+          🌍 Global (Card / PayPal)
+        </button>
+      </div>
+
+      <!-- Panel 1: Vietnam VietQR -->
+      <div id="payPanelVietQr" class="flex flex-col gap-3.5">
+        <div class="text-center flex flex-col items-center gap-1">
+          <h3 class="text-base font-extrabold font-display text-white">Thanh Toán Tự Động Qua VietQR</h3>
+          <p class="text-xs text-slate-300">Mở ứng dụng Ngân hàng hoặc MoMo bất kỳ để quét mã</p>
         </div>
-        <h3 class="text-base font-extrabold font-display text-white">Thanh Toán Tự Động Qua VietQR</h3>
-        <p class="text-xs text-slate-300">Mở ứng dụng Ngân hàng hoặc MoMo bất kỳ để quét mã</p>
+
+        <div class="bg-white p-3.5 rounded-2xl flex flex-col items-center justify-center shadow-2xl mx-auto ring-4 ring-purple-500/20">
+          <img id="vietqrImage" src="https://img.vietqr.io/image/MB-0359888888-compact2.png?amount=25000&addInfo=VOICEVIET%20VIP&accountName=VOICEVIET" alt="Mã VietQR" class="w-52 h-52 object-contain rounded-lg">
+        </div>
+
+        <div class="p-3.5 rounded-2xl bg-[#050811]/95 border border-white/10 text-xs flex flex-col gap-1.5">
+          <div class="flex justify-between items-center"><span class="text-slate-400">Gói đăng ký:</span> <b id="vietqrPlanName" class="text-purple-200 text-right">VIP Tháng</b></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Số tiền thanh toán:</span> <b id="vietqrAmount" class="text-amber-300 font-mono text-sm">25.000 VNĐ</b></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Nội dung chuyển khoản:</span> <b id="vietqrMemo" class="text-emerald-300 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25">VOICEVIET 8888</b></div>
+        </div>
+
+        <div class="text-center text-[11px] text-slate-300 flex items-center justify-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>Cổng SePay tự động cộng ký tự trong <b>3 giây</b> ngay khi nhận giao dịch!</span>
+        </div>
       </div>
 
-      <div class="bg-white p-4 rounded-2xl flex flex-col items-center justify-center shadow-2xl mx-auto ring-4 ring-purple-500/20">
-        <img id="vietqrImage" src="https://img.vietqr.io/image/MB-0359888888-compact2.png?amount=25000&addInfo=VOICEVIET%20VIP&accountName=VOICEVIET" alt="Mã VietQR" class="w-56 h-56 object-contain rounded-lg">
+      <!-- Panel 2: International Payment (Visa / Mastercard / Apple Pay / PayPal) -->
+      <div id="payPanelGlobal" class="hidden flex flex-col gap-3.5">
+        <div class="text-center flex flex-col items-center gap-1">
+          <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-slate-950 text-lg font-bold shadow-lg">
+            <i class="fa-solid fa-earth-americas"></i>
+          </div>
+          <h3 class="text-base font-extrabold font-display text-white">Global Instant Checkout</h3>
+          <p class="text-xs text-slate-300">Pay securely from anywhere in the world (135+ countries)</p>
+        </div>
+
+        <div class="p-4 rounded-2xl bg-[#050811]/95 border border-cyan-400/30 text-xs flex flex-col gap-2">
+          <div class="flex justify-between items-center"><span class="text-slate-400">Selected Plan:</span> <b id="globalPayPlanName" class="text-cyan-200">Standard Pro</b></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Total Price:</span> <b id="globalPayAmountUsd" class="text-amber-300 font-mono text-sm">$4.99 USD / month</b></div>
+          <div class="flex items-center justify-between pt-2 border-t border-white/10 text-slate-300">
+            <span>Accepted Methods:</span>
+            <span class="flex items-center gap-2 text-base text-slate-100">
+              <i class="fa-brands fa-cc-visa text-blue-400"></i>
+              <i class="fa-brands fa-cc-mastercard text-amber-400"></i>
+              <i class="fa-brands fa-cc-paypal text-sky-400"></i>
+              <i class="fa-brands fa-apple-pay text-white"></i>
+            </span>
+          </div>
+        </div>
+
+        <a
+          id="btnGlobalStripeCheckout"
+          href="#checkout-global"
+          onclick="event.preventDefault(); if (typeof showToast === 'function') showToast('Gắn link LemonSqueezy / PayPal của bạn vào đây khi đưa lên tên miền quốc tế!', 'info');"
+          class="w-full py-3 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 text-slate-950 font-extrabold text-xs text-center shadow-lg cursor-pointer"
+        >
+          <i class="fa-solid fa-lock mr-1"></i> Pay with Card / PayPal / Apple Pay
+        </a>
+        <p class="text-[10px] text-slate-400 text-center">Instant character credit activation via LemonSqueezy / PayPal Webhook.</p>
       </div>
 
-      <div class="p-4 rounded-2xl bg-[#050811]/95 border border-white/10 text-xs flex flex-col gap-2">
-        <div class="flex justify-between items-center"><span class="text-slate-400">Gói đăng ký:</span> <b id="vietqrPlanName" class="text-purple-200 text-right">VIP Tháng</b></div>
-        <div class="flex justify-between items-center"><span class="text-slate-400">Số tiền thanh toán:</span> <b id="vietqrAmount" class="text-amber-300 font-mono text-sm">25.000 VNĐ</b></div>
-        <div class="flex justify-between items-center"><span class="text-slate-400">Nội dung chuyển khoản:</span> <b id="vietqrMemo" class="text-emerald-300 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25">VOICEVIET 8888</b></div>
-      </div>
-
-      <div class="text-center text-[11px] text-slate-300 flex items-center justify-center gap-2">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span>Cổng SePay tự động cộng ký tự trong <b>3 giây</b> ngay khi nhận giao dịch!</span>
+      <!-- Owner-Only Test Quota Simulator (Hidden for visitors; visible ONLY when Owner Vault PIN is unlocked) -->
+      <div id="ownerQuotaTestControls" class="hidden pt-3 border-t border-amber-400/30 flex items-center justify-between gap-2">
+        <button type="button" id="btnOwnerSimulateActivate" class="flex-1 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/40 text-[11px] font-bold cursor-pointer">
+          👑 Chủ Web Test: Kích hoạt gói này
+        </button>
+        <button type="button" id="btnOwnerResetFreeQuota" class="py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-[11px] font-semibold cursor-pointer">
+          Reset 100k Free
+        </button>
       </div>
     </div>
   </div>
@@ -1592,9 +1840,11 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
 
   <!-- Mammoth.js for Word (.docx) document parsing -->
   <script src="/mammoth.browser.min.js"></script>
+  <!-- Quota Manager, Generation Timer & 8-Language Global i18n -->
+  <script src="quota_and_i18n.js?v=6.2"></script>
   <!-- Main Studio Engine Logic -->
-  <script src="app.js?v=6.0"></script>
+  <script src="app.js?v=6.2"></script>
   <!-- Pro Studio Extensions (Private Vault, 110 Countries, Multi-Speaker Stem Studio, VietQR) -->
-  <script src="studio_pro.js?v=6.0"></script>
+  <script src="studio_pro.js?v=6.2"></script>
 </body>
 </html>

@@ -1424,6 +1424,12 @@ Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương h
 
       renderParsedSegmentsPanel();
 
+      // Check character quota for the entire dialogue script beforehand
+      const totalScriptChars = parsedDialogueSegments.reduce((acc, s) => acc + (s.text ? s.text.length : 0), 0);
+      if (window.VoiceVietQuota && !window.VoiceVietQuota.checkCanGenerate(totalScriptChars)) {
+        return;
+      }
+
       // Check if any speaker in this scene uses a private owner-locked voice
       const usedPrivVoice = parsedDialogueSegments
         .map(s => getSpeakerVoiceId(s.speaker))
@@ -1439,6 +1445,8 @@ Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương h
       const pauseEl = document.getElementById('pauseDurationRange');
       const rate = rateEl ? (parseFloat(rateEl.value) || 1.0) : 1.0;
       const pauseSec = pauseEl ? (parseFloat(pauseEl.value) || 0.40) : 0.40;
+      const dialogueStartMs = performance.now();
+      let totalDialogueAudioSec = 0;
 
       try {
         for (let i = 0; i < parsedDialogueSegments.length; i++) {
@@ -1481,6 +1489,11 @@ Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương h
           const wavBuf = await res.arrayBuffer();
           const sr = wavBuf.byteLength >= 28 ? new DataView(wavBuf).getUint32(24, true) : 48000;
           const durSec = Math.max(0.1, (wavBuf.byteLength - 44) / (sr * 2));
+          totalDialogueAudioSec += durSec;
+
+          if (window.VoiceVietQuota && seg.text) {
+            window.VoiceVietQuota.deductCharacters(seg.text.length);
+          }
 
           if (seg.blobUrl) URL.revokeObjectURL(seg.blobUrl);
           seg.audioBuffer = wavBuf;
@@ -1621,7 +1634,16 @@ Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương h
         }
 
         if (dialogueStatus) {
-          dialogueStatus.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check mr-1"></i> Hoàn tất! Đã xuất 1 bản Full Mix & tách riêng ${usedSpeakers.length} file theo từng giọng nhân vật!</span>`;
+          const genElapsedStr = window.VoiceVietQuota
+            ? window.VoiceVietQuota.formatGenerationSpeed(performance.now() - dialogueStartMs)
+            : `${((performance.now() - dialogueStartMs) / 1000).toFixed(2)}s`;
+          const durStr = window.VoiceVietQuota
+            ? window.VoiceVietQuota.formatAudioDurationDetailed(totalDialogueAudioSec)
+            : `${totalDialogueAudioSec.toFixed(1)}s`;
+          const clockStr = window.VoiceVietQuota
+            ? window.VoiceVietQuota.formatClockTimestamp(new Date())
+            : new Date().toLocaleTimeString('vi-VN');
+          dialogueStatus.innerHTML = `<span class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check mr-1"></i> ⚡ Tạo xong trong ${genElapsedStr} (lúc ${clockStr}) • 🎧 Thời lượng: ${durStr} • Đã trừ ${totalScriptChars.toLocaleString('vi-VN')} ký tự (${usedSpeakers.length} vai)!</span>`;
         }
       } catch (err) {
         console.error('Dialogue studio error:', err);
