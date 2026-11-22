@@ -9,11 +9,13 @@ VoiceViet Studio AI Engine v4.0
 """
 import asyncio
 import base64
+import hashlib
 import io
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -23,6 +25,28 @@ import urllib.request
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# 1. Eliminate 45s broken-IPv6 blackhole timeouts on HuggingFace / Microsoft Edge / Google TTS
+_ORIG_GETADDRINFO = socket.getaddrinfo
+
+
+def _ipv4_first_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    if family in (0, socket.AF_UNSPEC):
+        try:
+            return _ORIG_GETADDRINFO(host, port, socket.AF_INET, type, proto, flags)
+        except OSError:
+            pass
+    return _ORIG_GETADDRINFO(host, port, family, type, proto, flags)
+
+
+socket.getaddrinfo = _ipv4_first_getaddrinfo
+
+# 2. Auto-enable offline local loading when VieNeu ONNX weights are already cached on disk
+_HF_VIENEU_CACHE = os.path.expanduser(
+    "~/.cache/huggingface/hub/models--pnnbao-ump--VieNeu-TTS-v3-Turbo/snapshots"
+)
+if os.path.isdir(_HF_VIENEU_CACHE) and os.listdir(_HF_VIENEU_CACHE):
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
 import numpy as np
 
 from global_voices_catalog import GLOBAL_INTL_VOICES
@@ -30,6 +54,8 @@ from private_vault import PrivateVoiceVault
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OPEN_MODELS_DIR = os.path.join(BASE_DIR, "open_models")
+PREVIEW_CACHE_DIR = os.path.join(OPEN_MODELS_DIR, "preview_cache")
+os.makedirs(PREVIEW_CACHE_DIR, exist_ok=True)
 HF_PIPER_BASE = "https://huggingface.co/doof-ferb/nghitts-copy/resolve/main/piper-tts"
 TARGET_SR = 48000
 
@@ -168,6 +194,9 @@ VOICE_MAP = {v["id"]: v for v in FREE_VOICES}
 def resolve_voice_entry(voice_id: str) -> dict:
     if voice_id in VOICE_MAP:
         return VOICE_MAP[voice_id]
+    alt = voice_id.replace("-multilingual", "multilingual").replace("-expressive", "expressive")
+    if alt in VOICE_MAP:
+        return VOICE_MAP[alt]
     # Support legacy shorthand IDs e.g. free-intl-ja-nanami -> free-intl-ja-jp-nanami
     if voice_id.startswith("free-intl-"):
         parts = voice_id.split("-")
@@ -179,9 +208,11 @@ def resolve_voice_entry(voice_id: str) -> dict:
                     return entry
     return VOICE_MAP["free-vi-ngoc-huyen"]
 
-_ENGINE_LOCK = threading.Lock()
+_VIENEU_LOCK = threading.Lock()
+_PIPER_LOCK = threading.Lock()
 _VIENEU_INSTANCE = None
 _PIPER_CACHE: dict[str, object] = {}
+_PREVIEW_RAM_CACHE: dict[str, tuple[bytes, str, float]] = {}
 
 
 def get_vieneu():
@@ -533,45 +564,132 @@ def synthesize_google_48k(text: str, lang: str = "vi", rate: float = 1.0, pause_
     return encode_float32_to_wav_bytes(np.concatenate(pieces), TARGET_SR)
 
 
-async def synthesize_edge_48k(text: str, edge_voice: str, lang_code: str = "vi", rate: float = 1.0, pause_sec: float = 0.40) -> bytes:
+def map_locale_to_google_lang(lang_code: str) -> str:
+    if lang_code.startswith("zh-CN"):
+        return "zh-CN"
+    if lang_code in ("zh-TW", "zh-HK"):
+        return "zh-TW"
+    g_lang = lang_code.split("-")[0]
+    return {"fil": "tl", "he": "iw", "jv": "jw", "nb": "no", "iu": "en"}.get(g_lang, g_lang)
+
+
+def fetch_google_mp3_fast(text: str, lang: str = "vi") -> bytes:
+    q = urllib.parse.quote(text[:195])
+    url = f"https://translate.googleapis.com/translate_tts?ie=UTF-8&q={q}&tl={lang}&client=tw-ob"
+    for attempt in range(2):
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+            )
+            with urllib.request.urlopen(req, timeout=4) as res:
+                data = res.read()
+                if len(data) > 100:
+                    return data
+        except Exception:
+            if attempt == 1:
+                raise
+    raise RuntimeError("Google TTS empty response")
+
+
+_ASYNC_LOOP = asyncio.new_event_loop()
+threading.Thread(target=_ASYNC_LOOP.run_forever, daemon=True).start()
+
+
+def run_async(coro, timeout: float | None = None):
+    fut = asyncio.run_coroutine_threadsafe(coro, _ASYNC_LOOP)
+    try:
+        return fut.result(timeout=timeout)
+    except Exception:
+        fut.cancel()
+        raise
+
+
+async def _single_edge_mp3_attempt(text: str, edge_voice: str, rate_str: str) -> bytes:
+    import aiohttp
     import edge_tts
 
+    conn = aiohttp.TCPConnector(family=socket.AF_INET)
+    comm = edge_tts.Communicate(
+        text,
+        edge_voice,
+        rate=rate_str,
+        connect_timeout=2,
+        receive_timeout=4,
+        connector=conn,
+    )
+    buf = bytearray()
+    async for ch in comm.stream():
+        if ch["type"] == "audio":
+            buf.extend(ch["data"])
+    if len(buf) <= 100:
+        raise RuntimeError("Empty Edge MP3 stream")
+    return bytes(buf)
+
+
+async def fetch_edge_mp3_hedged(text: str, edge_voice: str, rate: float = 1.0) -> bytes:
+    """Hedged parallel WebSocket racing on persistent loop: zero teardown blocking!"""
+    pct = int(round((max(0.5, min(2.0, rate)) - 1.0) * 100))
+    rate_str = f"{pct:+d}%"
+    active_tasks: set[asyncio.Task] = set()
+
+    try:
+        t1 = asyncio.create_task(_single_edge_mp3_attempt(text, edge_voice, rate_str))
+        active_tasks.add(t1)
+        done, _ = await asyncio.wait(active_tasks, timeout=0.55, return_when=asyncio.FIRST_COMPLETED)
+        for d in done:
+            active_tasks.discard(d)
+            if not d.exception():
+                return d.result()
+
+        t2 = asyncio.create_task(_single_edge_mp3_attempt(text, edge_voice, rate_str))
+        active_tasks.add(t2)
+        done, _ = await asyncio.wait(active_tasks, timeout=0.55, return_when=asyncio.FIRST_COMPLETED)
+        for d in done:
+            active_tasks.discard(d)
+            if not d.exception():
+                return d.result()
+
+        t3 = asyncio.create_task(_single_edge_mp3_attempt(text, edge_voice, rate_str))
+        active_tasks.add(t3)
+        while active_tasks:
+            done, _ = await asyncio.wait(active_tasks, timeout=1.30, return_when=asyncio.FIRST_COMPLETED)
+            if not done:
+                break
+            for d in done:
+                active_tasks.discard(d)
+                if not d.exception():
+                    return d.result()
+        raise RuntimeError("Edge hedged attempts timed out")
+    finally:
+        for rem in active_tasks:
+            rem.cancel()
+
+
+async def synthesize_edge_48k(text: str, edge_voice: str, lang_code: str = "vi", rate: float = 1.0, pause_sec: float = 0.40) -> bytes:
     blocks = split_dramatic_blocks(text, base_pause=pause_sec)
     pieces: list[np.ndarray] = []
 
     with tempfile.TemporaryDirectory() as tmpdir:
         for idx, (phrase, after_pause) in enumerate(blocks):
-            clean_phrase = re.sub(r"\[(?:cười|thở dài|hắng giọng)\]", "", phrase)
+            clean_phrase = re.sub(r"\[(?:cười|thở dài|hắng giọng)\]", "", phrase).strip()
+            if not clean_phrase:
+                continue
             raw_mp3 = os.path.join(tmpdir, f"edge_{idx}.mp3")
-            last_err = None
-            for attempt in range(5):
-                try:
-                    comm = edge_tts.Communicate(clean_phrase, edge_voice)
-                    await comm.save(raw_mp3)
-                    if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 100:
-                        last_err = None
-                        break
-                except Exception as e:
-                    last_err = e
-                    await asyncio.sleep(0.40 * (attempt + 1))
-
-            if last_err is not None or not os.path.exists(raw_mp3) or os.path.getsize(raw_mp3) <= 100:
-                # For international languages, gracefully fallback to native Google TTS for that exact locale if Microsoft throttles
+            try:
+                # Pass rate=1.0 into mp3_to_float32_48k because Edge already applies native neural prosody rate!
+                mp3_bytes = await fetch_edge_mp3_hedged(clean_phrase, edge_voice, rate=rate)
+                with open(raw_mp3, "wb") as f:
+                    f.write(mp3_bytes)
+                arr = mp3_to_float32_48k(raw_mp3, rate=1.0)
+            except Exception:
                 if not lang_code.startswith("vi"):
-                    if lang_code.startswith("zh-CN"):
-                        g_lang = "zh-CN"
-                    elif lang_code in ("zh-TW", "zh-HK"):
-                        g_lang = "zh-TW"
-                    else:
-                        g_lang = lang_code.split("-")[0]
-                        g_lang = {"fil": "tl", "he": "iw", "jv": "jw", "nb": "no", "iu": "en"}.get(g_lang, g_lang)
+                    g_lang = map_locale_to_google_lang(lang_code)
                     return synthesize_google_48k(text, lang=g_lang, rate=rate, pause_sec=pause_sec)
                 raise RuntimeError(
                     "Máy chủ Microsoft Edge Neural đang bận tạm thời. "
                     "Bạn hãy chọn các giọng Studio 48kHz hoặc Giọng Nhân Bản Độc Quyền để chạy Offline 100% siêu mượt nhé!"
                 )
 
-            arr = mp3_to_float32_48k(raw_mp3, rate=rate)
             pieces.append(trim_and_smooth_float32(arr, TARGET_SR))
             if idx < len(blocks) - 1 and after_pause > 0:
                 pieces.append(np.zeros(int(after_pause * TARGET_SR), dtype=np.float32))
@@ -579,6 +697,147 @@ async def synthesize_edge_48k(text: str, edge_voice: str, lang_code: str = "vi",
     if not pieces:
         pieces.append(np.zeros(int(0.2 * TARGET_SR), dtype=np.float32))
     return encode_float32_to_wav_bytes(np.concatenate(pieces), TARGET_SR)
+
+
+SHORT_VI_PREVIEWS = {
+    "free-vi-ngoc-huyen": "Xin chào các bạn, chào mừng bạn đến với giọng đọc Ngọc Huyền chuẩn phòng thu!",
+    "free-vi-thien-tam": "Xin kính chào quý vị đang lắng nghe chuyên mục sách nói đêm khuya cùng Thiện Tâm.",
+    "free-vi-minh-quan": "Xin chào quý vị khán giả, đây là bản tin bình luận cùng giọng đọc Minh Quân.",
+    "free-vi-adam-tiktok": "[cười] Xin chào anh em, hôm nay mình kể cho anh em nghe câu chuyện cực cuốn nhé!",
+    "free-vi-hoaimy": "Xin chào các bạn, tôi là Hoài My, giọng đọc truyền cảm dành cho tiểu thuyết.",
+    "free-vi-namminh": "Xin kính chào quý vị, tôi là Nam Minh, giọng đọc thuyết minh phóng sự.",
+    "free-vi-google": "Xin chào các bạn, đây là giọng đọc Chị Google huyền thoại trên mạng xã hội.",
+    "free-vi-truc-ly": "Chào bạn, cảm ơn bạn đã ghé thăm góc podcast tâm sự chữa lành cùng Trúc Ly.",
+    "free-vi-pham-tuyen": "Giữa tầng mây mù vạn trượng, một luồng kiếm khí bất ngờ bùng nổ vang dội!",
+    "free-vi-my-duyen": "Chào bạn, hôm nay Mỹ Duyên sẽ kể cho bạn nghe một câu chuyện ngôn tình dịu dàng.",
+    "free-vi-hai-dang": "Kính chào quý vị và các bạn đang theo dõi bản tin thời sự tổng hợp cùng Hải Đăng.",
+    "free-vi-mai-anh": "Xin chào quý vị, đây là bản tin kinh tế và công nghệ mới nhất cùng Mai Anh.",
+}
+
+
+def get_fast_preview_prompt(voice_id: str, info: dict | None = None) -> str:
+    if voice_id in SHORT_VI_PREVIEWS:
+        return SHORT_VI_PREVIEWS[voice_id]
+    if voice_id.startswith("private-"):
+        return "Chào mừng các bạn quay trở lại với kênh Truyện Dị Giới TV!"
+    if info:
+        sample = info.get("sampleText", "").strip()
+        if sample:
+            return sample
+        short_name = info.get("name", voice_id).split("(")[0].strip()
+        return f"Xin chào các bạn, đây là giọng đọc {short_name} chuẩn phòng thu!"
+    return "Xin chào các bạn, đây là bản nghe thử giọng đọc trên VoiceViet Studio!"
+
+
+def dispatch_preview(
+    voice_id: str,
+    custom_text: str = "",
+    rate: float = 1.0,
+    owner_token: str | None = None,
+) -> tuple[bytes, str, float]:
+    """Ultra-low-latency audition engine: <0.02s cached, 0.4s-1.8s cold!"""
+    rate_clamped = round(max(0.5, min(2.0, rate)), 1)
+
+    # 1. Private Cloned Voice: ALWAYS enforce cryptographic Owner Token FIRST!
+    if voice_id.startswith("private-"):
+        preset_dict = VAULT.get_authorized_voice_preset(voice_id, owner_token)
+        prompt = (custom_text or get_fast_preview_prompt(voice_id)).strip()
+        cache_key = f"priv:{voice_id}:{rate_clamped}:{hashlib.md5(prompt.encode('utf-8')).hexdigest()[:8]}"
+        if cache_key in _PREVIEW_RAM_CACHE:
+            return _PREVIEW_RAM_CACHE[cache_key]
+        with _VIENEU_LOCK:
+            tts = get_vieneu()
+            audio_f32 = tts.infer(prompt, voice=preset_dict)
+            seg = trim_and_smooth_float32(audio_f32, TARGET_SR)
+            peak = float(np.max(np.abs(seg)))
+            if peak > 0.01:
+                seg = seg * (0.89 / peak)
+            wav_bytes = apply_rate_ffmpeg(encode_float32_to_wav_bytes(seg, TARGET_SR), rate_clamped)
+        dur = max(0.3, (len(wav_bytes) - 44) / (TARGET_SR * 2))
+        res_tuple = (wav_bytes, "audio/wav", dur)
+        _PREVIEW_RAM_CACHE[cache_key] = res_tuple
+        return res_tuple
+
+    # 2. Public Voices: Check RAM cache, then persistent disk cache!
+    info = resolve_voice_entry(voice_id)
+    resolved_id = info["id"]
+    prompt = (custom_text or get_fast_preview_prompt(resolved_id, info)).strip()
+    cache_hash = hashlib.md5(f"{resolved_id}|{rate_clamped}|{prompt}".encode("utf-8")).hexdigest()[:12]
+    provider = info["provider"]
+    ext = "mp3" if provider in ("edge", "google") and abs(rate_clamped - 1.0) <= 0.05 else ("mp3" if provider == "edge" else "wav")
+    mime = "audio/mpeg" if ext == "mp3" else "audio/wav"
+
+    if cache_hash in _PREVIEW_RAM_CACHE:
+        return _PREVIEW_RAM_CACHE[cache_hash]
+
+    disk_path = os.path.join(PREVIEW_CACHE_DIR, f"{resolved_id}_{cache_hash}.{ext}")
+    if os.path.exists(disk_path) and os.path.getsize(disk_path) > 200:
+        with open(disk_path, "rb") as f:
+            cached_bytes = f.read()
+        est_sec = max(0.5, len(cached_bytes) / 6000.0) if ext == "mp3" else max(0.5, (len(cached_bytes) - 44) / (TARGET_SR * 2))
+        res_tuple = (cached_bytes, mime, est_sec)
+        _PREVIEW_RAM_CACHE[cache_hash] = res_tuple
+        return res_tuple
+
+    # 3. Cold fast synthesis (lock-free for Edge & Google; single-pass for VieNeu & Piper!)
+    model = info["model"]
+    lang_code = info.get("language", "vi")
+
+    if provider == "edge":
+        clean_p = re.sub(r"\[(?:cười|thở dài|hắng giọng)\]", "", prompt).replace("...", ",").strip()
+        try:
+            audio_bytes = run_async(fetch_edge_mp3_hedged(clean_p, model, rate=rate_clamped), timeout=2.30)
+            mime = "audio/mpeg"
+            ext = "mp3"
+            est_sec = max(0.8, len(audio_bytes) / 6000.0)
+        except Exception:
+            g_lang = map_locale_to_google_lang(lang_code)
+            audio_bytes = fetch_google_mp3_fast(clean_p, lang=g_lang)
+            mime = "audio/mpeg"
+            ext = "mp3"
+            est_sec = max(0.8, len(audio_bytes) / 4200.0)
+    elif provider == "google":
+        if abs(rate_clamped - 1.0) <= 0.05:
+            audio_bytes = fetch_google_mp3_fast(prompt, lang=model)
+            mime = "audio/mpeg"
+            ext = "mp3"
+            est_sec = max(0.8, len(audio_bytes) / 4200.0)
+        else:
+            audio_bytes = synthesize_google_48k(prompt, lang=model, rate=rate_clamped, pause_sec=0.25)
+            mime = "audio/wav"
+            ext = "wav"
+            est_sec = max(0.5, (len(audio_bytes) - 44) / (TARGET_SR * 2))
+    elif provider == "piper":
+        with _PIPER_LOCK:
+            audio_bytes = synthesize_piper_mastered_48k(prompt, model, rate=rate_clamped, pause_sec=0.25)
+        mime = "audio/wav"
+        ext = "wav"
+        est_sec = max(0.5, (len(audio_bytes) - 44) / (TARGET_SR * 2))
+    else:
+        # Single-pass VieNeu 48kHz inference (~1.1s - 1.4s!)
+        single_p = prompt.replace("...", ",").strip()
+        with _VIENEU_LOCK:
+            tts = get_vieneu()
+            audio_f32 = tts.infer(single_p, voice=model)
+            seg = trim_and_smooth_float32(audio_f32, TARGET_SR)
+            peak = float(np.max(np.abs(seg)))
+            if peak > 0.01:
+                seg = seg * (0.89 / peak)
+            audio_bytes = apply_rate_ffmpeg(encode_float32_to_wav_bytes(seg, TARGET_SR), rate_clamped)
+        mime = "audio/wav"
+        ext = "wav"
+        est_sec = max(0.5, (len(audio_bytes) - 44) / (TARGET_SR * 2))
+
+    # Save public preview to RAM & disk cache for instant 0.01s future replays!
+    disk_out = os.path.join(PREVIEW_CACHE_DIR, f"{resolved_id}_{cache_hash}.{ext}")
+    try:
+        with open(disk_out, "wb") as f:
+            f.write(audio_bytes)
+    except OSError:
+        pass
+    res_tuple = (audio_bytes, mime, est_sec)
+    _PREVIEW_RAM_CACHE[cache_hash] = res_tuple
+    return res_tuple
 
 
 def dispatch_synthesize(
@@ -590,7 +849,7 @@ def dispatch_synthesize(
 ) -> bytes:
     if voice_id.startswith("private-"):
         preset_dict = VAULT.get_authorized_voice_preset(voice_id, owner_token)
-        with _ENGINE_LOCK:
+        with _VIENEU_LOCK:
             return synthesize_vieneu_48k(text, preset_dict, rate=rate, pause_sec=pause_sec)
 
     info = resolve_voice_entry(voice_id)
@@ -598,16 +857,19 @@ def dispatch_synthesize(
     model = info["model"]
     lang_code = info.get("language", "vi")
 
-    with _ENGINE_LOCK:
-        if provider == "vieneu":
+    if provider == "vieneu":
+        with _VIENEU_LOCK:
             return synthesize_vieneu_48k(text, model, rate=rate, pause_sec=pause_sec)
-        elif provider == "piper":
+    elif provider == "piper":
+        with _PIPER_LOCK:
             return synthesize_piper_mastered_48k(text, model, rate=rate, pause_sec=pause_sec)
-        elif provider == "edge":
-            return asyncio.run(synthesize_edge_48k(text, model, lang_code=lang_code, rate=rate, pause_sec=pause_sec))
-        elif provider == "google":
-            return synthesize_google_48k(text, lang=model, rate=rate, pause_sec=pause_sec)
-        else:
+    elif provider == "edge":
+        # Lock-free async I/O on persistent background loop!
+        return run_async(synthesize_edge_48k(text, model, lang_code=lang_code, rate=rate, pause_sec=pause_sec))
+    elif provider == "google":
+        return synthesize_google_48k(text, lang=model, rate=rate, pause_sec=pause_sec)
+    else:
+        with _VIENEU_LOCK:
             return synthesize_vieneu_48k(text, "Ngọc Huyền", rate=rate, pause_sec=pause_sec)
 
 
@@ -678,6 +940,8 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
 
             if self.path == "/private/lock":
                 VAULT.lock()
+                for k in [k for k in _PREVIEW_RAM_CACHE if k.startswith("priv:")]:
+                    _PREVIEW_RAM_CACHE.pop(k, None)
                 self._send_json(200, {"success": True})
                 return
 
@@ -697,7 +961,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 name = str(data.get("name", "Giọng Cá Nhân Mới")).strip() or "Giọng Cá Nhân Mới"
                 gender = str(data.get("gender", "Nam"))
                 desc = str(data.get("description", "Giọng nhân bản cá nhân độc quyền (48kHz Studio)"))
-                with _ENGINE_LOCK:
+                with _VIENEU_LOCK:
                     tts = get_vieneu()
                     created = VAULT.enroll_new_private_voice(
                         vieneu_tts=tts,
@@ -715,7 +979,30 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 tok = self.headers.get("X-Owner-Token") or str(data.get("pin", ""))
                 vid = str(data.get("voiceId", ""))
                 VAULT.delete_private_voice(vid, tok)
+                for k in [k for k in _PREVIEW_RAM_CACHE if k.startswith(f"priv:{vid}:")]:
+                    _PREVIEW_RAM_CACHE.pop(k, None)
                 self._send_json(200, {"success": True, "voices": VAULT.list_private_voices_public()})
+                return
+
+            if self.path == "/preview":
+                data = self._read_json()
+                voice_id = data.get("voice", "free-vi-ngoc-huyen")
+                custom_text = data.get("text", "").strip()
+                rate = float(data.get("rate", 1.0))
+                owner_token = self.headers.get("X-Owner-Token") or data.get("ownerToken")
+
+                audio_bytes, mime, est_sec = dispatch_preview(
+                    voice_id=voice_id,
+                    custom_text=custom_text,
+                    rate=rate,
+                    owner_token=owner_token,
+                )
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(audio_bytes)))
+                self.send_header("X-Audio-Seconds", f"{est_sec:.1f}")
+                self.end_headers()
+                self.wfile.write(audio_bytes)
                 return
 
             if self.path != "/synthesize":
@@ -740,6 +1027,8 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
             self.wfile.write(wav_bytes)
         except PermissionError as pe:
             self._send_json(403, {"success": False, "code": "private_locked", "error": str(pe)})
+        except BrokenPipeError:
+            pass
         except Exception as e:
             self._send_json(500, {"success": False, "error": str(e)})
 
@@ -747,15 +1036,43 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
 def run_daemon(port: int = 3099) -> None:
     def _warmup():
         try:
-            with _ENGINE_LOCK:
-                get_vieneu()
-            sys.stderr.write(f"[VoiceViet Daemon v4.0] VieNeu 48kHz + Private Vault + 32 Global Languages ready on port {port}!\n")
+            with _VIENEU_LOCK:
+                tts = get_vieneu()
+                # JIT warm ONNX graph + espeak-ng phonemizer immediately so first user click is ~1.2s!
+                _ = tts.infer("Chào.", voice="Ngọc Huyền")
+            sys.stderr.write(f"[VoiceViet Daemon v5.5] VieNeu 48kHz JIT warmed + 142 Global Languages ready on port {port}!\n")
+
+            # Pre-cache popular Vietnamese & Flagship International previews on disk so clicks play in 0.01s!
+            prewarm_ids = [
+                "free-vi-ngoc-huyen", "free-vi-thien-tam", "free-vi-minh-quan",
+                "free-vi-adam-tiktok", "free-vi-hoaimy", "free-vi-namminh",
+                "free-vi-google", "free-vi-truc-ly", "free-vi-pham-tuyen",
+                "free-vi-my-duyen", "free-vi-hai-dang", "free-vi-mai-anh",
+                "free-vi-thien-minh", "free-vi-thai-son", "free-vi-ngoc-linh",
+                "free-vi-adam-nam", "free-vi-quang-son", "free-vi-ngoc-tran",
+                "free-vi-thuy-dung", "free-vi-duc-tri", "free-vi-kim-thanh",
+                "free-intl-en-us-avamultilingual", "free-intl-en-us-andrewmultilingual",
+                "free-intl-en-us-brianmultilingual", "free-intl-en-gb-ryan",
+                "free-intl-zh-cn-yunjian", "free-intl-zh-cn-xiaoxiao",
+                "free-intl-ja-jp-nanami", "free-intl-ja-jp-keita",
+                "free-intl-ko-kr-sunhi", "free-intl-ko-kr-hyunsumultilingual",
+                "free-intl-fr-fr-viviennemultilingual", "free-intl-de-de-tanja",
+                "free-intl-es-es-ximena", "free-intl-ru-ru-dmitry",
+                "free-intl-th-th-premwadee", "free-intl-id-id-gadis",
+                "free-intl-hi-in-swara", "free-intl-km-kh-sreymom",
+            ]
+            for pid in prewarm_ids:
+                try:
+                    dispatch_preview(pid, custom_text="", rate=1.0)
+                except Exception:
+                    pass
+            sys.stderr.write("[VoiceViet Daemon v5.5] Pre-cached instant 0.01s voice previews ready!\n")
         except Exception as e:
             sys.stderr.write(f"[VoiceViet Daemon] Warmup note: {e}\n")
 
     threading.Thread(target=_warmup, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", port), EngineDaemonHandler)
-    sys.stderr.write(f"[VoiceViet Daemon v4.0] Listening at http://127.0.0.1:{port}\n")
+    sys.stderr.write(f"[VoiceViet Daemon v5.5] Listening at http://127.0.0.1:{port}\n")
     server.serve_forever()
 
 

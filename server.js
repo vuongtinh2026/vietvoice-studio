@@ -577,7 +577,63 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 1.2 API: Synthesize Audio via Free Studio 48kHz / Private Clone / Global 32 Languages Engine
+  // 1.15 API: Ultra-Instant Voice Preview (<20ms cached, 0.4s-1.8s cold!)
+  if (pathname === '/api/free-tts/preview' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req);
+      const voice = payload.voice || 'free-vi-ngoc-huyen';
+      const rawText = payload.text ? normalizeTextForVoice(payload.text.trim(), voice) : '';
+      const rate = parseFloat(payload.rate) || 1.0;
+      const ownerToken = req.headers['x-owner-token'] || payload.ownerToken || '';
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (ownerToken) headers['X-Owner-Token'] = ownerToken;
+
+      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/preview`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ voice, text: rawText, rate, ownerToken: ownerToken || undefined })
+      });
+
+      if (!dRes.ok) {
+        const errData = await dRes.json().catch(() => ({}));
+        res.writeHead(dRes.status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          success: false,
+          code: errData.code || (dRes.status === 403 ? 'private_locked' : 'preview_failed'),
+          error: errData.error || `Lỗi nghe thử HTTP ${dRes.status}`
+        }));
+        return;
+      }
+
+      const arrayBuf = await dRes.arrayBuffer();
+      const audioBuf = Buffer.from(arrayBuf);
+      const contentType = dRes.headers.get('content-type') || 'audio/wav';
+      const secondsHdr = dRes.headers.get('x-audio-seconds') || '3.0';
+      const found = (cachedFreeVoices || []).find(v => v.id === voice);
+
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Content-Length': audioBuf.length,
+        'X-Audio-Seconds': secondsHdr,
+        'X-Audio-Voice': voice,
+        'X-Voice-Name': encodeURIComponent(found?.name || voice)
+      });
+      res.end(audioBuf);
+    } catch (err) {
+      console.error('[Preview API Error]:', err.message);
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: false,
+        error: String(err.message || '').includes('fetch failed')
+          ? 'Đang khởi động AI Engine, vui lòng bấm lại sau 1 giây!'
+          : err.message
+      }));
+    }
+    return;
+  }
+
+  // 1.2 API: Synthesize Audio via Free Studio 48kHz / Private Clone / Global 142 Languages Engine
   if (pathname === '/api/free-tts/synthesize' && req.method === 'POST') {
     try {
       const payload = await readJsonBody(req);

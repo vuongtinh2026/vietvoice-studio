@@ -1666,6 +1666,83 @@ async function handleSpeakAction() {
   }
 }
 
+let currentPreviewAbort = null;
+let audioGestureUnlocked = false;
+const previewBlobMemoryCache = new Map();
+const SILENT_UNLOCK_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+
+function showFloatingPreviewBar(voiceName, blobUrl, durationStr) {
+  let bar = document.getElementById('floatingPreviewBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'floatingPreviewBar';
+    bar.className = 'fixed bottom-6 left-6 z-50 bg-slate-900/95 backdrop-blur-xl border border-emerald-500/50 rounded-2xl p-3 shadow-2xl flex items-center gap-3 max-w-sm animate-fade-in';
+    bar.innerHTML = `
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-slate-950 flex items-center justify-center shrink-0">
+        <i class="fa-solid fa-volume-high text-sm"></i>
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center justify-between gap-2">
+          <p id="fpVoiceTitle" class="text-xs font-bold text-white truncate"></p>
+          <span id="fpDurBadge" class="text-[10px] font-mono text-emerald-300 shrink-0"></span>
+        </div>
+        <audio id="fpAudioEl" controls class="w-56 h-7 mt-1 outline-none"></audio>
+      </div>
+      <button type="button" id="fpCloseBtn" class="text-slate-400 hover:text-white text-xs p-1 cursor-pointer" title="Đóng">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    `;
+    document.body.appendChild(bar);
+    bar.querySelector('#fpCloseBtn').addEventListener('click', () => {
+      const a = bar.querySelector('#fpAudioEl');
+      if (a) a.pause();
+      bar.classList.add('hidden');
+    });
+  }
+  bar.classList.remove('hidden');
+  const titleEl = bar.querySelector('#fpVoiceTitle');
+  const durEl = bar.querySelector('#fpDurBadge');
+  const fpAudio = bar.querySelector('#fpAudioEl');
+  if (titleEl) titleEl.textContent = voiceName;
+  if (durEl) durEl.textContent = durationStr || '';
+  if (fpAudio) {
+    fpAudio.src = blobUrl;
+    fpAudio.volume = parseFloat(volumeRange?.value) || 1.0;
+  }
+  return fpAudio;
+}
+
+async function playPreviewBlobInstant(blob, blobUrl, cleanName, targetVoice, secondsStr) {
+  lastGeneratedAudioBlob = blob;
+  audioOutputCard.classList.remove('hidden');
+  audioPlayer.src = blobUrl;
+  const ext = (blob.type || '').includes('mpeg') ? 'mp3' : 'wav';
+  btnDownloadAudio.href = blobUrl;
+  btnDownloadAudio.download = `preview-${targetVoice}-${Date.now()}.${ext}`;
+
+  audioDurationBadge.textContent = `${secondsStr}s`;
+  audioVoiceInfo.textContent = `Nghe thử giọng: ${cleanName} • ${(blob.size / 1024).toFixed(1)} KB`;
+  audioPlayer.volume = parseFloat(volumeRange.value) || 1.0;
+
+  // If Studio view is currently hidden (e.g. user is browsing Thư Viện Đa Ngôn Ngữ), show floating mini-player right on screen!
+  const studioView = document.getElementById('viewStudio');
+  const isStudioHidden = studioView && studioView.classList.contains('hidden');
+  if (isStudioHidden) {
+    const fpAudio = showFloatingPreviewBar(cleanName, blobUrl, `${secondsStr}s`);
+    audioPlayer.pause();
+    if (fpAudio) await fpAudio.play();
+  } else {
+    const fpBar = document.getElementById('floatingPreviewBar');
+    if (fpBar) {
+      fpBar.querySelector('#fpAudioEl')?.pause();
+      fpBar.classList.add('hidden');
+    }
+    await audioPlayer.play();
+    startVisualizer();
+  }
+  showToast(`🔊 Đang phát: ${cleanName}`, 'success');
+}
+
 async function previewSpecificVoice(voiceId, voiceLabel) {
   const targetVoice = voiceId || voiceSelect.value || 'free-vi-ngoc-huyen';
   const cleanName = voiceLabel || voiceSelect.selectedOptions?.[0]?.dataset?.name || targetVoice;
@@ -1675,53 +1752,82 @@ async function previewSpecificVoice(voiceId, voiceLabel) {
     return;
   }
 
+  // Synchronously bless audio playback on user click gesture (prevents macOS Safari NotAllowedError after async fetch!)
+  if (!audioGestureUnlocked && audioPlayer) {
+    audioGestureUnlocked = true;
+    try {
+      audioPlayer.src = SILENT_UNLOCK_WAV;
+      const p = audioPlayer.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+      audioPlayer.pause();
+    } catch {}
+  } else if (audioPlayer && !audioPlayer.paused) {
+    audioPlayer.pause();
+  }
+
+  // Cancel any previous in-flight preview request immediately so clicks never queue!
+  if (currentPreviewAbort) {
+    currentPreviewAbort.abort();
+    currentPreviewAbort = null;
+  }
+
   if (targetVoice.startsWith('private-')) {
     const authOk = await window.ensurePrivateVoiceAuthorized(targetVoice);
     if (!authOk) return;
   }
 
-  const samplePrompts = {
-    'free-vi-ngoc-huyen': 'Xin chào các bạn! Chào mừng các bạn đã quay trở lại với chuyên mục tóm tắt phim hay hôm nay cùng Ngọc Huyền... Hôm nay chúng ta có một bộ phim cực kỳ kịch tính!',
-    'free-vi-thien-tam': 'Nam mô Bổn Sư Thích Ca Mâu Ni Phật... Xin kính chào quý vị và các bạn đang lắng nghe chuyên mục sách nói đêm khuya cùng Thiện Tâm.',
-    'free-vi-minh-quan': 'Xin chào quý vị khán giả! Đây là bản tin bình luận công nghệ và thế giới chuẩn 48kHz cùng giọng đọc Minh Quân.',
-    'free-vi-adam-tiktok': '[cười] Xin chào anh em! Hôm nay mình sẽ kể cho anh em nghe một câu chuyện cực kỳ bá đạo trên TikTok nhé!',
-    'free-vi-hoaimy': 'Xin chào các bạn! Tôi là Hoài My... giọng đọc trí tuệ nhân tạo truyền cảm dành cho tiểu thuyết và truyện ngắn.',
-    'free-vi-namminh': 'Xin kính chào quý vị và các bạn! Tôi là Nam Minh, giọng đọc thuyết minh phóng sự và ký sự tài liệu.',
-    'free-vi-google': 'Xin chào các bạn, đây là giọng đọc Chị Google huyền thoại chuyên làm video hài hước trên mạng xã hội.'
-  };
+  const rate = Math.round((parseFloat(rateRange.value) || 1.0) * 10) / 10;
+  const memKey = `${targetVoice}|${rate}`;
 
-  const foundObj = (cheapTtsVoices || []).find(v => v.id === targetVoice);
-  let previewText = (foundObj && foundObj.sampleText)
-    ? foundObj.sampleText
-    : (samplePrompts[targetVoice] || `Xin chào bạn... Đây là bản nghe thử giọng đọc ${cleanName} chuẩn phòng thu trên VoiceViet Studio.`);
+  // 1. Instant 1ms replay from Browser RAM Cache for public voices!
+  if (!targetVoice.startsWith('private-') && previewBlobMemoryCache.has(memKey)) {
+    const cached = previewBlobMemoryCache.get(memKey);
+    await playPreviewBlobInstant(cached.blob, cached.url, cleanName, targetVoice, cached.seconds);
+    return;
+  }
 
   const isLocal = targetVoice.startsWith('free-') || targetVoice.startsWith('private-');
-  const rate = parseFloat(rateRange.value) || 1.0;
+  const abortCtrl = new AbortController();
+  currentPreviewAbort = abortCtrl;
   const origTestHtml = btnTestVoice ? btnTestVoice.innerHTML : '';
 
   try {
     if (btnTestVoice) {
       btnTestVoice.disabled = true;
-      btnTestVoice.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tạo mẫu nghe thử...';
+      btnTestVoice.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang phát ngay...';
     }
-    showToast(`Đang tạo câu nghe thử giọng "${cleanName}"...`, 'info');
 
-    const endpoint = isLocal ? '/api/free-tts/synthesize' : '/api/cheap-tts/synthesize';
     const headers = { 'Content-Type': 'application/json' };
     const tok = window.getOwnerToken();
     if (tok) headers['X-Owner-Token'] = tok;
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        text: previewText,
-        voice: targetVoice,
-        rate,
-        key: isLocal ? undefined : (cheapTtsKeyInput.value.trim() || undefined),
-        pauses: { sentence: 0.38 }
-      })
-    });
+    let res;
+    if (isLocal) {
+      // Dedicated ultra-fast /api/free-tts/preview endpoint (<0.02s cached, 0.4s-1.8s cold!)
+      res = await fetch('/api/free-tts/preview', {
+        method: 'POST',
+        headers,
+        signal: abortCtrl.signal,
+        body: JSON.stringify({
+          voice: targetVoice,
+          text: '',
+          rate
+        })
+      });
+    } else {
+      res = await fetch('/api/cheap-tts/synthesize', {
+        method: 'POST',
+        headers,
+        signal: abortCtrl.signal,
+        body: JSON.stringify({
+          text: `Xin chào bạn, đây là giọng đọc ${cleanName} trên VoiceViet Studio.`,
+          voice: targetVoice,
+          rate,
+          key: cheapTtsKeyInput.value.trim() || undefined,
+          pauses: { sentence: 0.30 }
+        })
+      });
+    }
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
@@ -1733,29 +1839,32 @@ async function previewSpecificVoice(voiceId, voiceLabel) {
     }
 
     const audioBlob = await res.blob();
-    if (lastGeneratedBlobUrl) URL.revokeObjectURL(lastGeneratedBlobUrl);
     const blobUrl = URL.createObjectURL(audioBlob);
-    lastGeneratedBlobUrl = blobUrl;
-    lastGeneratedAudioBlob = audioBlob;
-
-    audioOutputCard.classList.remove('hidden');
-    audioPlayer.src = blobUrl;
-    btnDownloadAudio.href = blobUrl;
-    btnDownloadAudio.download = `preview-${targetVoice}-${Date.now()}.wav`;
-
     const secondsHeader = res.headers.get('X-Audio-Seconds');
-    const seconds = secondsHeader ? parseFloat(secondsHeader).toFixed(1) : ((audioBlob.size / 96000).toFixed(1));
-    audioDurationBadge.textContent = `${seconds}s`;
-    audioVoiceInfo.textContent = `Nghe thử giọng: ${cleanName} • ${(audioBlob.size / 1024).toFixed(1)} KB`;
+    const seconds = secondsHeader ? parseFloat(secondsHeader).toFixed(1) : '3.0';
 
-    audioPlayer.volume = parseFloat(volumeRange.value) || 1.0;
-    await audioPlayer.play();
-    startVisualizer();
-    showToast(`Đang phát giọng mẫu: ${cleanName}`, 'success');
+    if (!targetVoice.startsWith('private-')) {
+      if (previewBlobMemoryCache.size > 120) {
+        const oldestKey = previewBlobMemoryCache.keys().next().value;
+        const oldEntry = previewBlobMemoryCache.get(oldestKey);
+        if (oldEntry?.url) URL.revokeObjectURL(oldEntry.url);
+        previewBlobMemoryCache.delete(oldestKey);
+      }
+      previewBlobMemoryCache.set(memKey, { blob: audioBlob, url: blobUrl, seconds });
+    } else {
+      if (lastGeneratedBlobUrl) URL.revokeObjectURL(lastGeneratedBlobUrl);
+      lastGeneratedBlobUrl = blobUrl;
+    }
+
+    await playPreviewBlobInstant(audioBlob, blobUrl, cleanName, targetVoice, seconds);
   } catch (err) {
+    if (err && err.name === 'AbortError') return;
     console.error('Preview error:', err);
     showToast(`Lỗi nghe thử: ${err.message}`, 'error');
   } finally {
+    if (currentPreviewAbort === abortCtrl) {
+      currentPreviewAbort = null;
+    }
     if (btnTestVoice) {
       btnTestVoice.disabled = false;
       btnTestVoice.innerHTML = origTestHtml;
