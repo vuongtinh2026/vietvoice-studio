@@ -120,7 +120,7 @@
         <button class="nav-tab" data-view="viewVoices">
           <i class="fa-solid fa-earth-americas text-sm text-emerald-400 w-5"></i>
           <span>Thư Viện Đa Ngôn Ngữ</span>
-          <span class="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded-md ml-auto font-semibold">32 Nước</span>
+          <span class="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded-md ml-auto font-semibold">110 Nước</span>
         </button>
 
         <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-3 mt-6 mb-2">Thương Mại & Quota</div>
@@ -937,38 +937,47 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
         </div>
       </div>
 
-      <!-- ================= VIEW 4: THƯ VIỆN GIỌNG ĐỌC ĐA NGÔN NGỮ (ELEVENLABS STYLE) ================= -->
+      <!-- ================= VIEW 4: THƯ VIỆN GIỌNG ĐỌC ĐA NGÔN NGỮ (ELEVENLABS FULL WORLD v5.0) ================= -->
       <div id="viewVoices" class="content-view hidden flex flex-col gap-6">
         <div class="glass-panel rounded-2xl p-6 flex flex-col gap-4">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-slate-800">
             <div>
-              <h2 class="text-base font-bold text-white flex items-center gap-2">
-                <i class="fa-solid fa-earth-americas text-emerald-400"></i> Thư Viện Đa Ngôn Ngữ Toàn Cầu Chuẩn ElevenLabs (32 Ngôn Ngữ & Studio 48kHz)
-              </h2>
-              <p class="text-xs text-slate-400 mt-0.5">Hơn 110+ giọng đọc bản xứ tự nhiên: Tiếng Việt 48kHz, Tiếng Anh (Mỹ/Anh/Úc), Trung (Tiên hiệp/Đài/HK), Nhật, Hàn, Pháp, Đức, Tây Ban Nha, Nga, Thái, Indonesia...</p>
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-base font-bold text-white flex items-center gap-2">
+                  <i class="fa-solid fa-earth-americas text-emerald-400"></i> Thư Viện Đa Ngôn Ngữ Toàn Cầu Chuẩn ElevenLabs
+                </h2>
+                <span id="catalogTotalCountBadge" class="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full font-mono font-bold">1.050+ Giọng • 110 Quốc gia • 142 Ngôn ngữ</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-1">Đầy đủ đa ngôn ngữ & phương ngữ cho từng quốc gia (tối thiểu 6–64 giọng Nam & Nữ mỗi nước: Ấn Độ 10 ngôn ngữ, Trung Quốc/Đài/HK 6 vùng, Đông Nam Á 13 ngôn ngữ, Mỹ/Âu/Ả Rập/Mỹ Latinh/Châu Phi...).</p>
             </div>
             <!-- Language Filter & Search -->
             <div class="flex flex-wrap items-center gap-2">
-              <select id="catalogLanguageFilter" class="bg-slate-900 border border-emerald-500/40 rounded-lg px-3 py-1.5 text-xs text-emerald-300 font-semibold focus:outline-none cursor-pointer">
-                <option value="all" selected>🌍 Tất cả ngôn ngữ (32 Nước)</option>
+              <select id="catalogLanguageFilter" class="bg-slate-900 border border-emerald-500/40 rounded-lg px-3 py-1.5 text-xs text-emerald-300 font-semibold focus:outline-none cursor-pointer max-w-xs">
+                <option value="all" selected>🌍 Tất cả Thế Giới (110 Quốc gia • 142 Ngôn ngữ)</option>
                 <option value="private">🔒 Giọng Độc Quyền Của Tôi</option>
                 <option value="vi">🇻🇳 Tiếng Việt (Studio 48kHz & Pro)</option>
-                <option value="en">🇺🇸🇬🇧🇦🇺 Tiếng Anh (Mỹ / Anh / Úc)</option>
-                <option value="zh">🇨🇳🇹🇼🇭🇰 Tiếng Trung (Đại Lục / Đài / HK)</option>
-                <option value="ja">🇯🇵 Tiếng Nhật (Anime / Light Novel)</option>
-                <option value="ko">🇰🇷 Tiếng Hàn (Webtoon / K-Drama)</option>
-                <option value="sea">🇹🇭🇮🇩🇲🇾🇵🇭 Đông Nam Á (Thái / Indo / Mã / Phil)</option>
-                <option value="eu_west">🇫🇷🇩🇪🇪🇸🇮🇹🇵🇹 Pháp / Đức / TBN / Ý / Bồ Đào Nha</option>
-                <option value="ru_east">🇷🇺🇺🇦🇵🇱🇨🇿 Nga & Đông Âu & Bắc Âu</option>
-                <option value="asia_me">🇮🇳🇸🇦🇹🇷 Ấn Độ / Ả Rập / Thổ Nhĩ Kỳ</option>
+                <option value="region:east_asia">🌏 Đông Á (Trung 3 vùng / Đài / HK / Nhật / Hàn / Mông Cổ)</option>
+                <option value="region:sea">🌴 Đông Nam Á (Thái / Indo 3 thứ tiếng / Mã / Sing / Phil / Khmer / Lào / Myanmar)</option>
+                <option value="region:south_asia">🇮🇳 Nam Á & Ấn Độ (10 Ngôn ngữ Ấn Độ / Pakistan / Nepal / Sri Lanka...)</option>
+                <option value="region:english_world">🇺🇸🇬🇧 Khối Tiếng Anh Toàn Cầu (Mỹ / Anh / Úc / Canada / NZ / Ireland)</option>
+                <option value="region:europe_west">🇪🇺 Tây & Nam Âu (Pháp / Đức / TBN 3 ngôn ngữ / Ý / BĐN / Bỉ / Thụy Sĩ...)</option>
+                <option value="region:europe_north_east">❄️ Nga, Bắc Âu & Đông Âu (Nga / Ukraina / Ba Lan / Thụy Điển / Na Uy / Séc / Hy Lạp...)</option>
+                <option value="region:americas_es_pt">🌎 Mỹ Latinh & Brazil (Brazil / Mexico / Argentina / Colombia / Cuba... 21 vùng)</option>
+                <option value="region:middle_east_central">🕌 Trung Đông, 16 Nước Ả Rập & Trung Á (Thổ Nhĩ Kỳ / Iran / Israel / Dubai / Kazakh...)</option>
+                <option value="region:africa">🦁 Châu Phi (Nam Phi 3 ngôn ngữ / Nigeria / Kenya / Tanzania / Ethiopia...)</option>
               </select>
-              <input type="text" id="voiceSearchInput" placeholder="Tìm tên giọng, quốc gia..." class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-48">
+              <input type="text" id="voiceSearchInput" placeholder="🔍 Gõ tên nước, ngôn ngữ, giọng..." class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 w-56">
             </div>
           </div>
 
           <!-- Voice Catalog Grid (Sample Cards) -->
           <div id="voiceCatalogGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-            <!-- Dynamically populated with all 32 languages + Private Voices -->
+            <!-- Dynamically populated -->
+          </div>
+          <div id="catalogLoadMoreWrap" class="hidden pt-2 flex justify-center">
+            <button type="button" id="btnLoadMoreCatalog" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition cursor-pointer">
+              Xem thêm các giọng đọc tiếp theo...
+            </button>
           </div>
         </div>
       </div>
@@ -1056,41 +1065,45 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
           </button>
         </div>
 
-        <!-- ElevenLabs-style Language Filter -->
+        <!-- ElevenLabs-style Language / Country Filter + Instant Search -->
         <div id="languageFilterContainer" class="flex flex-col gap-1.5">
           <label for="languageFilterSelect" class="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider flex items-center justify-between">
-            <span><i class="fa-solid fa-globe mr-1"></i>Ngôn Ngữ / Khu Vực</span>
-            <span class="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded-full font-mono">32 Ngôn ngữ</span>
+            <span><i class="fa-solid fa-globe mr-1"></i>Quốc Gia & Ngôn Ngữ</span>
+            <span class="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded-full font-mono">142 Ngôn ngữ</span>
           </label>
           <select
             id="languageFilterSelect"
             class="w-full bg-[#0a0e17] border border-emerald-500/30 rounded-xl px-3 py-1.5 text-xs text-emerald-200 font-medium focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
           >
-            <option value="all" selected>🌍 Tất cả ngôn ngữ & Giọng Của Tôi</option>
+            <option value="all" selected>🌍 Tất cả Thế Giới (110 Nước • 142 Ngôn ngữ)</option>
             <option value="private">🔒 Giọng Nhân Bản Độc Quyền Của Tôi</option>
             <option value="vi">🇻🇳 Tiếng Việt (Studio 48kHz)</option>
-            <option value="en">🇺🇸🇬🇧🇦🇺 Tiếng Anh (Mỹ / Anh / Úc)</option>
-            <option value="zh">🇨🇳🇹🇼🇭🇰 Tiếng Trung (Phổ thông / Đài / HK)</option>
-            <option value="ja">🇯🇵 Tiếng Nhật (Anime / Isekai)</option>
-            <option value="ko">🇰🇷 Tiếng Hàn (Webtoon / K-Drama)</option>
-            <option value="fr">🇫🇷 Tiếng Pháp (French)</option>
-            <option value="de">🇩🇪 Tiếng Đức (German)</option>
-            <option value="es">🇪🇸🇲🇽 Tiếng Tây Ban Nha (TBN & Mỹ Latinh)</option>
-            <option value="pt">🇧🇷 Tiếng Bồ Đào Nha (Brazil)</option>
-            <option value="it">🇮🇹 Tiếng Ý (Italian)</option>
-            <option value="ru">🇷🇺 Tiếng Nga (Russian)</option>
-            <option value="th">🇹🇭 Tiếng Thái Lan (Thai)</option>
-            <option value="sea_other">🇮🇩🇲🇾🇵🇭 Indonesia / Malaysia / Philippines</option>
-            <option value="asia_me">🇮🇳🇸🇦🇹🇷 Ấn Độ / Ả Rập / Thổ Nhĩ Kỳ</option>
-            <option value="eu_other">🇪🇺 Châu Âu Khác (Hà Lan, Ba Lan, Thụy Điển, Hy Lạp...)</option>
+            <option value="region:east_asia">🌏 Khu vực Đông Á (Trung / Đài / HK / Nhật / Hàn / Mông Cổ)</option>
+            <option value="region:sea">🌴 Khu vực Đông Nam Á (Thái / Indo / Mã / Sing / Phil / Khmer / Lào / Myanmar)</option>
+            <option value="region:south_asia">🇮🇳 Khu vực Nam Á & Ấn Độ (10 Ngôn ngữ Ấn Độ / Pakistan / Nepal / Sri Lanka)</option>
+            <option value="region:english_world">🇺🇸🇬🇧 Khối Tiếng Anh Toàn Cầu (Mỹ / Anh / Úc / Canada / NZ / Ireland)</option>
+            <option value="region:europe_west">🇪🇺 Tây & Nam Âu (Pháp / Đức / TBN / Ý / BĐN / Hà Lan / Bỉ / Thụy Sĩ)</option>
+            <option value="region:europe_north_east">❄️ Nga, Bắc Âu & Đông Âu (Nga / Ukraina / Ba Lan / Thụy Điển / Na Uy / Séc / Hy Lạp...)</option>
+            <option value="region:americas_es_pt">🌎 Mỹ Latinh & Brazil (Brazil / Mexico / Argentina / Colombia / Chile... 21 vùng)</option>
+            <option value="region:middle_east_central">🕌 Trung Đông, 16 Nước Ả Rập & Trung Á (Thổ Nhĩ Kỳ / Iran / Israel / Dubai / Ai Cập...)</option>
+            <option value="region:africa">🦁 Châu Phi (Nam Phi 3 ngôn ngữ / Nigeria / Kenya / Tanzania / Ethiopia...)</option>
           </select>
+          <div class="relative mt-0.5">
+            <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-[10px]"></i>
+            <input
+              type="text"
+              id="quickVoiceSearchInput"
+              placeholder="Tìm nhanh quốc gia, ngôn ngữ, tên giọng..."
+              class="w-full bg-[#0a0e17] border border-slate-800 rounded-xl pl-7 pr-3 py-1.5 text-[11px] text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+          </div>
         </div>
 
         <!-- Voice Selection -->
         <div class="flex flex-col gap-1.5">
           <label for="voiceSelect" class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
             <span>Giọng đọc AI</span>
-            <span id="voiceCountBadge" class="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.2 rounded-full font-mono">84 giọng</span>
+            <span id="voiceCountBadge" class="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.2 rounded-full font-mono">1.050+ giọng</span>
           </label>
           <div class="relative">
             <select
@@ -1309,8 +1322,8 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
   <!-- Mammoth.js for Word (.docx) document parsing -->
   <script src="/mammoth.browser.min.js"></script>
   <!-- Main Logic -->
-  <script src="app.js?v=4.0"></script>
-  <!-- Pro Studio Extensions (Private Voice Vault, 32 Languages, Multi-speaker dialogue, VietQR modal) -->
-  <script src="studio_pro.js?v=4.0"></script>
+  <script src="app.js?v=5.0"></script>
+  <!-- Pro Studio Extensions (Private Voice Vault, 142 Languages, Multi-speaker dialogue, VietQR modal) -->
+  <script src="studio_pro.js?v=5.0"></script>
 </body>
 </html>

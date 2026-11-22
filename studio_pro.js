@@ -118,14 +118,18 @@
   }
 
   // =========================================================================
-  // 4. DYNAMIC 32-LANGUAGE CATALOG, DIALOGUE SYNC & PRIVATE VOICE VAULT 48KHZ
+  // 4. DYNAMIC 142-LANGUAGE / 110-COUNTRY CATALOG, DIALOGUE SYNC & PRIVATE VAULT
   // =========================================================================
   const voiceSelect = document.getElementById('voiceSelect');
   const languageFilterSelect = document.getElementById('languageFilterSelect');
   const voiceCatalogGrid = document.getElementById('voiceCatalogGrid');
   const voiceSearchInput = document.getElementById('voiceSearchInput');
   const catalogLanguageFilter = document.getElementById('catalogLanguageFilter');
+  const catalogTotalCountBadge = document.getElementById('catalogTotalCountBadge');
+  const catalogLoadMoreWrap = document.getElementById('catalogLoadMoreWrap');
+  const btnLoadMoreCatalog = document.getElementById('btnLoadMoreCatalog');
   let allCatalogVoices = [];
+  let catalogDisplayLimit = 90;
 
   function escapeHtmlSafe(str) {
     return String(str || '')
@@ -135,21 +139,48 @@
       .replace(/"/g, '&quot;');
   }
 
+  function populateCatalogCountrySelect(selectEl, voicesList) {
+    if (!selectEl || !voicesList || !voicesList.length) return;
+    const prevVal = selectEl.value || 'all';
+    const oldGroup = selectEl.querySelector('optgroup[data-dynamic-countries="1"]');
+    if (oldGroup) oldGroup.remove();
+
+    const localeStats = new Map();
+    voicesList.forEach(v => {
+      if (!v.id.startsWith('free-intl-')) return;
+      const loc = v.language;
+      if (!localeStats.has(loc)) {
+        localeStats.set(loc, { label: v.country || loc, count: 0 });
+      }
+      localeStats.get(loc).count += 1;
+    });
+
+    if (localeStats.size > 0) {
+      const og = document.createElement('optgroup');
+      og.setAttribute('data-dynamic-countries', '1');
+      og.label = `🏳️ Chọn Trực Tiếp Từng Quốc Gia & Ngôn Ngữ (${localeStats.size} Ngôn ngữ)`;
+      localeStats.forEach((info, loc) => {
+        const opt = document.createElement('option');
+        opt.value = `locale:${loc}`;
+        opt.textContent = `${info.label} (${info.count} giọng)`;
+        og.appendChild(opt);
+      });
+      selectEl.appendChild(og);
+    }
+    if ([...selectEl.options].some(o => o.value === prevVal)) {
+      selectEl.value = prevVal;
+    }
+  }
+
   function matchesCatalogCategory(v, cat) {
     if (!cat || cat === 'all') return true;
-    const lang = (v.language || '').toLowerCase();
+    const lang = v.language || '';
     const isPriv = Boolean(v.isPrivate || v.id.startsWith('private-'));
     if (cat === 'private') return isPriv;
     if (cat === 'vi') return (lang === 'vi' || v.id.startsWith('vi-')) && !isPriv;
-    if (cat === 'en') return lang.startsWith('en');
-    if (cat === 'zh') return lang.startsWith('zh');
-    if (cat === 'ja') return lang.startsWith('ja');
-    if (cat === 'ko') return lang.startsWith('ko');
-    if (cat === 'sea') return ['th', 'id', 'ms', 'fil'].some(p => lang.startsWith(p));
-    if (cat === 'eu_west') return ['fr', 'de', 'es', 'it', 'pt', 'nl'].some(p => lang.startsWith(p));
-    if (cat === 'ru_east') return ['ru', 'uk', 'pl', 'cs', 'sv', 'da', 'fi', 'el', 'ro', 'hu'].some(p => lang.startsWith(p));
-    if (cat === 'asia_me') return ['hi', 'ar', 'tr'].some(p => lang.startsWith(p));
-    return true;
+    if (cat.startsWith('region:')) return v.region === cat.slice(7);
+    if (cat.startsWith('locale:')) return lang === cat.slice(7);
+    return lang.toLowerCase().startsWith(cat.toLowerCase());
   }
 
   function buildVoiceOptionsHtml(selectedId) {
@@ -183,12 +214,20 @@
     html += '</optgroup>';
 
     if (freeGlobal.length > 0) {
-      html += '<optgroup label="🌍 32 Ngôn Ngữ Quốc Tế Chuẩn ElevenLabs">';
+      const byCountry = new Map();
       freeGlobal.forEach(v => {
-        const sel = v.id === selectedId ? 'selected' : '';
-        html += `<option value="${v.id}" ${sel}>${escapeHtmlSafe(v.country || v.language)} • ${escapeHtmlSafe(v.name)}</option>`;
+        const cKey = v.country || v.language;
+        if (!byCountry.has(cKey)) byCountry.set(cKey, []);
+        byCountry.get(cKey).push(v);
       });
-      html += '</optgroup>';
+      byCountry.forEach((items, cLabel) => {
+        html += `<optgroup label="${escapeHtmlSafe(cLabel)}">`;
+        items.forEach(v => {
+          const sel = v.id === selectedId ? 'selected' : '';
+          html += `<option value="${v.id}" ${sel}>${escapeHtmlSafe(v.name)}</option>`;
+        });
+        html += '</optgroup>';
+      });
     }
 
     if (proCloud.length > 0) {
@@ -210,8 +249,10 @@
     });
   }
 
-  function renderCatalogCards() {
+  function renderCatalogCards(resetLimit = false) {
     if (!voiceCatalogGrid || !allCatalogVoices.length) return;
+    if (resetLimit) catalogDisplayLimit = 90;
+
     const cat = catalogLanguageFilter ? catalogLanguageFilter.value : 'all';
     const query = voiceSearchInput ? voiceSearchInput.value.toLowerCase().trim() : '';
 
@@ -222,13 +263,22 @@
       return hay.includes(query);
     });
 
+    if (catalogTotalCountBadge) {
+      const uniqueLocales = new Set(visibleVoices.map(v => v.language)).size;
+      catalogTotalCountBadge.textContent = `${visibleVoices.length.toLocaleString('vi-VN')} Giọng • ${uniqueLocales} Ngôn ngữ`;
+    }
+
     voiceCatalogGrid.innerHTML = '';
     if (visibleVoices.length === 0) {
+      if (catalogLoadMoreWrap) catalogLoadMoreWrap.classList.add('hidden');
       voiceCatalogGrid.innerHTML = '<div class="col-span-full text-center py-8 text-xs text-slate-400 italic">Không tìm thấy giọng đọc nào khớp với bộ lọc hiện tại.</div>';
       return;
     }
 
-    visibleVoices.forEach(v => {
+    const slice = visibleVoices.slice(0, catalogDisplayLimit);
+    const frag = document.createDocumentFragment();
+
+    slice.forEach(v => {
       const isPriv = Boolean(v.isPrivate || v.id.startsWith('private-'));
       const isFreeVi = v.id.startsWith('free-') && v.language === 'vi' && !isPriv;
       const isGlobal = v.id.startsWith('free-') && v.language !== 'vi';
@@ -259,7 +309,7 @@
         badgeColor = 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30';
         avatarBg = 'bg-gradient-to-tr from-cyan-600 to-blue-600 text-white';
         cardBorder = 'border-cyan-500/30 hover:border-cyan-400';
-        badgeText = v.country || 'GLOBAL HD';
+        badgeText = v.badge || 'GLOBAL 48kHz';
         btnBg = 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white';
       } else if (isPro) {
         badgeColor = 'bg-purple-500/20 text-purple-300 border-purple-500/30';
@@ -293,8 +343,20 @@
           </button>
         </div>
       `;
-      voiceCatalogGrid.appendChild(card);
+      frag.appendChild(card);
     });
+
+    voiceCatalogGrid.appendChild(frag);
+
+    if (catalogLoadMoreWrap && btnLoadMoreCatalog) {
+      const remaining = visibleVoices.length - slice.length;
+      if (remaining > 0) {
+        catalogLoadMoreWrap.classList.remove('hidden');
+        btnLoadMoreCatalog.innerHTML = `<i class="fa-solid fa-angles-down mr-1"></i> Xem thêm ${Math.min(150, remaining)} giọng đọc tiếp theo (còn ${remaining.toLocaleString('vi-VN')} giọng)...`;
+      } else {
+        catalogLoadMoreWrap.classList.add('hidden');
+      }
+    }
 
     voiceCatalogGrid.querySelectorAll('.preview-voice-quick-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -341,8 +403,9 @@
       if (!data.success || !data.voices) return;
 
       allCatalogVoices = data.voices;
+      populateCatalogCountrySelect(catalogLanguageFilter, allCatalogVoices);
       refreshAllDialogueSelects();
-      renderCatalogCards();
+      renderCatalogCards(true);
     } catch (e) {
       console.warn('Cannot render dynamic voice catalog:', e);
     }
@@ -350,11 +413,17 @@
 
   loadAndRenderVoiceCatalog();
 
+  if (btnLoadMoreCatalog) {
+    btnLoadMoreCatalog.addEventListener('click', () => {
+      catalogDisplayLimit += 150;
+      renderCatalogCards(false);
+    });
+  }
   if (voiceSearchInput) {
-    voiceSearchInput.addEventListener('input', renderCatalogCards);
+    voiceSearchInput.addEventListener('input', () => renderCatalogCards(true));
   }
   if (catalogLanguageFilter) {
-    catalogLanguageFilter.addEventListener('change', renderCatalogCards);
+    catalogLanguageFilter.addEventListener('change', () => renderCatalogCards(true));
   }
 
   // =========================================================================

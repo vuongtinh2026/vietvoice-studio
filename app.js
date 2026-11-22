@@ -50,6 +50,7 @@ const mergedAudioPlayer = document.getElementById('mergedAudioPlayer');
 const textInput = document.getElementById('textInput');
 const voiceSelect = document.getElementById('voiceSelect');
 const languageFilterSelect = document.getElementById('languageFilterSelect');
+const quickVoiceSearchInput = document.getElementById('quickVoiceSearchInput');
 const languageFilterContainer = document.getElementById('languageFilterContainer');
 const btnLoadNativeSample = document.getElementById('btnLoadNativeSample');
 const voiceNoteText = document.getElementById('voiceNoteText');
@@ -1103,10 +1104,43 @@ function getCleanFileName(title) {
 }
 
 // ==========================================
-// 3. STUDIO 48KHZ, PRIVATE CLONE & 32 GLOBAL LANGUAGES
+// 3. STUDIO 48KHZ, PRIVATE CLONE & 142 GLOBAL LANGUAGES (110 COUNTRIES)
 // ==========================================
+function populateDynamicCountrySelect(selectEl, voicesList) {
+  if (!selectEl || !voicesList || !voicesList.length) return;
+  const prevVal = selectEl.value || 'all';
+  const oldDynamicGroup = selectEl.querySelector('optgroup[data-dynamic-countries="1"]');
+  if (oldDynamicGroup) oldDynamicGroup.remove();
+
+  const localeStats = new Map();
+  voicesList.forEach(v => {
+    if (!v.id.startsWith('free-intl-')) return;
+    const loc = v.language;
+    if (!localeStats.has(loc)) {
+      localeStats.set(loc, { label: v.country || loc, count: 0 });
+    }
+    localeStats.get(loc).count += 1;
+  });
+
+  if (localeStats.size > 0) {
+    const og = document.createElement('optgroup');
+    og.setAttribute('data-dynamic-countries', '1');
+    og.label = `🏳️ Chọn Trực Tiếp Từng Quốc Gia & Ngôn Ngữ (${localeStats.size} Ngôn ngữ)`;
+    localeStats.forEach((info, loc) => {
+      const opt = document.createElement('option');
+      opt.value = `locale:${loc}`;
+      opt.textContent = `${info.label} (${info.count} giọng)`;
+      og.appendChild(opt);
+    });
+    selectEl.appendChild(og);
+  }
+  if ([...selectEl.options].some(o => o.value === prevVal)) {
+    selectEl.value = prevVal;
+  }
+}
+
 async function loadCheapTtsVoices() {
-  voiceSelect.innerHTML = '<option value="">Đang tải danh sách giọng AI 48kHz & 32 ngôn ngữ...</option>';
+  voiceSelect.innerHTML = '<option value="">Đang tải 1.050+ giọng AI 48kHz & 142 ngôn ngữ...</option>';
 
   try {
     const res = await fetch('/api/cheap-tts/voices');
@@ -1115,6 +1149,7 @@ async function loadCheapTtsVoices() {
     if (data.success && data.voices) {
       cheapTtsVoices = data.voices;
       window.allAppVoices = cheapTtsVoices;
+      populateDynamicCountrySelect(languageFilterSelect, cheapTtsVoices);
       populateCheapTtsVoiceList(cheapTtsVoices);
       return;
     }
@@ -1131,25 +1166,19 @@ window.reloadAllVoicesCatalog = loadCheapTtsVoices;
 
 function matchesLanguageFilter(v, filterKey) {
   if (!filterKey || filterKey === 'all') return true;
-  const lang = (v.language || '').toLowerCase();
+  const lang = v.language || '';
   const isPriv = Boolean(v.isPrivate || v.id.startsWith('private-'));
   if (filterKey === 'private') return isPriv;
-  if (filterKey === 'vi') return lang === 'vi' && !isPriv;
-  if (filterKey === 'en') return lang.startsWith('en');
-  if (filterKey === 'zh') return lang.startsWith('zh');
-  if (filterKey === 'ja') return lang.startsWith('ja');
-  if (filterKey === 'ko') return lang.startsWith('ko');
-  if (filterKey === 'fr') return lang.startsWith('fr');
-  if (filterKey === 'de') return lang.startsWith('de');
-  if (filterKey === 'es') return lang.startsWith('es');
-  if (filterKey === 'pt') return lang.startsWith('pt');
-  if (filterKey === 'it') return lang.startsWith('it');
-  if (filterKey === 'ru') return lang.startsWith('ru');
-  if (filterKey === 'th') return lang.startsWith('th');
-  if (filterKey === 'sea_other') return ['id', 'ms', 'fil'].some(p => lang.startsWith(p));
-  if (filterKey === 'asia_me') return ['hi', 'ar', 'tr'].some(p => lang.startsWith(p));
-  if (filterKey === 'eu_other') return ['nl', 'pl', 'sv', 'cs', 'el', 'uk', 'ro', 'hu', 'da', 'fi'].some(p => lang.startsWith(p));
-  return true;
+  if (filterKey === 'vi') return (lang === 'vi' || v.id.startsWith('vi-')) && !isPriv;
+  if (filterKey.startsWith('region:')) {
+    const targetRegion = filterKey.slice(7);
+    return v.region === targetRegion;
+  }
+  if (filterKey.startsWith('locale:')) {
+    const targetLoc = filterKey.slice(7);
+    return lang === targetLoc;
+  }
+  return lang.toLowerCase().startsWith(filterKey.toLowerCase());
 }
 
 function syncSelectedVoiceNoteAndSample() {
@@ -1160,7 +1189,7 @@ function syncSelectedVoiceNoteAndSample() {
     if (found.isPrivate || selId.startsWith('private-')) {
       voiceNoteText.innerHTML = `<span class="text-amber-300 font-semibold">🔒 Giọng Độc Quyền Chủ Sở Hữu (48kHz):</span> ${escapeHtml(found.useCase || found.name)}`;
     } else if (found.country) {
-      voiceNoteText.textContent = `${found.country} • ${found.useCase || found.name}`;
+      voiceNoteText.textContent = `${found.useCase || found.name}`;
     } else {
       voiceNoteText.textContent = found.useCase || found.name;
     }
@@ -1180,11 +1209,17 @@ function populateCheapTtsVoiceList(voicesList) {
   const prevSelected = voiceSelect.value;
   voiceSelect.innerHTML = '';
   const activeFilter = languageFilterSelect ? languageFilterSelect.value : 'all';
+  const searchQuery = quickVoiceSearchInput ? quickVoiceSearchInput.value.toLowerCase().trim() : '';
 
   if (currentEngine === 'free') {
     const localPool = voicesList.filter(v => v.id.startsWith('free-') || v.id.startsWith('private-'));
-    const filtered = localPool.filter(v => matchesLanguageFilter(v, activeFilter));
-    voiceCountBadge.textContent = `${filtered.length} / ${localPool.length} giọng`;
+    const filtered = localPool.filter(v => {
+      if (!matchesLanguageFilter(v, activeFilter)) return false;
+      if (!searchQuery) return true;
+      const hay = `${v.name} ${v.country || ''} ${v.useCase || ''} ${v.language || ''} ${v.id}`.toLowerCase();
+      return hay.includes(searchQuery);
+    });
+    voiceCountBadge.textContent = `${filtered.length.toLocaleString('vi-VN')} / ${localPool.length.toLocaleString('vi-VN')} giọng`;
 
     const groupPrivate = document.createElement('optgroup');
     groupPrivate.label = '🔒 Giọng Nhân Bản Độc Quyền Của Tôi (48kHz Chủ Sở Hữu)';
@@ -1200,7 +1235,9 @@ function populateCheapTtsVoiceList(voicesList) {
     filtered.forEach(v => {
       const opt = document.createElement('option');
       opt.value = v.id;
-      opt.textContent = `${v.name} — ${v.useCase || v.id}`;
+      opt.textContent = v.language === 'vi'
+        ? `${v.name} — ${v.useCase || v.id}`
+        : `${v.name} [${v.badge || '48kHz'}]`;
       opt.dataset.name = v.name;
       opt.dataset.lang = v.language;
 
@@ -1210,7 +1247,7 @@ function populateCheapTtsVoiceList(voicesList) {
         const cLabel = v.country || `🌐 ${v.language.toUpperCase()}`;
         if (!intlGroupsByCountry.has(cLabel)) {
           const og = document.createElement('optgroup');
-          og.label = `${cLabel} (ElevenLabs Global HD)`;
+          og.label = cLabel;
           intlGroupsByCountry.set(cLabel, og);
         }
         intlGroupsByCountry.get(cLabel).appendChild(opt);
@@ -1230,7 +1267,7 @@ function populateCheapTtsVoiceList(voicesList) {
 
     if (prevSelected && filtered.some(v => v.id === prevSelected)) {
       voiceSelect.value = prevSelected;
-    } else if (activeFilter === 'all' && filtered.some(v => v.id === 'free-vi-ngoc-huyen')) {
+    } else if (activeFilter === 'all' && !searchQuery && filtered.some(v => v.id === 'free-vi-ngoc-huyen')) {
       voiceSelect.value = 'free-vi-ngoc-huyen';
     } else if (filtered.length > 0) {
       voiceSelect.value = filtered[0].id;
@@ -2440,6 +2477,14 @@ function setupEventListeners() {
         populateCheapTtsVoiceList(cheapTtsVoices);
         const labelText = languageFilterSelect.selectedOptions?.[0]?.textContent || '';
         showToast(`Đã lọc danh sách giọng: ${labelText}`, 'info');
+      }
+    });
+  }
+
+  if (quickVoiceSearchInput) {
+    quickVoiceSearchInput.addEventListener('input', () => {
+      if (currentEngine === 'free' || currentEngine === 'cheaptts') {
+        populateCheapTtsVoiceList(cheapTtsVoices);
       }
     });
   }
