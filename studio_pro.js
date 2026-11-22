@@ -38,7 +38,14 @@
       const batchWordCard = document.getElementById('batchWordCard');
       if (batchWordCard) batchWordCard.classList.remove('hidden');
     }
+
+    const mainEl = document.querySelector('main');
+    if (mainEl) mainEl.scrollTo({ top: 0, behavior: 'smooth' });
+    if (targetViewId === 'viewStudio' && typeof window.dispatchEvent === 'function') {
+      requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    }
   }
+  window.switchStudioView = switchView;
 
   navTabs.forEach(tab => {
     tab.addEventListener('click', () => {
@@ -46,6 +53,42 @@
       if (targetView) switchView(targetView);
     });
   });
+
+  document.querySelectorAll('[data-jump-view]').forEach(el => {
+    el.addEventListener('click', () => {
+      const target = el.getAttribute('data-jump-view');
+      if (target) switchView(target);
+    });
+  });
+
+  // Hero Showcase Banner Collapse / Expand Toggle
+  const btnToggleHeroBanner = document.getElementById('btnToggleHeroBanner');
+  const studioHeroBody = document.getElementById('studioHeroBody');
+  const heroToggleIcon = document.getElementById('heroToggleIcon');
+  const heroToggleText = document.getElementById('heroToggleText');
+
+  function applyHeroCollapseState(collapsed) {
+    if (!studioHeroBody) return;
+    if (collapsed) {
+      studioHeroBody.classList.add('hidden');
+      if (heroToggleIcon) heroToggleIcon.className = 'fa-solid fa-chevron-down text-[10px]';
+      if (heroToggleText) heroToggleText.textContent = 'Mở rộng giới thiệu';
+    } else {
+      studioHeroBody.classList.remove('hidden');
+      if (heroToggleIcon) heroToggleIcon.className = 'fa-solid fa-chevron-up text-[10px]';
+      if (heroToggleText) heroToggleText.textContent = 'Thu gọn';
+    }
+  }
+
+  if (btnToggleHeroBanner && studioHeroBody) {
+    let heroCollapsed = localStorage.getItem('voiceviet_hero_collapsed') === '1';
+    applyHeroCollapseState(heroCollapsed);
+    btnToggleHeroBanner.addEventListener('click', () => {
+      heroCollapsed = !heroCollapsed;
+      localStorage.setItem('voiceviet_hero_collapsed', heroCollapsed ? '1' : '0');
+      applyHeroCollapseState(heroCollapsed);
+    });
+  }
 
   if (btnHeaderPricing) btnHeaderPricing.addEventListener('click', () => switchView('viewPricing'));
   if (btnSidebarUpgrade) btnSidebarUpgrade.addEventListener('click', () => switchView('viewPricing'));
@@ -264,8 +307,10 @@
     });
 
     if (catalogTotalCountBadge) {
-      const uniqueLocales = new Set(visibleVoices.map(v => v.language)).size;
-      catalogTotalCountBadge.textContent = `${visibleVoices.length.toLocaleString('vi-VN')} Giọng • ${uniqueLocales} Ngôn ngữ`;
+      const normalizedLangs = new Set(
+        visibleVoices.map(v => (v.id.startsWith('free-') || v.id.startsWith('private-')) ? v.language : 'vi')
+      );
+      catalogTotalCountBadge.textContent = `${visibleVoices.length.toLocaleString('vi-VN')} Giọng • ${normalizedLangs.size} Ngôn ngữ`;
     }
 
     voiceCatalogGrid.innerHTML = '';
@@ -320,25 +365,25 @@
       }
 
       const card = document.createElement('div');
-      card.className = `p-4 rounded-xl bg-slate-900/80 border ${cardBorder} transition-all flex flex-col justify-between gap-3 shadow-lg`;
+      card.className = `voice-luxury-card p-4 rounded-2xl border ${cardBorder} flex flex-col justify-between gap-3.5`;
       card.innerHTML = `
         <div class="flex items-start gap-3">
-          <div class="w-10 h-10 rounded-full ${avatarBg} flex items-center justify-center font-bold text-xs shrink-0 shadow-md">
+          <div class="w-10 h-10 rounded-2xl ${avatarBg} flex items-center justify-center font-extrabold text-xs shrink-0 shadow-lg">
             ${isPriv ? '<i class="fa-solid fa-crown text-sm"></i>' : escapeHtmlSafe(initials)}
           </div>
           <div class="flex-1 min-w-0">
-            <div class="flex items-center justify-between gap-1">
-              <h4 class="text-xs font-bold text-white truncate" title="${escapeHtmlSafe(v.name)}">${escapeHtmlSafe(v.name)}</h4>
-              <span class="text-[9px] ${badgeColor} border px-1.5 py-0.2 rounded font-mono shrink-0">${escapeHtmlSafe(badgeText)}</span>
+            <div class="flex items-start justify-between gap-1.5">
+              <h4 class="text-xs font-extrabold text-white line-clamp-2 leading-snug" title="${escapeHtmlSafe(v.name)}">${escapeHtmlSafe(v.name)}</h4>
+              <span class="text-[9px] ${badgeColor} border px-1.5 py-0.5 rounded-md font-mono font-semibold shrink-0">${escapeHtmlSafe(badgeText)}</span>
             </div>
-            <p class="text-[11px] text-slate-300 font-medium mt-0.5 line-clamp-2">${escapeHtmlSafe(v.useCase || v.id)}</p>
+            <p class="text-[11px] text-slate-300/90 font-medium mt-1 line-clamp-2 leading-snug">${escapeHtmlSafe(v.useCase || v.id)}</p>
           </div>
         </div>
-        <div class="flex items-center gap-2">
-          <button class="preview-voice-quick-btn px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded-lg text-xs font-semibold transition cursor-pointer shrink-0" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
+        <div class="flex items-center gap-2 pt-1 border-t border-white/5">
+          <button class="preview-voice-quick-btn px-3 py-1.5 bg-white/5 hover:bg-white/10 text-amber-300 border border-white/10 rounded-xl text-xs font-bold transition cursor-pointer shrink-0" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
             <i class="fa-solid fa-volume-high mr-1"></i>Nghe thử
           </button>
-          <button class="select-voice-quick-btn flex-1 py-1.5 ${btnBg} rounded-lg text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
+          <button class="select-voice-quick-btn flex-1 py-1.5 ${btnBg} rounded-xl text-xs font-bold transition cursor-pointer shadow" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
             Chọn Giọng Này
           </button>
         </div>

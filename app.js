@@ -1949,14 +1949,55 @@ function resetSettings() {
 }
 
 // ==========================================
-// 7. VISUALIZER
+// 7. AURORA MULTI-SPECTRUM VISUALIZER v6.0
 // ==========================================
+function drawIdleSpectrum() {
+  if (!visualizerCanvas || !canvasCtx) return;
+  const rect = visualizerCanvas.getBoundingClientRect();
+  const width = rect.width;
+  const height = rect.height;
+  if (!width || !height) return;
+
+  canvasCtx.clearRect(0, 0, width, height);
+
+  // Subtle ambient center baseline
+  const lineGrad = canvasCtx.createLinearGradient(0, 0, width, 0);
+  lineGrad.addColorStop(0, 'rgba(6, 182, 212, 0.0)');
+  lineGrad.addColorStop(0.25, 'rgba(6, 182, 212, 0.25)');
+  lineGrad.addColorStop(0.5, 'rgba(168, 85, 247, 0.18)');
+  lineGrad.addColorStop(0.75, 'rgba(245, 158, 11, 0.25)');
+  lineGrad.addColorStop(1, 'rgba(245, 158, 11, 0.0)');
+  canvasCtx.fillStyle = lineGrad;
+  canvasCtx.fillRect(0, Math.floor(height / 2), width, 1);
+
+  // Delicate ambient wing bars on left & right edges
+  const numBars = 64;
+  const barWidth = 3;
+  const gap = (width - numBars * barWidth) / (numBars + 1);
+  for (let i = 0; i < numBars; i++) {
+    const distCenter = Math.abs(i - (numBars - 1) / 2) / (numBars / 2);
+    if (distCenter < 0.42) continue;
+    const h = 4 + Math.sin(i * 0.55) * 4 + distCenter * 8;
+    const x = gap + i * (barWidth + gap);
+    const y = (height - h) / 2;
+    canvasCtx.fillStyle = i < numBars / 2 ? 'rgba(56, 189, 248, 0.22)' : 'rgba(192, 132, 252, 0.22)';
+    canvasCtx.beginPath();
+    canvasCtx.roundRect(x, y, barWidth, h, 2);
+    canvasCtx.fill();
+  }
+}
+
 function setupCanvas() {
+  if (!visualizerCanvas || !canvasCtx) return;
   const dpr = window.devicePixelRatio || 1;
   const rect = visualizerCanvas.getBoundingClientRect();
   visualizerCanvas.width = rect.width * dpr;
   visualizerCanvas.height = rect.height * dpr;
-  canvasCtx.scale(dpr, dpr);
+  canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const isAudioPlaying = audioPlayer && !audioPlayer.paused;
+  if (!isSpeaking && !isAudioPlaying) {
+    drawIdleSpectrum();
+  }
 }
 
 let wavePhase = 0;
@@ -1970,26 +2011,32 @@ function drawWave() {
 
   canvasCtx.clearRect(0, 0, width, height);
 
-  const numBars = 36;
-  const barWidth = 4;
+  const numBars = 60;
+  const barWidth = Math.max(3, Math.min(5, Math.floor((width / numBars) * 0.52)));
   const gap = (width - numBars * barWidth) / (numBars + 1);
 
-  wavePhase += 0.08;
+  wavePhase += 0.10;
 
+  const stageGrad = canvasCtx.createLinearGradient(0, 0, width, 0);
+  stageGrad.addColorStop(0.0, '#06b6d4');
+  stageGrad.addColorStop(0.35, '#8b5cf6');
+  stageGrad.addColorStop(0.7, '#ec4899');
+  stageGrad.addColorStop(1.0, '#f59e0b');
+
+  const centerIdx = (numBars - 1) / 2;
   for (let i = 0; i < numBars; i++) {
-    const sin1 = Math.sin(wavePhase + i * 0.25);
-    const sin2 = Math.cos(wavePhase * 0.7 + i * 0.15);
-    const intensity = Math.abs(sin1 * 0.6 + sin2 * 0.4);
-    const barHeight = Math.max(6, intensity * (height * 0.75));
+    const mirrorDist = Math.abs(i - centerIdx) / centerIdx;
+    const envelope = 1.0 - mirrorDist * 0.52;
+    const sin1 = Math.sin(wavePhase + mirrorDist * 7.5);
+    const sin2 = Math.cos(wavePhase * 1.35 - i * 0.22);
+    const sin3 = Math.sin(wavePhase * 0.65 + i * 0.41);
+    const intensity = Math.abs(sin1 * 0.48 + sin2 * 0.34 + sin3 * 0.18) * envelope;
+    const barHeight = Math.max(6, intensity * (height * 0.84));
 
     const x = gap + i * (barWidth + gap);
     const y = (height - barHeight) / 2;
 
-    const grad = canvasCtx.createLinearGradient(0, y, 0, y + barHeight);
-    grad.addColorStop(0, '#f59e0b');
-    grad.addColorStop(1, '#ea580c');
-
-    canvasCtx.fillStyle = grad;
+    canvasCtx.fillStyle = stageGrad;
     canvasCtx.beginPath();
     canvasCtx.roundRect(x, y, barWidth, barHeight, 3);
     canvasCtx.fill();
@@ -2006,9 +2053,8 @@ function startVisualizer() {
 
 function stopVisualizer() {
   cancelAnimationFrame(animationFrameId);
-  const rect = visualizerCanvas.getBoundingClientRect();
-  canvasCtx.clearRect(0, 0, rect.width, rect.height);
   idleWaveMsg.classList.remove('hidden');
+  drawIdleSpectrum();
 }
 
 // ==========================================
