@@ -10,4 +10,8 @@ __pycache__/
 dist-desktop/
 open_models/
 private_voices/
+license_db/
+dist_customer_package/
+client_config.json
+
 

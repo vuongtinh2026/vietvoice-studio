@@ -808,6 +808,18 @@
     applyLanguage(currentLang);
   });
 
+  function syncFromServer({ planId = 'free', usedChars = 0, maxChars = 100000, unlimited = false }) {
+    const resolvedPlan = unlimited ? 'unlimited' : (PLANS[planId] ? planId : 'free');
+    quotaState.planId = resolvedPlan;
+    quotaState.usedChars = Math.max(0, Number(usedChars) || 0);
+    if (!unlimited && Number(maxChars) > 0 && PLANS[resolvedPlan]) {
+      PLANS[resolvedPlan].maxChars = Number(maxChars);
+    }
+    saveQuotaState();
+    renderQuotaUI(0);
+    return getQuotaSnapshot();
+  }
+
   // Expose Public API
   window.VoiceVietQuota = {
     t,
@@ -817,6 +829,7 @@
     checkCanGenerate,
     deductCharacters,
     activatePlan,
+    syncFromServer,
     refreshUI: () => renderQuotaUI(0),
     formatAudioDurationDetailed,
     formatGenerationSpeed,

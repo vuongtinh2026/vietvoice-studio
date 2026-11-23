@@ -8,9 +8,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile, spawn } from 'node:child_process';
 import { CheapTts, CheapTtsApiError } from '@cheap-tts/node';
+import { createLicenseManager } from './license_manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const licenseMgr = createLicenseManager(__dirname);
 
 const PORT = process.env.PORT || 3000;
 const DEFAULT_KEY = process.env.CHEAP_TTS_KEY || 'sk_live_I_cohehhbgkJqZjJiB-JifshNNcIgSCumq07SIpMsIQ';
@@ -471,10 +473,91 @@ function readJsonBody(req, maxBytes = 48 * 1024 * 1024) {
   });
 }
 
+async function verifyOwnerAuthorized(ownerToken) {
+  if (!ownerToken) return false;
+  try {
+    const r = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/private/status`, {
+      headers: { 'X-Owner-Token': ownerToken }
+    });
+    if (!r.ok) return false;
+    const d = await r.json().catch(() => ({}));
+    return Boolean(d && d.unlocked);
+  } catch {
+    return false;
+  }
+}
+
+function getClientIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) return String(xff).split(',')[0].trim();
+  return req.socket?.remoteAddress || '127.0.0.1';
+}
+
+/**
+ * Enforces License Key + Hardware ID (HWID) + Server-Side Character Quota!
+ * - In Customer Client Mode (`client_config.json -> isCustomerClient: true`), verifies remotely against Owner's Master Server!
+ * - On Master Server, verifies & deducts directly in `license_db/licenses.json`!
+ */
+async function verifyAndConsumeLicenseQuota(req, payload = {}, chars = 0, dryRun = false) {
+  const clientCfg = licenseMgr.getClientConfig();
+  const localHw = licenseMgr.getLocalMachineHardwareInfo();
+  const licenseKey = (req.headers['x-license-key'] || payload.licenseKey || '').toString().trim();
+
+  if (clientCfg.isCustomerClient) {
+    // Unforgeable: Customer Client ALWAYS sends its own OS physical HWID to Owner's Master Server!
+    try {
+      const r = await fetch(`${clientCfg.licenseServerUrl}/api/license/remote-verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          licenseKey,
+          hwid: localHw.hwid,
+          machineLabel: localHw.machineLabel,
+          chars,
+          dryRun
+        })
+      });
+      const data = await r.json().catch(() => ({ ok: false, error: `Lỗi kết nối Máy chủ Bản quyền (${r.status})` }));
+      return data;
+    } catch {
+      return {
+        ok: false,
+        code: 'LICENSE_SERVER_OFFLINE',
+        status: 503,
+        error: 'Không thể kết nối tới Máy Chủ Quản Lý Bản Quyền! Vui lòng kiểm tra kết nối mạng để xác thực Key.'
+      };
+    }
+  }
+
+  // Master Server Mode (allows simulated HWID header ONLY for Owner testing anti-2nd-PC protection!)
+  const incomingHwid = (req.headers['x-simulated-hwid'] || req.headers['x-client-hwid'] || localHw.hwid).toString().trim();
+  const incomingLabel = (req.headers['x-simulated-machine'] || req.headers['x-client-machine'] || localHw.machineLabel).toString().trim();
+  return licenseMgr.authorizeAndConsume({
+    licenseKey,
+    hwid: incomingHwid,
+    machineLabel: incomingLabel,
+    clientIp: getClientIp(req),
+    chars,
+    dryRun
+  });
+}
+
+function attachQuotaHeaders(headersObj, licState) {
+  if (!licState || !licState.ok) return headersObj;
+  headersObj['X-License-Mode'] = licState.mode || 'hwid_trial';
+  headersObj['X-License-Used'] = String(licState.usedChars || 0);
+  headersObj['X-License-Max'] = String(licState.maxChars || 100000);
+  headersObj['X-License-Remaining'] = licState.unlimited ? 'UNLIMITED' : String(licState.remainingChars ?? 0);
+  headersObj['X-License-Plan'] = encodeURIComponent(licState.planName || '');
+  headersObj['X-License-Hwid'] = licState.hwid || '';
+  return headersObj;
+}
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Owner-Token, X-Audio-Bitrate');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Owner-Token, X-Audio-Bitrate, X-License-Key, X-Client-HWID, X-Client-Machine, X-Simulated-HWID, X-Simulated-Machine');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Audio-Seconds, X-Audio-Voice, X-Voice-Name, X-Total-Chunks, X-License-Mode, X-License-Used, X-License-Max, X-License-Remaining, X-License-Plan, X-License-Hwid');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -484,6 +567,153 @@ const server = http.createServer(async (req, res) => {
 
   const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
   const pathname = parsedUrl.pathname;
+
+  // =========================================================================
+  // 0-A. LICENSE CLIENT & REMOTE VERIFICATION ENDPOINTS (OPTION 2 SYSTEM)
+  // =========================================================================
+  if (pathname === '/api/license/status' && (req.method === 'GET' || req.method === 'POST')) {
+    try {
+      const payload = req.method === 'POST' ? await readJsonBody(req) : {};
+      const clientCfg = licenseMgr.getClientConfig();
+      const localHw = licenseMgr.getLocalMachineHardwareInfo();
+      const keyParam = parsedUrl.searchParams.get('key') || req.headers['x-license-key'] || payload.licenseKey || '';
+
+      if (clientCfg.isCustomerClient) {
+        const r = await fetch(`${clientCfg.licenseServerUrl}/api/license/remote-verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            licenseKey: keyParam,
+            hwid: localHw.hwid,
+            machineLabel: localHw.machineLabel,
+            chars: 0,
+            dryRun: true
+          })
+        });
+        const data = await r.json().catch(() => ({ ok: false, error: 'Không kết nối được Máy chủ Bản quyền' }));
+        res.writeHead(r.status || 200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ...data, isCustomerClient: true, localHwid: localHw.hwid, localMachineLabel: localHw.machineLabel }));
+        return;
+      }
+
+      const incomingHwid = (req.headers['x-simulated-hwid'] || payload.simulatedHwid || localHw.hwid).toString().trim();
+      const incomingLabel = (req.headers['x-simulated-machine'] || payload.simulatedMachine || localHw.machineLabel).toString().trim();
+      const status = licenseMgr.inspectOrActivateStatus({
+        licenseKey: keyParam,
+        hwid: incomingHwid,
+        machineLabel: incomingLabel,
+        clientIp: getClientIp(req),
+        bindOnFirstUse: Boolean(payload.activate && keyParam)
+      });
+      res.writeHead(status.ok ? 200 : (status.status || 403), { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        ...status,
+        isCustomerClient: false,
+        localHwid: localHw.hwid,
+        localMachineLabel: localHw.machineLabel
+      }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
+  if (pathname === '/api/license/remote-verify' && req.method === 'POST') {
+    const clientCfg = licenseMgr.getClientConfig();
+    if (clientCfg.isCustomerClient) {
+      res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: 'Endpoint chỉ dành cho Máy Chủ Chủ Sở Hữu.' }));
+      return;
+    }
+    try {
+      const payload = await readJsonBody(req);
+      const result = licenseMgr.authorizeAndConsume({
+        licenseKey: payload.licenseKey || '',
+        hwid: payload.hwid || '',
+        machineLabel: payload.machineLabel || 'Máy khách từ xa',
+        clientIp: getClientIp(req),
+        chars: Number(payload.chars) || 0,
+        dryRun: Boolean(payload.dryRun)
+      });
+      res.writeHead(result.ok ? 200 : (result.status || 403), { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
+  // =========================================================================
+  // 0-B. OWNER-ONLY LICENSE ADMIN DASHBOARD API (REQUIRES OWNER PIN TOKEN!)
+  // =========================================================================
+  if (pathname.startsWith('/api/admin/licenses/')) {
+    const clientCfg = licenseMgr.getClientConfig();
+    if (clientCfg.isCustomerClient) {
+      res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: 'Tính năng Quản trị Chủ phần mềm bị vô hiệu hóa trên bản cài đặt Máy Khách!' }));
+      return;
+    }
+
+    const ownerToken = req.headers['x-owner-token'] || '';
+    const isOwner = await verifyOwnerAuthorized(ownerToken);
+    if (!isOwner) {
+      res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: false,
+        code: 'owner_pin_required',
+        error: 'Cần mở khóa Mã PIN Chủ Sở Hữu để truy cập Trung Tâm Quản Lý Key & Khách Hàng!'
+      }));
+      return;
+    }
+
+    try {
+      const sub = pathname.replace('/api/admin/licenses/', '');
+      if (sub === 'overview' && req.method === 'GET') {
+        const overview = licenseMgr.adminListOverview();
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, ...overview }));
+        return;
+      }
+      if (sub === 'create' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const created = licenseMgr.adminCreateLicense(body);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, license: created }));
+        return;
+      }
+      if (sub === 'mutate' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const updated = licenseMgr.adminMutateLicense(body);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, result: updated }));
+        return;
+      }
+      if (sub === 'settings' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const settings = licenseMgr.adminUpdateSettings(body);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, settings }));
+        return;
+      }
+      if (sub === 'export-package' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const pkg = licenseMgr.buildCustomerPackage({
+          licenseServerUrl: body.licenseServerUrl || `http://127.0.0.1:${PORT}`
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, package: pkg }));
+        return;
+      }
+      res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: 'Admin endpoint không tồn tại.' }));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
 
   // 0. API: Private Voice Vault (Owner-Protected Encrypted Voice Cloning)
   if (pathname.startsWith('/api/private-voices/')) {
@@ -650,20 +880,33 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      // 1. Pre-check License Key + HWID + Server Quota BEFORE burning CPU!
+      const charCost = rawText.length;
+      const preCheck = await verifyAndConsumeLicenseQuota(req, payload, charCost, true);
+      if (!preCheck.ok) {
+        res.writeHead(preCheck.status || 403, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, code: preCheck.code, error: preCheck.error }));
+        return;
+      }
+
       if (!cachedFreeVoices) {
         await getVoicesFree().catch(() => {});
       }
 
       console.log(`[Studio 48kHz Engine] Synthesizing ${text.length} chars with voice ${voice}...`);
       const result = await synthesizeFree(text, voice, rate, pause, ownerToken);
-      res.writeHead(200, {
+
+      // 2. Commit atomic character deduction on the Server!
+      const committed = await verifyAndConsumeLicenseQuota(req, payload, charCost, false);
+      const respHeaders = attachQuotaHeaders({
         'Content-Type': 'audio/wav',
         'Content-Length': result.audio.length,
         'X-Audio-Seconds': result.seconds.toFixed(1),
         'X-Audio-Voice': voice,
         'X-Voice-Name': encodeURIComponent(result.voice.name || voice),
         'X-Total-Chunks': '1'
-      });
+      }, committed);
+      res.writeHead(200, respHeaders);
       res.end(result.audio);
     } catch (err) {
       console.error('[Studio Engine Error]:', err.message);
@@ -695,6 +938,15 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      // 1. Pre-check License Key + HWID + Server Quota BEFORE synthesizing!
+      const charCost = rawText.length;
+      const preCheck = await verifyAndConsumeLicenseQuota(req, payload, charCost, true);
+      if (!preCheck.ok) {
+        res.writeHead(preCheck.status || 403, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, code: preCheck.code, error: preCheck.error }));
+        return;
+      }
+
       // Support free open source & private cloned voices directly via same endpoint (returns WAV 48kHz)
       if (voice.startsWith('free-') || voice.startsWith('private-')) {
         if (!cachedFreeVoices) {
@@ -703,14 +955,16 @@ const server = http.createServer(async (req, res) => {
         const pause = pauses?.sentence ? parseFloat(pauses.sentence) : 0.40;
         console.log(`[Studio Engine via Synthesize] Synthesizing ${text.length} chars (Voice: ${voice})...`);
         const result = await synthesizeFree(text, voice, rate, pause, ownerToken);
-        res.writeHead(200, {
+        const committed = await verifyAndConsumeLicenseQuota(req, payload, charCost, false);
+        const respHeaders = attachQuotaHeaders({
           'Content-Type': 'audio/wav',
           'Content-Length': result.audio.length,
           'X-Audio-Seconds': result.seconds.toFixed(1),
           'X-Audio-Voice': voice,
           'X-Voice-Name': encodeURIComponent(result.voice.name || voice),
           'X-Total-Chunks': '1'
-        });
+        }, committed);
+        res.writeHead(200, respHeaders);
         res.end(result.audio);
         return;
       }
@@ -773,14 +1027,16 @@ const server = http.createServer(async (req, res) => {
       const mergedAudio = mergeWavBuffers(wavBuffers, pauseDuration);
       console.log(`[Cheap-TTS] Finished! Generated ${totalSeconds.toFixed(1)}s audio (${mergedAudio.length} bytes).`);
 
-      res.writeHead(200, {
+      const committed = await verifyAndConsumeLicenseQuota(req, payload, charCost, false);
+      const cloudHeaders = attachQuotaHeaders({
         'Content-Type': 'audio/wav',
         'Content-Length': mergedAudio.length,
         'X-Audio-Seconds': totalSeconds.toFixed(1),
         'X-Total-Chunks': chunks.length.toString(),
         'X-Voice-Name': encodeURIComponent(voiceInfo?.name || voice),
         'Content-Disposition': `attachment; filename="cheap-tts-${voice}-${Date.now()}.wav"`
-      });
+      }, committed);
+      res.writeHead(200, cloudHeaders);
       res.end(mergedAudio);
     } catch (err) {
       console.error('Synthesis error:', err);
@@ -879,6 +1135,8 @@ const server = http.createServer(async (req, res) => {
   const lowerSafe = safePath.toLowerCase();
   if (
     lowerSafe.startsWith('/private_voices') ||
+    lowerSafe.startsWith('/license_db') ||
+    lowerSafe.startsWith('/dist_customer_package') ||
     lowerSafe.startsWith('/open_models') ||
     lowerSafe.startsWith('/venv') ||
     lowerSafe.startsWith('/.git') ||
@@ -886,6 +1144,8 @@ const server = http.createServer(async (req, res) => {
     lowerSafe.endsWith('.py') ||
     lowerSafe.endsWith('vault.json') ||
     lowerSafe === '/server.js' ||
+    lowerSafe === '/license_manager.js' ||
+    lowerSafe === '/client_config.json' ||
     lowerSafe === '/package.json'
   ) {
     res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });

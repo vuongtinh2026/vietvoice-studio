@@ -95,6 +95,17 @@
         </select>
       </div>
 
+      <!-- Customer License Key Activation Button -->
+      <button
+        type="button"
+        id="btnOpenLicenseModal"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/35 text-xs font-bold text-emerald-200 transition cursor-pointer whitespace-nowrap shrink-0"
+        title="Nhập Mã Bản Quyền (License Key) & Xem Mã Phần Cứng HWID"
+      >
+        <i class="fa-solid fa-key text-amber-300 text-[11px]"></i>
+        <span id="headerKeyStatusLabel">Nhập Key</span>
+      </button>
+
       <!-- Built-in Quick Guide Button -->
       <button
         type="button"
@@ -153,6 +164,10 @@
       <i class="fa-solid fa-book-open text-cyan-400 text-xs"></i>
       <span data-i18n="nav_guide">Hướng Dẫn</span>
     </button>
+    <button id="mobileTabAdminLicenses" class="nav-tab" data-view="viewAdminLicenses">
+      <i class="fa-solid fa-user-shield text-amber-400 text-xs"></i>
+      <span>Quản Lý Key</span>
+    </button>
   </nav>
 
   <!-- ================= MAIN 3-COLUMN STUDIO CONSOLE ================= -->
@@ -210,6 +225,12 @@
           <span class="nav-icon-box"><i class="fa-solid fa-book-open text-xs text-cyan-400"></i></span>
           <span class="whitespace-nowrap" data-i18n="nav_guide">Hướng Dẫn Sử Dụng</span>
           <span class="text-[9px] bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">A-Z</span>
+        </button>
+
+        <button id="navTabAdminLicenses" class="nav-tab mt-1" data-view="viewAdminLicenses">
+          <span class="nav-icon-box"><i class="fa-solid fa-user-shield text-xs text-amber-300"></i></span>
+          <span class="whitespace-nowrap text-amber-200">Quản Lý Key & Khách</span>
+          <span class="text-[9px] bg-amber-500/25 text-amber-200 border border-amber-400/45 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">Admin</span>
         </button>
       </div>
 
@@ -1511,6 +1532,207 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
         </div>
       </div>
 
+      <!-- ================= VIEW 7: TRUNG TÂM QUẢN TRỊ BẢN QUYỀN MÁY KHÁCH (CÁCH 2 - LICENSE & HWID ADMIN) ================= -->
+      <div id="viewAdminLicenses" class="content-view hidden flex flex-col gap-6">
+        <!-- Owner Auth Gate Card (Shown when Owner PIN is not unlocked yet) -->
+        <div id="admLockedGateCard" class="glass-panel rounded-3xl p-8 border border-amber-400/45 flex flex-col items-center text-center gap-4">
+          <div class="w-16 h-16 rounded-3xl bg-gradient-to-tr from-amber-400 to-orange-600 text-slate-950 flex items-center justify-center text-2xl shadow-xl shadow-amber-500/30">
+            <i class="fa-solid fa-user-shield"></i>
+          </div>
+          <div class="max-w-xl">
+            <h2 class="text-xl sm:text-2xl font-extrabold font-display text-white">Trung Tâm Quản Lý License Key & Máy Khách (Cách 2)</h2>
+            <p class="text-xs sm:text-sm text-slate-300 mt-1.5 leading-relaxed">
+              Khu vực dành riêng cho <b>Chủ Phần Mềm</b> để cấp mã bản quyền cho khách cài máy, khóa cứng 1 máy (`HWID Lock`), theo dõi số ký tự đã trừ trên Server, khóa Key từ xa và đóng gói bộ cài đặt sạch giao khách.
+            </p>
+          </div>
+          <button
+            type="button"
+            id="btnUnlockAdminDashboard"
+            class="btn-gold-imperial px-6 py-3 rounded-2xl text-slate-950 font-black text-xs flex items-center gap-2 cursor-pointer"
+          >
+            <i class="fa-solid fa-unlock-keyhole"></i> Nhập Mã PIN Chủ Sở Hữu Để Mở Bảng Quản Trị
+          </button>
+        </div>
+
+        <!-- Main Unlocked Admin Console -->
+        <div id="admUnlockedConsole" class="hidden flex flex-col gap-6">
+          <!-- Simulated 2nd Machine Banner (Active when testing anti-sharing) -->
+          <div id="admSimSecondPcBanner" class="hidden p-4 rounded-2xl bg-rose-950/85 border-2 border-rose-500 shadow-xl flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <span class="w-10 h-10 rounded-xl bg-rose-500/25 border border-rose-400/40 flex items-center justify-center text-rose-300 shrink-0">
+                <i class="fa-solid fa-laptop-medical text-lg"></i>
+              </span>
+              <div>
+                <h4 class="text-xs sm:text-sm font-extrabold text-rose-200">🧪 ĐANG BẬT CHẾ ĐỘ GIẢ LẬP "MÁY TÍNH LẠ THỨ 2" (HWID-FAKE-PC02-9999)</h4>
+                <p class="text-xs text-rose-300/90">Bây giờ nếu bạn thử bấm Tạo Giọng bằng Key đã gắn với máy gốc của bạn, Server sẽ lập tức CHẶN ĐỨNG không cho xài chùa!</p>
+              </div>
+            </div>
+            <button type="button" id="btnExitSimSecondPc" class="px-4 py-2 rounded-xl bg-white text-slate-950 font-extrabold text-xs cursor-pointer hover:bg-amber-200 transition">
+              Quay Lại Máy Gốc Của Tôi
+            </button>
+          </div>
+
+          <!-- Top KPI Cards -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div class="glass-panel rounded-2xl p-4 border border-purple-400/35">
+              <div class="text-[11px] font-bold text-slate-400 uppercase">Tổng Mã Key Đã Cấp</div>
+              <div id="admStatTotalKeys" class="text-2xl font-black font-display text-white mt-1">0</div>
+              <div class="text-[11px] text-emerald-300 mt-0.5">Đang hoạt động: <b id="admStatActiveKeys">0</b> key</div>
+            </div>
+            <div class="glass-panel rounded-2xl p-4 border border-cyan-400/35">
+              <div class="text-[11px] font-bold text-slate-400 uppercase">Số Máy Đã Khóa Cứng HWID</div>
+              <div id="admStatBoundDevices" class="text-2xl font-black font-display text-cyan-300 mt-1">0</div>
+              <div class="text-[11px] text-slate-300 mt-0.5">Máy dùng thử Free: <b id="admStatTrialMachines">0</b> máy</div>
+            </div>
+            <div class="glass-panel rounded-2xl p-4 border border-indigo-400/35">
+              <div class="text-[11px] font-bold text-slate-400 uppercase">Tổng Ký Tự Đã Dùng (Server)</div>
+              <div id="admStatTotalChars" class="text-2xl font-black font-display text-purple-300 mt-1">0</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">Lưu cố định trên ổ cứng Server</div>
+            </div>
+            <div class="glass-panel rounded-2xl p-4 border border-amber-400/40">
+              <div class="text-[11px] font-bold text-slate-400 uppercase">Tổng Giá Trị Gói Đã Cấp</div>
+              <div id="admStatRevenue" class="text-2xl font-black font-display text-amber-300 mt-1">0 đ</div>
+              <div class="text-[11px] text-amber-200/80 mt-0.5 truncate" id="admLocalHwidInfo">Mã máy chủ: HWID-...</div>
+            </div>
+          </div>
+
+          <!-- Section 1: Create New License Key in 1 Click -->
+          <div class="glass-panel rounded-3xl p-6 border border-emerald-400/35 flex flex-col gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/10">
+              <div>
+                <h3 class="text-base font-extrabold text-white flex items-center gap-2">
+                  <i class="fa-solid fa-key text-amber-300"></i> 1. Tạo Mã Bản Quyền Mới Giao Cho Khách (Tự Khóa Cứng 1 Máy Đầu Tiên)
+                </h3>
+                <p class="text-xs text-slate-300 mt-0.5">Mỗi Key sinh ra chỉ kích hoạt được trên duy nhất 01 máy tính (`HWID`). Khách chép sang máy thứ 2 sẽ bị chặn tự động.</p>
+              </div>
+              <button type="button" id="btnRefreshAdminList" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-cyan-300 cursor-pointer">
+                <i class="fa-solid fa-arrows-rotate mr-1"></i> Làm mới dữ liệu
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              <div class="md:col-span-4">
+                <label class="text-[11px] font-bold text-slate-300 block mb-1">Tên khách hàng / Kênh YouTube</label>
+                <input type="text" id="admCustomerName" placeholder="VD: Anh Minh - Kênh Review Phim" class="w-full bg-[#050811] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-400">
+              </div>
+              <div class="md:col-span-3">
+                <label class="text-[11px] font-bold text-slate-300 block mb-1">SĐT / Zalo / Email khách</label>
+                <input type="text" id="admCustomerContact" placeholder="VD: Zalo 0988.xxx.xxx" class="w-full bg-[#050811] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-400">
+              </div>
+              <div class="md:col-span-3">
+                <label class="text-[11px] font-bold text-slate-300 block mb-1">Chọn gói cước cấp cho khách</label>
+                <select id="admPlanSelect" class="w-full bg-[#050811] border border-emerald-400/40 rounded-xl px-3 py-2.5 text-xs text-emerald-200 font-bold focus:outline-none cursor-pointer">
+                  <option value="basic">Gói Thường — 1.000.000 ký tự (25.000đ)</option>
+                  <option value="standard" selected>Gói Phổ Thông — 10.000.000 ký tự (75.000đ)</option>
+                  <option value="vip">Gói VIP — 100.000.000 ký tự (150.000đ)</option>
+                  <option value="unlimited">Gói Không Giới Hạn — ♾️ (299.000đ)</option>
+                  <option value="free">Gói Dùng Thử — 100.000 ký tự (0đ)</option>
+                </select>
+              </div>
+              <div class="md:col-span-2">
+                <label class="text-[11px] font-bold text-slate-300 block mb-1">Thời hạn</label>
+                <select id="admDurationDays" class="w-full bg-[#050811] border border-white/15 rounded-xl px-3 py-2.5 text-xs text-amber-200 font-bold focus:outline-none cursor-pointer">
+                  <option value="7">7 ngày</option>
+                  <option value="30" selected>30 ngày (1 tháng)</option>
+                  <option value="90">90 ngày (3 tháng)</option>
+                  <option value="365">365 ngày (1 năm)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <div class="flex items-center gap-2 text-xs text-slate-300">
+                <input type="checkbox" id="admToggleFreeHwidTrial" checked class="accent-emerald-500 w-4 h-4 cursor-pointer">
+                <label for="admToggleFreeHwidTrial" class="cursor-pointer">Cho phép máy chưa có Key được dùng thử <b>100.000 ký tự / 1 máy HWID duy nhất</b> (Bỏ tích = Bắt buộc có Key mới chạy được!)</label>
+              </div>
+              <button type="button" id="btnAdmCreateKey" class="btn-aurora-primary px-6 py-2.5 rounded-xl text-white font-extrabold text-xs flex items-center gap-2 cursor-pointer">
+                <i class="fa-solid fa-bolt"></i> Tạo Mã License Key Ngay
+              </button>
+            </div>
+
+            <!-- Newly Created Key Copy Box -->
+            <div id="admCreatedKeyBox" class="hidden p-4 rounded-2xl bg-emerald-950/40 border border-emerald-400/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div class="text-xs text-emerald-300 font-bold">🎉 Đã tạo Mã Bản Quyền mới thành công:</div>
+                <div id="admNewKeyDisplay" class="text-lg font-black font-mono text-amber-300 tracking-wider mt-0.5">VVSTD-XXXX-XXXX-XXXX</div>
+                <div id="admNewKeySub" class="text-[11px] text-slate-300">Gói Phổ Thông • 30 ngày • Khóa 1 máy HWID</div>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" id="btnCopyNewKeyMessage" class="px-4 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-extrabold text-xs cursor-pointer flex items-center gap-1.5">
+                  <i class="fa-regular fa-copy"></i> Copy Tin Nhắn Giao Khách
+                </button>
+                <button type="button" id="btnApplyNewKeyLocally" class="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs cursor-pointer">
+                  Kích hoạt thử ngay trên máy này
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 2: Remote Control License Table -->
+          <div class="glass-panel rounded-3xl p-6 border border-purple-400/35 flex flex-col gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/10">
+              <div>
+                <h3 class="text-base font-extrabold text-white flex items-center gap-2">
+                  <i class="fa-solid fa-satellite-dish text-purple-400"></i> 2. Bảng Điều Khiển Máy Khách Từ Xa (Khóa Key • Gỡ Máy HWID • Gia Hạn • Test Chống 2 Máy)
+                </h3>
+                <p class="text-xs text-slate-300 mt-0.5">Mọi thao tác Khóa Key, Gỡ mã máy hoặc Cộng ký tự có hiệu lực tức thì 100% lên máy của khách hàng!</p>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="border-b border-white/10 text-slate-400 uppercase text-[10px]">
+                    <th class="py-2.5 pr-3">Mã License Key / Khách</th>
+                    <th class="py-2.5 px-3">Gói & Hạn Dùng</th>
+                    <th class="py-2.5 px-3">Ký Tự Đã Dùng / Tổng</th>
+                    <th class="py-2.5 px-3">Máy Đã Khóa Cứng (HWID)</th>
+                    <th class="py-2.5 px-3">Trạng Thái</th>
+                    <th class="py-2.5 pl-3 text-right">Điều Khiển Từ Xa</th>
+                  </tr>
+                </thead>
+                <tbody id="admLicensesTableBody" class="divide-y divide-white/5 text-slate-200">
+                  <tr><td colspan="6" class="py-6 text-center text-slate-400">Đang tải danh sách mã bản quyền...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Section 3: One-Click Clean & Obfuscated Customer Package Exporter -->
+          <div class="glass-panel rounded-3xl p-6 border border-cyan-400/40 flex flex-col gap-4">
+            <div class="pb-3 border-b border-white/10">
+              <h3 class="text-base font-extrabold text-white flex items-center gap-2">
+                <i class="fa-solid fa-box-archive text-cyan-400"></i> 3. Đóng Gói Bộ Cài Đặt Sạch & Mã Hóa Giao Cho Khách Cài Máy (Windows & macOS)
+              </h3>
+              <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+                Tự động xuất ra thư mục bộ cài đặt riêng cho khách (<code>dist_customer_package/VoiceViet_Client_Pro</code>):
+                <b>Loại bỏ 100% Giọng Nhân Bản Độc Quyền của bạn</b>, loại bỏ kho dữ liệu Admin, <b>mã hóa rối toàn bộ JS giao diện</b> chống chỉnh sửa, và buộc máy khách phải kết nối về địa chỉ Máy Chủ Quản Lý Key của bạn mới tạo được giọng!
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              <div class="md:col-span-8">
+                <label class="text-[11px] font-bold text-slate-300 block mb-1">Địa chỉ Máy Chủ Quản Lý Key của bạn (Khi chạy thật điền IP VPS / Tên miền của bạn)</label>
+                <input
+                  type="text"
+                  id="admServerUrlInput"
+                  value="http://127.0.0.1:3000"
+                  placeholder="Ví dụ: https://key.tenmiencuaban.com hoặc http://103.xxx.xxx.xxx:3000"
+                  class="w-full bg-[#050811] border border-cyan-400/40 rounded-xl px-4 py-2.5 text-xs text-cyan-200 font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                />
+              </div>
+              <div class="md:col-span-4">
+                <button type="button" id="btnAdmExportCustomerPkg" class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 hover:from-cyan-300 text-slate-950 font-extrabold text-xs shadow-lg cursor-pointer flex items-center justify-center gap-2">
+                  <i class="fa-solid fa-boxes-packing"></i> Xuất Gói Cài Đặt Giao Khách
+                </button>
+              </div>
+            </div>
+
+            <div id="admExportResultBox" class="hidden p-4 rounded-2xl bg-[#050811]/95 border border-emerald-400/40 text-xs text-slate-200 flex flex-col gap-1.5"></div>
+          </div>
+        </div>
+      </div>
+
     </main>
 
     <!-- COLUMN 3: RIGHT MASTERING & VOICE RACK (Visible from lg: 1024px+) -->
@@ -1832,6 +2054,66 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
     </div>
   </div>
 
+  <!-- ================= CUSTOMER LICENSE KEY & HWID ACTIVATION MODAL ================= -->
+  <div id="licenseKeyModal" class="fixed inset-0 z-50 modal-backdrop hidden flex items-center justify-center p-4">
+    <div class="glass-panel border border-emerald-400/50 rounded-3xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 relative">
+      <button type="button" id="btnCloseLicenseModal" class="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white text-sm flex items-center justify-center cursor-pointer transition">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-cyan-500 text-slate-950 flex items-center justify-center text-xl shadow-lg shrink-0">
+          <i class="fa-solid fa-key"></i>
+        </div>
+        <div>
+          <h3 class="text-base font-extrabold font-display text-white">Kích Hoạt Bản Quyền & Định Danh Phần Cứng</h3>
+          <p class="text-xs text-slate-300">Mỗi Mã Key gắn bảo mật với duy nhất 01 máy tính (`HWID`) và đồng bộ hạn mức trực tiếp từ Server.</p>
+        </div>
+      </div>
+
+      <!-- Physical Machine Fingerprint Box -->
+      <div class="p-3.5 rounded-2xl bg-[#050811]/95 border border-white/10 text-xs flex flex-col gap-1.5">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-slate-400">Mã phần cứng máy này (HWID):</span>
+          <b id="clientLocalHwidText" class="font-mono text-cyan-300">HWID-...</b>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-slate-400">Thiết bị nhận diện:</span>
+          <span id="clientLocalMachineText" class="text-slate-200 font-medium truncate">Đang kiểm tra...</span>
+        </div>
+        <div class="flex items-center justify-between gap-2 pt-1.5 border-t border-white/10">
+          <span class="text-slate-400">Gói hiện tại trên Server:</span>
+          <b id="clientCurrentPlanBadge" class="text-emerald-300">Đang kiểm tra...</b>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-slate-400">Số ký tự còn lại (Server):</span>
+          <b id="clientServerRemainingText" class="font-mono text-amber-300">--</b>
+        </div>
+      </div>
+
+      <!-- Enter License Key Input -->
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-bold text-slate-200">Nhập Mã Bản Quyền (License Key) do Quản trị viên cấp:</label>
+        <input
+          type="text"
+          id="clientLicenseKeyInput"
+          placeholder="Ví dụ: VVPRO-VIP8-8888-DEMO"
+          class="w-full bg-[#050811] border border-emerald-400/45 rounded-2xl px-4 py-3 text-sm text-center text-amber-300 placeholder-slate-500 font-mono uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-emerald-400"
+        />
+        <p id="clientLicenseModalMsg" class="hidden text-xs text-center font-semibold"></p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2.5">
+        <button type="button" id="btnClearClientKey" class="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-bold cursor-pointer">
+          Dùng Chế Độ Mặc Định
+        </button>
+        <button type="button" id="btnActivateClientKey" class="btn-aurora-primary flex-1 py-2.5 px-4 rounded-xl text-white text-xs font-extrabold cursor-pointer">
+          <i class="fa-solid fa-circle-check mr-1"></i> Kích Hoạt & Khóa Vào Máy Này
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ================= TOAST NOTIFICATION ================= -->
   <div id="toast" class="fixed bottom-6 right-6 transform translate-y-20 opacity-0 transition-all duration-300 bg-[#0b1122]/95 backdrop-blur-xl text-slate-100 border border-purple-400/45 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 z-50 pointer-events-none">
     <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
@@ -1841,10 +2123,12 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
   <!-- Mammoth.js for Word (.docx) document parsing -->
   <script src="/mammoth.browser.min.js"></script>
   <!-- Quota Manager, Generation Timer & 8-Language Global i18n -->
-  <script src="quota_and_i18n.js?v=6.2"></script>
+  <script src="quota_and_i18n.js?v=7.0"></script>
   <!-- Main Studio Engine Logic -->
-  <script src="app.js?v=6.2"></script>
+  <script src="app.js?v=7.0"></script>
   <!-- Pro Studio Extensions (Private Vault, 110 Countries, Multi-Speaker Stem Studio, VietQR) -->
-  <script src="studio_pro.js?v=6.2"></script>
+  <script src="studio_pro.js?v=7.0"></script>
+  <!-- Option 2 License Key, HWID Lock, Server Quota Sync & Owner Admin Console -->
+  <script src="license_client_ui.js?v=7.0"></script>
 </body>
 </html>
