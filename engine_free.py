@@ -361,8 +361,21 @@ def apply_rate_ffmpeg(wav_bytes: bytes, rate: float) -> bytes:
             return f.read()
 
 
+def polish_bilingual_for_vieneu(text: str) -> str:
+    """Ensure English media extensions & shortcuts map to smooth English IPA in VieNeu v3 Turbo."""
+    t = text
+    # File formats that sea_g2p would otherwise read letter-by-letter in Vietnamese ("mờ phê ba", "vê kép a vê")
+    t = re.sub(r"(?:(?<=[\s(\"'«“])|^)\.?mp3\b", "em pee three", t, flags=re.IGNORECASE)
+    t = re.sub(r"(?:(?<=[\s(\"'«“])|^)\.?mp4\b", "em pee four", t, flags=re.IGNORECASE)
+    t = re.sub(r"(?:(?<=[\s(\"'«“])|^)\.?wav\b", "wave", t, flags=re.IGNORECASE)
+    t = re.sub(r"(?:(?<=[\s(\"'«“])|^)\.docx\b", "file Word", t, flags=re.IGNORECASE)
+    t = re.sub(r"\bctrl\s*\+\s*enter\b", "Ctrl Enter", t, flags=re.IGNORECASE)
+    return t
+
+
 def synthesize_vieneu_48k(text: str, voice_or_preset, rate: float = 1.0, pause_sec: float = 0.40) -> bytes:
     tts = get_vieneu()
+    text = polish_bilingual_for_vieneu(text)
     blocks = split_dramatic_blocks(text, base_pause=pause_sec)
     if not blocks:
         return encode_float32_to_wav_bytes(np.zeros(int(0.2 * TARGET_SR), dtype=np.float32), TARGET_SR)

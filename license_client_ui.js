@@ -93,7 +93,9 @@
       const data = await res.json().catch(() => ({ ok: false, error: 'Lỗi đọc dữ liệu bản quyền' }));
 
       // Hide Owner Admin tab if running on an exported Customer Client Build or ?customer_demo=1!
-      const isCustDemoUrl = new URLSearchParams(window.location.search).get('customer_demo') === '1';
+      const urlParams = new URLSearchParams(window.location.search);
+      const isCustDemoUrl = urlParams.get('customer_demo') === '1';
+      const isRecTutUrl = urlParams.get('recording_tut') === '1';
       if (data.isCustomerClient || isCustDemoUrl) {
         const admNav = document.getElementById('navTabAdminLicenses');
         const admMob = document.getElementById('mobileTabAdminLicenses');
@@ -102,6 +104,10 @@
         if (isCustDemoUrl) {
           document.querySelectorAll('option[value^="private"]').forEach(o => o.remove());
         }
+      }
+      if (isRecTutUrl) {
+        const vidShow = document.getElementById('guideVideoShowcase');
+        if (vidShow) vidShow.classList.add('hidden');
       }
 
       const hwidEl = document.getElementById('clientLocalHwidText');
@@ -821,8 +827,9 @@
           globalBtn.onclick = null;
         }
         if (waitStatusEl) {
-          waitStatusEl.innerHTML = ord.bankConfigured
-            ? `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>Quét QR với đúng nội dung <b>${escHtml(ord.orderCode)}</b> — Máy này sẽ tự nhận Key ngay khi tiền về!</span>`
+          const isDemoClean = new URLSearchParams(window.location.search).get('customer_demo') === '1';
+          waitStatusEl.innerHTML = (ord.bankConfigured || isDemoClean)
+            ? `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>Quét QR với đúng nội dung <b>${escHtml(ord.orderCode)}</b> — Máy này sẽ tự nhận Key ngay khi thanh toán!</span>`
             : `<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span><span class="text-amber-200">Mã đơn <b>${escHtml(ord.orderCode)}</b> đã tạo! (Chủ web nhớ điền Số Tài Khoản thật trong mục Quản Lý Key & Khách)</span>`;
         }
         refreshAdminOverviewIfUnlocked();

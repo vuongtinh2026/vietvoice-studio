@@ -275,10 +275,23 @@ async function synthesizeFree(text, voice, rate = 1.0, pause = 0.40, ownerToken 
 let lastRequestTime = 0;
 const MIN_GAP_BETWEEN_REQUESTS_MS = 20000; // 20s gap between multi-chunk requests
 
+const LEGACY_MONOLINGUAL_VI_VOICES = new Set([
+  'free-vi-ngoc-ngan',
+  'free-vi-tai-an',
+  'free-vi-manh-dung',
+  'free-vi-ban-mai',
+  'free-vi-duy-oryx',
+  'free-vi-minh-khang',
+  'free-vi-google'
+]);
+
 /**
- * Chuẩn hóa văn bản theo ngôn ngữ của giọng đọc:
- * - Với giọng Tiếng Việt (vi-*, free-vi-*, private-*): phiên âm từ mượn (AI -> Ây Ai, video -> vi-đê-ô...) & sửa từ IN HOA.
- * - Với giọng Quốc tế (free-intl-* hoặc ngôn ngữ khác): giữ nguyên 100% chữ bản ngữ (Anh, Trung, Nhật, Hàn, Nga, Ả Rập...), chỉ làm sạch ký tự ẩn!
+ * Chuẩn hóa văn bản theo ngôn ngữ & năng lực phát âm song ngữ của từng Engine:
+ * - Giọng Quốc tế (free-intl-*): giữ nguyên 100% chữ bản ngữ.
+ * - Giọng Việt Studio 48kHz (VieNeu v3 Turbo), Nhân bản độc quyền (private-*) & Edge Neural:
+ *   CÓ SẴN bộ từ điển phát âm tiếng Anh chuẩn bản xứ (IPA) -> GIỮ NGUYÊN các từ tiếng Anh (Studio, YouTube, TikTok, AI, VIP, CapCut...)
+ *   để đọc nối âm tự nhiên, tuyệt đối KHÔNG băm thành "X-tu-đi-ô" hay đánh vần từng chữ!
+ * - Chỉ các giọng Piper Offline cổ điển mới dùng bảng phiên âm tiếng Việt.
  */
 function normalizeTextForVoice(text, voice = '') {
   if (!text) return '';
@@ -293,38 +306,46 @@ function normalizeTextForVoice(text, voice = '') {
       .replace(/[ \t]+/g, ' ')
       .trim();
   }
-  return normalizeVietnameseText(text);
+  const useLegacyPhonetics = LEGACY_MONOLINGUAL_VI_VOICES.has(voice) || voice.startsWith('vi-');
+  return normalizeVietnameseText(text, useLegacyPhonetics);
 }
 
-function normalizeVietnameseText(text) {
+function normalizeVietnameseText(text, useLegacyPhonetics = false) {
   if (!text) return '';
   let clean = text
     .normalize('NFC')
     .replace(/[\u00a0\u200b\u200e\u200f\ufeff]/g, ' ')
     .replace(/\r\n/g, '\n');
 
-  // 1. Phiên âm các từ viết tắt / từ mượn tiếng Anh phổ biến để AI đọc tự nhiên:
-  clean = clean
-    .replace(/\bAI\b/g, 'Ây Ai')
-    .replace(/\bVoiceViet\b/gi, 'Voi-Việt')
-    .replace(/\bStudio\b/gi, 'X-tu-đi-ô')
-    .replace(/\baudio\b/gi, 'ao-đi-ô')
-    .replace(/\bvideo\b/gi, 'vi-đê-ô')
-    .replace(/\byoutube\b/gi, 'Du-túp')
-    .replace(/\btiktok\b/gi, 'Tóp-tóp')
-    .replace(/\bwebsite\b/gi, 'uép-sai')
-    .replace(/\bpodcast\b/gi, 'pót-cát');
+  if (useLegacyPhonetics) {
+    // Chỉ phiên âm sang âm tiết Việt cho các model đơn ngữ cũ (Piper / Cheap-TTS cổ điển)
+    clean = clean
+      .replace(/\bAI\b/g, 'Ây Ai')
+      .replace(/\bVoiceViet\b/gi, 'Voi Việt')
+      .replace(/\bStudio\b/gi, 'Xờ tiu đi ô')
+      .replace(/\baudio\b/gi, 'ao đi ô')
+      .replace(/\bvideo\b/gi, 'vi đê ô')
+      .replace(/\byoutube\b/gi, 'Du túp')
+      .replace(/\btiktok\b/gi, 'Tíc tóc')
+      .replace(/\bwebsite\b/gi, 'uép sai')
+      .replace(/\bpodcast\b/gi, 'pót cát');
+  }
 
-  // 2. Chuyển từ IN HOA toàn bộ (ví dụ: TIÊU VIÊM, QUYẾT ĐỊNH, CHƯƠNG) thành Tiêu Viêm, Quyết Định, Chương
-  // để AI không đánh vần từng chữ một (T - I - Ê - U)
+  // Chuyển từ IN HOA tiếng Việt (có dấu tiếng Việt hoặc từ tiêu đề CHƯƠNG/PHẦN/QUYỂN/HỒI/TẬP) thành chữ thường viết hoa đầu từ
+  // để tránh đánh vần T-I-Ê-U, NHƯNG giữ nguyên 100% từ viết tắt tiếng Anh (AI, VIP, MP3, WAV, PRO, USB, CEO, QR, USD...)!
   clean = clean.replace(/(?:(?<=[\s,.:;!?"'\(\)\[\]«»“”‘’—\-\n…\/~]|^))(\p{Lu}{2,})(?=(?:[\s,.:;!?"'\(\)\[\]«»“”‘’—\-\n…\/~]|$))/gu, (match) => {
-    return match.charAt(0) + match.slice(1).toLowerCase();
+    const hasViDiacritic = /[ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠƯẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲỴỶỸ]/u.test(match);
+    const isViHeading = /^(CHUONG|PHAN|QUYEN|HOI|TAP|MUC|TRUYEN)$/u.test(match);
+    if (useLegacyPhonetics || hasViDiacritic || isViHeading) {
+      return match.charAt(0) + match.slice(1).toLowerCase();
+    }
+    return match;
   });
 
-  // 3. Tách biệt tiêu đề chương để AI ngắt nghỉ đúng chỗ
+  // Tách biệt tiêu đề chương để AI ngắt nghỉ đúng chỗ
   clean = clean.replace(/(Chương\s+\d+[^:\n]*):(?!\s)/gi, '$1: ');
 
-  // 4. Chuẩn hóa khoảng trắng thừa
+  // Chuẩn hóa khoảng trắng thừa
   clean = clean.replace(/[ \t]+/g, ' ');
 
   return clean.trim();
