@@ -646,6 +646,111 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =========================================================================
+  // 0-A2. PAYMENT ORDER REGISTRATION & SEPAY AUTO-WEBHOOK ENDPOINTS
+  // =========================================================================
+  if (pathname === '/api/payment/create-order' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req);
+      const clientCfg = licenseMgr.getClientConfig();
+      const localHw = licenseMgr.getLocalMachineHardwareInfo();
+
+      if (clientCfg.isCustomerClient) {
+        const r = await fetch(`${clientCfg.licenseServerUrl}/api/payment/create-order`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...payload,
+            clientHwid: localHw.hwid,
+            clientMachineLabel: localHw.machineLabel
+          })
+        });
+        const data = await r.json().catch(() => ({ success: false, error: 'Lỗi tạo đơn trên Máy chủ' }));
+        res.writeHead(r.status || 200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(data));
+        return;
+      }
+
+      const order = licenseMgr.createOrder({
+        planId: payload.planId || '',
+        amountVnd: Number(payload.amountVnd) || 25000,
+        customerName: payload.customerName || '',
+        customerContact: payload.customerContact || '',
+        clientHwid: payload.clientHwid || localHw.hwid,
+        clientMachineLabel: payload.clientMachineLabel || localHw.machineLabel
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true, order }));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  if (pathname === '/api/payment/mark-transferred' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req);
+      const clientCfg = licenseMgr.getClientConfig();
+      if (clientCfg.isCustomerClient) {
+        const r = await fetch(`${clientCfg.licenseServerUrl}/api/payment/mark-transferred`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await r.json().catch(() => ({ success: false }));
+        res.writeHead(r.status || 200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(data));
+        return;
+      }
+
+      const ord = licenseMgr.markOrderTransferred(payload);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true, order: ord }));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  if (pathname === '/api/payment/order-status' && req.method === 'GET') {
+    try {
+      const code = parsedUrl.searchParams.get('code') || '';
+      const clientCfg = licenseMgr.getClientConfig();
+      if (clientCfg.isCustomerClient) {
+        const r = await fetch(`${clientCfg.licenseServerUrl}/api/payment/order-status?code=${encodeURIComponent(code)}`);
+        const data = await r.json().catch(() => ({ ok: false }));
+        res.writeHead(r.status || 200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(data));
+        return;
+      }
+
+      const status = licenseMgr.getOrderStatus(code);
+      res.writeHead(status.ok ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(status));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
+  // Official SePay Bank Auto-Webhook Receiver (24/7 Hands-Free Key Issuance!)
+  if (pathname === '/api/payment/sepay-webhook' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req);
+      const authHdr = req.headers.authorization || '';
+      const result = licenseMgr.handleSepayWebhook(payload, authHdr);
+      res.writeHead(result.ok ? 200 : (result.status || 400), { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
+  // =========================================================================
   // 0-B. OWNER-ONLY LICENSE ADMIN DASHBOARD API (REQUIRES OWNER PIN TOKEN!)
   // =========================================================================
   if (pathname.startsWith('/api/admin/licenses/')) {
@@ -695,6 +800,27 @@ const server = http.createServer(async (req, res) => {
         const settings = licenseMgr.adminUpdateSettings(body);
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ success: true, settings }));
+        return;
+      }
+      if (sub === 'payment-config' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const paymentConfig = licenseMgr.adminUpdatePaymentConfig(body);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, paymentConfig }));
+        return;
+      }
+      if (sub === 'approve-order' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const approved = licenseMgr.approveOrderAndIssueKey(body.orderCode, 'admin_manual');
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, ...approved }));
+        return;
+      }
+      if (sub === 'delete-order' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const deleted = licenseMgr.cancelOrDeleteOrder(body.orderCode);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, ...deleted }));
         return;
       }
       if (sub === 'export-package' && req.method === 'POST') {

@@ -132,14 +132,15 @@
   const vietqrMemo = document.getElementById('vietqrMemo');
 
   function openVietqrModal(planName, amount) {
+    if (typeof window.openRealOrderCheckoutModal === 'function') {
+      window.openRealOrderCheckoutModal(planName, amount);
+      return;
+    }
     if (!vietqrModal) return;
-    const memo = `VOICEVIET ${Math.floor(1000 + Math.random() * 9000)}`;
+    const memo = `VVDON${Math.floor(100000 + Math.random() * 900000)}`;
     if (vietqrPlanName) vietqrPlanName.textContent = planName;
     if (vietqrAmount) vietqrAmount.textContent = `${parseInt(amount).toLocaleString('vi-VN')} VNĐ`;
     if (vietqrMemo) vietqrMemo.textContent = memo;
-    if (vietqrImage) {
-      vietqrImage.src = `https://img.vietqr.io/image/MB-0359888888-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(memo)}&accountName=VOICEVIET%20PRO`;
-    }
     vietqrModal.classList.remove('hidden');
   }
 

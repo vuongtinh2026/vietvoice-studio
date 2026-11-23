@@ -230,7 +230,7 @@
         <button id="navTabAdminLicenses" class="nav-tab mt-1" data-view="viewAdminLicenses">
           <span class="nav-icon-box"><i class="fa-solid fa-user-shield text-xs text-amber-300"></i></span>
           <span class="whitespace-nowrap text-amber-200">Quản Lý Key & Khách</span>
-          <span class="text-[9px] bg-amber-500/25 text-amber-200 border border-amber-400/45 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">Admin</span>
+          <span id="sidebarAdminBadge" class="text-[9px] bg-amber-500/25 text-amber-200 border border-amber-400/45 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">Admin</span>
         </button>
       </div>
 
@@ -1596,6 +1596,108 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
             </div>
           </div>
 
+          <!-- Section 0A: OWNER REAL BANK ACCOUNT, PAYPAL & TELEGRAM / SEPAY CONFIG -->
+          <div class="glass-panel rounded-3xl p-6 border border-amber-400/45 flex flex-col gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/10">
+              <div>
+                <h3 class="text-base font-extrabold text-white flex items-center gap-2">
+                  <i class="fa-solid fa-building-columns text-amber-400"></i> Cài Đặt Ngân Hàng Nhận Tiền Thật Của Bạn & Tự Động Báo Đơn
+                </h3>
+                <p class="text-xs text-slate-300 mt-0.5">
+                  Điền đúng Số Tài Khoản của bạn bên dưới — Khi khách bấm mua gói, mã <b>VietQR</b> trên máy khách sẽ chuyển tiền <b>thẳng 100% vào tài khoản ngân hàng của bạn</b>!
+                </p>
+              </div>
+              <span id="admBankConfigStatusBadge" class="text-[11px] px-3 py-1 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/40 font-bold">
+                ⚠️ Hãy điền Số Tài Khoản thật của bạn
+              </span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+              <div class="md:col-span-3">
+                <label class="text-[11px] font-bold text-slate-300 block mb-1">Ngân hàng nhận tiền (VN)</label>
+                <select id="admBankSelect" class="w-full bg-[#050811] border border-amber-400/40 rounded-xl px-3 py-2.5 text-xs text-amber-200 font-bold focus:outline-none cursor-pointer">
+                  <option value="MB">MBBank (Quân Đội)</option>
+                  <option value="VCB">Vietcombank</option>
+                  <option value="TCB">Techcombank</option>
+                  <option value="ICB">VietinBank</option>
+                  <option value="BIDV">BIDV</option>
+                  <option value="ACB">ACB (Á Châu)</option>
+                  <option value="VPB">VPBank</option>
+                  <option value="TPB">TPBank</option>
+                  <option value="STB">Sacombank</option>
+                  <option value="VBA">Agribank</option>
+                  <option value="OCB">OCB</option>
+                </select>
+              </div>
+              <div class="md:col-span-4">
+                <label class="text-[11px] font-bold text-slate-300 block mb-1">Số tài khoản ngân hàng của bạn</label>
+                <input type="text" id="admAccountNoInput" placeholder="Nhập số tài khoản thật của bạn..." class="w-full bg-[#050811] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-amber-400">
+              </div>
+              <div class="md:col-span-5">
+                <label class="text-[11px] font-bold text-slate-300 block mb-1">Tên chủ tài khoản (VIẾT HOA KHÔNG DẤU)</label>
+                <input type="text" id="admAccountNameInput" placeholder="VD: NGUYEN VAN A" class="w-full bg-[#050811] border border-white/15 rounded-xl px-3.5 py-2.5 text-xs text-white uppercase font-semibold focus:outline-none focus:ring-1 focus:ring-amber-400">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="text-[11px] font-bold text-slate-400 block mb-1">Link thu USD Quốc tế (PayPal.me / LemonSqueezy)</label>
+                <input type="text" id="admGlobalCheckoutInput" placeholder="VD: https://paypal.me/tenban" class="w-full bg-[#050811] border border-white/10 rounded-xl px-3 py-2 text-xs text-cyan-200 font-mono focus:outline-none">
+              </div>
+              <div>
+                <label class="text-[11px] font-bold text-slate-400 block mb-1">Telegram Bot Token (Báo đơn về ĐT - Tùy chọn)</label>
+                <input type="password" id="admTelegramBotInput" placeholder="123456:ABC-DEF... (Bỏ trống nếu chưa dùng)" class="w-full bg-[#050811] border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none">
+              </div>
+              <div>
+                <label class="text-[11px] font-bold text-slate-400 block mb-1">Telegram Chat ID / SePay Secret (Tùy chọn)</label>
+                <div class="flex gap-2">
+                  <input type="text" id="admTelegramChatIdInput" placeholder="Chat ID Telegram" class="w-1/2 bg-[#050811] border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none">
+                  <input type="password" id="admSepaySecretInput" placeholder="SePay API Secret" class="w-1/2 bg-[#050811] border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none">
+                </div>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <p class="text-[11px] text-slate-400">
+                💡 Link nhận tiền tự động 24/7 khi gắn SePay.vn: <code class="text-emerald-300 bg-white/5 px-2 py-0.5 rounded">/api/payment/sepay-webhook</code> (Tự đối chiếu đúng số tiền + mã <code>VVDON...</code> là tự nhả Key ngay!)
+              </p>
+              <button type="button" id="btnSavePaymentConfig" class="btn-gold-imperial px-5 py-2.5 rounded-xl text-slate-950 font-black text-xs cursor-pointer flex items-center gap-1.5">
+                <i class="fa-solid fa-floppy-disk"></i> Lưu Tài Khoản Nhận Tiền
+              </button>
+            </div>
+          </div>
+
+          <!-- Section 0B: LIVE INCOMING CUSTOMER ORDERS TABLE -->
+          <div class="glass-panel rounded-3xl p-6 border border-rose-400/40 flex flex-col gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/10">
+              <div class="flex items-center gap-2.5">
+                <h3 class="text-base font-extrabold text-white flex items-center gap-2">
+                  <i class="fa-solid fa-bell-concierge text-amber-300"></i> Danh Sách Khách Đăng Ký Mua Gói (Đơn Hàng Thời Gian Thực)
+                </h3>
+                <span id="admPendingOrdersBadge" class="text-[11px] px-2.5 py-0.5 rounded-full bg-rose-500/25 text-rose-200 border border-rose-400/40 font-extrabold">0 đơn chờ</span>
+              </div>
+              <span class="text-[11px] text-slate-400">Khi điện thoại bạn báo tiền về ngân hàng → Bấm <b>✅ Duyệt & Cấp Key</b> là màn hình khách tự nhận được Key ngay!</span>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="border-b border-white/10 text-slate-400 uppercase text-[10px]">
+                    <th class="py-2 pr-3">Mã Đơn / Lúc Đặt</th>
+                    <th class="py-2 px-3">Khách Hàng & Liên Hệ</th>
+                    <th class="py-2 px-3">Gói Đăng Ký & Số Tiền</th>
+                    <th class="py-2 px-3">Mã Máy Khách (HWID)</th>
+                    <th class="py-2 px-3">Trạng Thái Thanh Toán</th>
+                    <th class="py-2 pl-3 text-right">Xác Nhận Nhận Tiền</th>
+                  </tr>
+                </thead>
+                <tbody id="admOrdersTableBody" class="divide-y divide-white/5 text-slate-200">
+                  <tr><td colspan="6" class="py-5 text-center text-slate-400">Chưa có đơn đặt mua mới nào.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- Section 1: Create New License Key in 1 Click -->
           <div class="glass-panel rounded-3xl p-6 border border-emerald-400/35 flex flex-col gap-4">
             <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/10">
@@ -1947,25 +2049,49 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
       </div>
 
       <!-- Panel 1: Vietnam VietQR -->
-      <div id="payPanelVietQr" class="flex flex-col gap-3.5">
-        <div class="text-center flex flex-col items-center gap-1">
-          <h3 class="text-base font-extrabold font-display text-white">Thanh Toán Tự Động Qua VietQR</h3>
-          <p class="text-xs text-slate-300">Mở ứng dụng Ngân hàng hoặc MoMo bất kỳ để quét mã</p>
+      <div id="payPanelVietQr" class="flex flex-col gap-3">
+        <div class="text-center flex flex-col items-center gap-0.5">
+          <h3 class="text-base font-extrabold font-display text-white">Đăng Ký Gói & Quét Mã VietQR</h3>
+          <p class="text-[11px] text-slate-300">Nhập tên/Zalo để lưu đơn và quét mã nhận Key tự động ngay trên máy này</p>
         </div>
 
-        <div class="bg-white p-3.5 rounded-2xl flex flex-col items-center justify-center shadow-2xl mx-auto ring-4 ring-purple-500/20">
-          <img id="vietqrImage" src="https://img.vietqr.io/image/MB-0359888888-compact2.png?amount=25000&addInfo=VOICEVIET%20VIP&accountName=VOICEVIET" alt="Mã VietQR" class="w-52 h-52 object-contain rounded-lg">
+        <!-- Customer Identification Inputs so Owner knows WHO bought WHICH plan -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <input
+            type="text"
+            id="checkoutCustName"
+            placeholder="Tên của bạn (VD: Anh Tuấn)"
+            class="w-full bg-[#050811] border border-white/15 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-400"
+          />
+          <input
+            type="text"
+            id="checkoutCustContact"
+            placeholder="SĐT Zalo / Email nhận Key..."
+            class="w-full bg-[#050811] border border-white/15 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-purple-400"
+          />
         </div>
 
-        <div class="p-3.5 rounded-2xl bg-[#050811]/95 border border-white/10 text-xs flex flex-col gap-1.5">
+        <div class="bg-white p-3 rounded-2xl flex flex-col items-center justify-center shadow-2xl mx-auto ring-4 ring-purple-500/20">
+          <img id="vietqrImage" src="https://img.vietqr.io/image/MB-0000000000-compact2.png?amount=25000&addInfo=VVDON000000&accountName=VOICEVIET" alt="Mã VietQR" class="w-48 h-48 object-contain rounded-lg">
+        </div>
+
+        <div class="p-3 rounded-2xl bg-[#050811]/95 border border-white/10 text-xs flex flex-col gap-1.5">
           <div class="flex justify-between items-center"><span class="text-slate-400">Gói đăng ký:</span> <b id="vietqrPlanName" class="text-purple-200 text-right">VIP Tháng</b></div>
-          <div class="flex justify-between items-center"><span class="text-slate-400">Số tiền thanh toán:</span> <b id="vietqrAmount" class="text-amber-300 font-mono text-sm">25.000 VNĐ</b></div>
-          <div class="flex justify-between items-center"><span class="text-slate-400">Nội dung chuyển khoản:</span> <b id="vietqrMemo" class="text-emerald-300 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25">VOICEVIET 8888</b></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Số tiền chuyển:</span> <b id="vietqrAmount" class="text-amber-300 font-mono text-sm">25.000 VNĐ</b></div>
+          <div class="flex justify-between items-center"><span class="text-slate-400">Nội dung CK bắt buộc:</span> <b id="vietqrMemo" class="text-emerald-300 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25">VVDON888888</b></div>
         </div>
 
-        <div class="text-center text-[11px] text-slate-300 flex items-center justify-center gap-2">
+        <button
+          type="button"
+          id="btnCustomerMarkTransferred"
+          class="btn-aurora-primary w-full py-3 rounded-2xl text-white font-extrabold text-xs cursor-pointer flex items-center justify-center gap-2"
+        >
+          <i class="fa-solid fa-paper-plane"></i> Tôi Đã Chuyển Khoản — Nhận Key Tự Động
+        </button>
+
+        <div id="checkoutOrderWaitStatus" class="text-center text-[11px] text-slate-300 flex items-center justify-center gap-2">
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span>Cổng SePay tự động cộng ký tự trong <b>3 giây</b> ngay khi nhận giao dịch!</span>
+          <span>Hệ thống tự động đối chiếu giao dịch & kích hoạt Key thẳng vào máy này!</span>
         </div>
       </div>
 
@@ -2123,12 +2249,12 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
   <!-- Mammoth.js for Word (.docx) document parsing -->
   <script src="/mammoth.browser.min.js"></script>
   <!-- Quota Manager, Generation Timer & 8-Language Global i18n -->
-  <script src="quota_and_i18n.js?v=7.0"></script>
+  <script src="quota_and_i18n.js?v=7.2"></script>
   <!-- Main Studio Engine Logic -->
-  <script src="app.js?v=7.0"></script>
+  <script src="app.js?v=7.2"></script>
   <!-- Pro Studio Extensions (Private Vault, 110 Countries, Multi-Speaker Stem Studio, VietQR) -->
-  <script src="studio_pro.js?v=7.0"></script>
-  <!-- Option 2 License Key, HWID Lock, Server Quota Sync & Owner Admin Console -->
-  <script src="license_client_ui.js?v=7.0"></script>
+  <script src="studio_pro.js?v=7.2"></script>
+  <!-- Option 2 License Key, HWID Lock, Real Order/Bank Checkout & Owner Admin Console -->
+  <script src="license_client_ui.js?v=7.2"></script>
 </body>
 </html>

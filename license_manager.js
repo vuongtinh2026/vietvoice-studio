@@ -183,19 +183,53 @@ export function createLicenseManager(baseDir) {
       const raw = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
       if (!raw.licenses) raw.licenses = {};
       if (!raw.hwidTrials) raw.hwidTrials = {};
+      if (!raw.orders) raw.orders = {};
       if (!raw.settings) raw.settings = { allowFreeHwidTrial: true, freeTrialCharsPerMachine: 100000 };
+      if (!raw.paymentConfig) {
+        raw.paymentConfig = {
+          bankId: 'MB',
+          accountNo: '',
+          accountName: 'CHU SO HUU VOICEVIET',
+          globalCheckoutUrl: '',
+          sepaySecretKey: '',
+          telegramBotToken: '',
+          telegramChatId: ''
+        };
+      }
       return raw;
     } catch {
       return {
-        version: '7.0',
+        version: '7.2',
         settings: { allowFreeHwidTrial: true, freeTrialCharsPerMachine: 100000 },
+        paymentConfig: {
+          bankId: 'MB',
+          accountNo: '',
+          accountName: 'CHU SO HUU VOICEVIET',
+          globalCheckoutUrl: '',
+          sepaySecretKey: '',
+          telegramBotToken: '',
+          telegramChatId: ''
+        },
         licenses: {},
+        orders: {},
         hwidTrials: {}
       };
     }
   }
 
   let db = ensureDbLoaded();
+  if (!db.orders) db.orders = {};
+  if (!db.paymentConfig) {
+    db.paymentConfig = {
+      bankId: 'MB',
+      accountNo: '',
+      accountName: 'CHU SO HUU VOICEVIET',
+      globalCheckoutUrl: '',
+      sepaySecretKey: '',
+      telegramBotToken: '',
+      telegramChatId: ''
+    };
+  }
 
   function saveDb(nextDb = db) {
     if (!fs.existsSync(dbDir)) {
@@ -428,17 +462,23 @@ export function createLicenseManager(baseDir) {
       totalCharsConsumed += Number(t.usedChars) || 0;
     });
 
+    const ordersList = Object.values(db.orders || {}).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const pendingOrdersCount = ordersList.filter(o => o.status === 'transferred_waiting' || o.status === 'pending').length;
+
     return {
       settings: db.settings,
+      paymentConfig: db.paymentConfig,
       localMachine: getLocalMachineHardwareInfo(),
       stats: {
         totalKeys: list.length,
         activeKeys: list.filter(l => l.status === 'active').length,
         boundDevicesCount,
         trialMachinesCount: trials.length,
+        pendingOrdersCount,
         totalCharsConsumed,
         totalRevenueVnd
       },
+      orders: ordersList.slice(0, 60),
       licenses: list,
       trials: trials.slice(0, 50)
     };
@@ -660,16 +700,223 @@ HƯỚNG DẪN CÀI ĐẶT & KÍCH HOẠT VOICEVIET STUDIO PRO (BẢN MÁY KHÁC
     };
   }
 
+  // =========================================================================
+  // ORDER REGISTRATION, REAL VIETQR BUILDER, TELEGRAM & SEPAY AUTO-WEBHOOK
+  // =========================================================================
+  async function sendTelegramNotification(textMsg) {
+    const botTok = (db.paymentConfig?.telegramBotToken || '').trim();
+    const chatId = (db.paymentConfig?.telegramChatId || '').trim();
+    if (!botTok || !chatId) return false;
+    try {
+      await fetch(`https://api.telegram.org/bot${botTok}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: textMsg })
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function buildVietQrUrl(amountVnd, orderCode) {
+    const bankId = (db.paymentConfig?.bankId || 'MB').trim() || 'MB';
+    const accNo = (db.paymentConfig?.accountNo || '').replace(/\s+/g, '');
+    const accName = (db.paymentConfig?.accountName || 'VOICEVIET PRO').trim();
+    const effectiveAcc = accNo || '0000000000';
+    return {
+      bankConfigured: Boolean(accNo),
+      bankId,
+      accountNo: accNo,
+      accountName: accName,
+      globalCheckoutUrl: db.paymentConfig?.globalCheckoutUrl || '',
+      qrImageUrl: `https://img.vietqr.io/image/${encodeURIComponent(bankId)}-${encodeURIComponent(effectiveAcc)}-compact2.png?amount=${amountVnd}&addInfo=${encodeURIComponent(orderCode)}&accountName=${encodeURIComponent(accName)}`
+    };
+  }
+
+  function resolvePlanFromAmount(amountVnd, explicitPlanId = '') {
+    if (explicitPlanId && PLAN_CONFIGS[explicitPlanId]) return PLAN_CONFIGS[explicitPlanId];
+    const amt = Number(amountVnd) || 25000;
+    if (amt >= 299000) return PLAN_CONFIGS.unlimited;
+    if (amt >= 150000) return PLAN_CONFIGS.vip;
+    if (amt >= 75000) return PLAN_CONFIGS.standard;
+    return PLAN_CONFIGS.basic;
+  }
+
+  function createOrder({ planId = '', amountVnd = 25000, customerName = '', customerContact = '', clientHwid = '', clientMachineLabel = '' }) {
+    const plan = resolvePlanFromAmount(amountVnd, planId);
+    let orderCode = `VVDON${Math.floor(100000 + Math.random() * 900000)}`;
+    while (db.orders[orderCode]) {
+      orderCode = `VVDON${Math.floor(100000 + Math.random() * 900000)}`;
+    }
+
+    const hwInfo = getLocalMachineHardwareInfo();
+    const hwid = (clientHwid || hwInfo.hwid).trim().toUpperCase();
+    const mach = (clientMachineLabel || hwInfo.machineLabel).trim();
+    const qrInfo = buildVietQrUrl(plan.priceVnd || amountVnd, orderCode);
+
+    const order = {
+      orderCode,
+      planId: plan.id,
+      planName: plan.nameVi,
+      amountVnd: plan.priceVnd || Number(amountVnd) || 25000,
+      customerName: (customerName || 'Khách đặt mua mới').trim(),
+      customerContact: (customerContact || '').trim(),
+      clientHwid: hwid,
+      clientMachineLabel: mach,
+      status: 'pending', // 'pending' -> 'transferred_waiting' -> 'paid' | 'cancelled'
+      issuedKey: null,
+      verifiedBy: null,
+      createdAt: Date.now(),
+      paidAt: null
+    };
+
+    db.orders[orderCode] = order;
+    saveDb();
+
+    return {
+      ...order,
+      ...qrInfo
+    };
+  }
+
+  function markOrderTransferred({ orderCode = '', customerName = '', customerContact = '' }) {
+    const cleanCode = (orderCode || '').trim().toUpperCase();
+    const ord = db.orders[cleanCode];
+    if (!ord) throw new Error(`Không tìm thấy mã đơn hàng ${cleanCode}`);
+    if (customerName && customerName.trim()) ord.customerName = customerName.trim();
+    if (customerContact && customerContact.trim()) ord.customerContact = customerContact.trim();
+    if (ord.status === 'pending') {
+      ord.status = 'transferred_waiting';
+      ord.transferredReportedAt = Date.now();
+      saveDb();
+      sendTelegramNotification(
+        `💸 [KHÁCH BÁO ĐÃ CHUYỂN KHOẢN]\n• Mã đơn: ${ord.orderCode}\n• Gói: ${ord.planName}\n• Số tiền: ${Number(ord.amountVnd).toLocaleString('vi-VN')} VNĐ\n• Khách: ${ord.customerName} (${ord.customerContact || 'Chưa ghi SĐT'})\n• Máy HWID: ${ord.clientHwid}\n👉 Mở mục Quản Lý Key & Khách để kiểm tra & bấm Duyệt Đơn!`
+      );
+    }
+    return ord;
+  }
+
+  function getOrderStatus(orderCode = '') {
+    const cleanCode = (orderCode || '').trim().toUpperCase();
+    const ord = db.orders[cleanCode];
+    if (!ord) return { ok: false, error: 'Không tìm thấy đơn hàng.' };
+    const qrInfo = buildVietQrUrl(ord.amountVnd, ord.orderCode);
+    return { ok: true, order: ord, ...qrInfo };
+  }
+
+  function approveOrderAndIssueKey(orderCode = '', verifiedBy = 'admin_manual', paidAmount = null) {
+    const cleanCode = (orderCode || '').trim().toUpperCase();
+    const ord = db.orders[cleanCode];
+    if (!ord) throw new Error(`Không tìm thấy đơn hàng ${cleanCode}`);
+    if (ord.status === 'paid' && ord.issuedKey) {
+      return { alreadyPaid: true, order: ord, license: db.licenses[ord.issuedKey] };
+    }
+
+    const lic = adminCreateLicense({
+      customerName: ord.customerName || `Khách đơn ${ord.orderCode}`,
+      customerContact: ord.customerContact || `Đơn ${ord.orderCode}`,
+      planId: ord.planId,
+      durationDays: 30
+    });
+
+    // Pre-bind to the exact customer machine that placed the order!
+    if (ord.clientHwid) {
+      lic.boundHwid = ord.clientHwid;
+      lic.boundMachineLabel = ord.clientMachineLabel || 'Máy đặt đơn';
+      lic.boundAt = Date.now();
+    }
+
+    ord.status = 'paid';
+    ord.issuedKey = lic.key;
+    ord.verifiedBy = verifiedBy;
+    ord.paidAmount = paidAmount !== null ? Number(paidAmount) : ord.amountVnd;
+    ord.paidAt = Date.now();
+    saveDb();
+
+    sendTelegramNotification(
+      `✅ [ĐÃ NHẬN TIỀN & CẤP KEY TỰ ĐỘNG]\n• Mã đơn: ${ord.orderCode} (${verifiedBy === 'sepay_auto' ? 'SePay Tự Động' : 'Admin Duyệt'})\n• Gói: ${ord.planName} (+${Number(ord.paidAmount).toLocaleString('vi-VN')}đ)\n• Khách: ${ord.customerName} (${ord.customerContact || ''})\n• Mã Key đã cấp: ${lic.key}`
+    );
+
+    return { order: ord, license: lic };
+  }
+
+  function cancelOrDeleteOrder(orderCode = '') {
+    const cleanCode = (orderCode || '').trim().toUpperCase();
+    if (db.orders[cleanCode]) {
+      delete db.orders[cleanCode];
+      saveDb();
+    }
+    return { deleted: true, orderCode: cleanCode };
+  }
+
+  function adminUpdatePaymentConfig(cfg = {}) {
+    if (typeof cfg.bankId === 'string') db.paymentConfig.bankId = cfg.bankId.trim();
+    if (typeof cfg.accountNo === 'string') db.paymentConfig.accountNo = cfg.accountNo.replace(/\s+/g, '');
+    if (typeof cfg.accountName === 'string') db.paymentConfig.accountName = cfg.accountName.trim().toUpperCase();
+    if (typeof cfg.globalCheckoutUrl === 'string') db.paymentConfig.globalCheckoutUrl = cfg.globalCheckoutUrl.trim();
+    if (typeof cfg.sepaySecretKey === 'string') db.paymentConfig.sepaySecretKey = cfg.sepaySecretKey.trim();
+    if (typeof cfg.telegramBotToken === 'string') db.paymentConfig.telegramBotToken = cfg.telegramBotToken.trim();
+    if (typeof cfg.telegramChatId === 'string') db.paymentConfig.telegramChatId = cfg.telegramChatId.trim();
+    saveDb();
+    return db.paymentConfig;
+  }
+
+  function handleSepayWebhook(payload = {}, authHeader = '') {
+    const expectedSecret = (db.paymentConfig?.sepaySecretKey || '').trim();
+    if (expectedSecret) {
+      const cleanAuth = String(authHeader || '').replace(/^Apikey\s+/i, '').replace(/^Bearer\s+/i, '').trim();
+      if (cleanAuth !== expectedSecret) {
+        return { ok: false, status: 401, error: 'Sai mã bảo mật SePay Webhook!' };
+      }
+    }
+
+    const transferType = String(payload.transferType || 'in').toLowerCase();
+    if (transferType !== 'in') {
+      return { ok: true, ignored: true, reason: 'Bỏ qua giao dịch tiền ra.' };
+    }
+
+    const amount = Number(payload.transferAmount || payload.amount || 0);
+    const content = String(payload.content || payload.description || payload.code || '').toUpperCase();
+    const match = content.match(/VVDON\d{5,8}/);
+    if (!match) {
+      return { ok: true, ignored: true, reason: 'Không tìm thấy mã đơn VVDON trong nội dung chuyển khoản.' };
+    }
+
+    const orderCode = match[0];
+    const ord = db.orders[orderCode];
+    if (!ord) {
+      return { ok: true, ignored: true, reason: `Không tồn tại đơn hàng ${orderCode}` };
+    }
+    if (amount < ord.amountVnd) {
+      return {
+        ok: false,
+        status: 400,
+        error: `Số tiền chuyển (${amount}đ) thấp hơn giá trị gói (${ord.amountVnd}đ). Không tự động kích hoạt!`
+      };
+    }
+
+    const approved = approveOrderAndIssueKey(orderCode, 'sepay_auto', amount);
+    return { ok: true, activated: true, orderCode, issuedKey: approved.license.key };
+  }
+
   return {
     PLAN_CONFIGS,
     getClientConfig,
     getLocalMachineHardwareInfo,
     inspectOrActivateStatus,
     authorizeAndConsume,
+    createOrder,
+    markOrderTransferred,
+    getOrderStatus,
+    approveOrderAndIssueKey,
+    cancelOrDeleteOrder,
     adminListOverview,
     adminCreateLicense,
     adminMutateLicense,
     adminUpdateSettings,
+    adminUpdatePaymentConfig,
+    handleSepayWebhook,
     buildCustomerPackage
   };
 }

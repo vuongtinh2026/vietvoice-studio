@@ -287,7 +287,162 @@
       chkTrial.checked = Boolean(data.settings.allowFreeHwidTrial);
     }
 
+    // Populate Owner Payment / Bank Config
+    const pc = data.paymentConfig || {};
+    const bankSel = document.getElementById('admBankSelect');
+    const accNoIn = document.getElementById('admAccountNoInput');
+    const accNameIn = document.getElementById('admAccountNameInput');
+    const globIn = document.getElementById('admGlobalCheckoutInput');
+    const tgBotIn = document.getElementById('admTelegramBotInput');
+    const tgChatIn = document.getElementById('admTelegramChatIdInput');
+    const sepayIn = document.getElementById('admSepaySecretInput');
+    const bankStatusBadge = document.getElementById('admBankConfigStatusBadge');
+
+    if (bankSel && pc.bankId) bankSel.value = pc.bankId;
+    if (accNoIn && document.activeElement !== accNoIn) accNoIn.value = pc.accountNo || '';
+    if (accNameIn && document.activeElement !== accNameIn) accNameIn.value = pc.accountName || '';
+    if (globIn && document.activeElement !== globIn) globIn.value = pc.globalCheckoutUrl || '';
+    if (tgBotIn && document.activeElement !== tgBotIn) tgBotIn.value = pc.telegramBotToken || '';
+    if (tgChatIn && document.activeElement !== tgChatIn) tgChatIn.value = pc.telegramChatId || '';
+    if (sepayIn && document.activeElement !== sepayIn) sepayIn.value = pc.sepaySecretKey || '';
+
+    if (bankStatusBadge) {
+      if (pc.accountNo) {
+        bankStatusBadge.className = 'text-[11px] px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 font-extrabold';
+        bankStatusBadge.textContent = `✅ Đang nhận tiền về: ${pc.bankId} • ${pc.accountNo} (${pc.accountName || ''})`;
+      } else {
+        bankStatusBadge.className = 'text-[11px] px-3 py-1 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/40 font-bold';
+        bankStatusBadge.textContent = '⚠️ Chưa điền Số Tài Khoản thật của bạn';
+      }
+    }
+
+    const pendingCnt = Number(st.pendingOrdersCount || 0);
+    const ordBadge = document.getElementById('admPendingOrdersBadge');
+    const sideBadge = document.getElementById('sidebarAdminBadge');
+    if (ordBadge) {
+      ordBadge.textContent = `${pendingCnt} đơn chờ duyệt`;
+      ordBadge.className = pendingCnt > 0
+        ? 'text-[11px] px-2.5 py-0.5 rounded-full bg-rose-500 text-white font-extrabold animate-pulse'
+        : 'text-[11px] px-2.5 py-0.5 rounded-full bg-white/10 text-slate-300 font-bold';
+    }
+    if (sideBadge) {
+      sideBadge.textContent = pendingCnt > 0 ? `🔔 ${pendingCnt} Đơn` : 'Admin';
+      sideBadge.className = pendingCnt > 0
+        ? 'text-[9px] bg-rose-500 text-white px-1.5 py-0.5 rounded-md ml-auto font-extrabold shrink-0 whitespace-nowrap animate-pulse'
+        : 'text-[9px] bg-amber-500/25 text-amber-200 border border-amber-400/45 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap';
+    }
+
+    renderAdminOrdersTable(data.orders || []);
     renderAdminLicensesTable(data.licenses || []);
+  }
+
+  function renderAdminOrdersTable(orders) {
+    const tbody = document.getElementById('admOrdersTableBody');
+    if (!tbody) return;
+    if (!orders.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="py-5 text-center text-slate-400">Chưa có đơn đặt mua mới nào. Khi khách bấm chọn gói ở Bảng Giá, đơn hàng sẽ hiện ngay tại đây!</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = orders.map(ord => {
+      const timeStr = ord.createdAt ? new Date(ord.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : '';
+      const amtFmt = Number(ord.amountVnd || 0).toLocaleString('vi-VN');
+      const isPaid = ord.status === 'paid';
+      const isTransferred = ord.status === 'transferred_waiting';
+
+      let stHtml = '<span class="px-2 py-0.5 rounded-full bg-slate-700/60 text-slate-300 text-[10px] font-bold">⏳ Đang xem mã QR</span>';
+      if (isTransferred) {
+        stHtml = '<span class="px-2.5 py-0.5 rounded-full bg-amber-500/25 text-amber-200 border border-amber-400/50 text-[10px] font-extrabold animate-pulse">💸 KHÁCH BÁO ĐÃ CHUYỂN TIỀN!</span>';
+      } else if (isPaid) {
+        stHtml = `<span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 text-[10px] font-extrabold">✅ ĐÃ CẤP KEY (${ord.verifiedBy === 'sepay_auto' ? 'SePay 3s' : 'Thủ công'})</span>
+                  <div class="font-mono text-[10px] text-amber-300 mt-0.5">${escHtml(ord.issuedKey || '')}</div>`;
+      }
+
+      const actionsHtml = isPaid
+        ? `<button type="button" data-ord-act="delete" data-code="${escHtml(ord.orderCode)}" class="px-2 py-1 rounded-lg bg-white/5 hover:bg-rose-500/25 text-slate-400 hover:text-rose-200 text-[10px] cursor-pointer"><i class="fa-regular fa-trash-can"></i></button>`
+        : `<div class="flex flex-wrap items-center justify-end gap-1.5">
+             <button type="button" data-ord-act="approve" data-code="${escHtml(ord.orderCode)}" class="px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-[10px] cursor-pointer shadow">
+               ✅ Đã Nhận Tiền → Cấp Key
+             </button>
+             <button type="button" data-ord-act="sim_sepay" data-code="${escHtml(ord.orderCode)}" data-amt="${ord.amountVnd}" class="px-2 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/35 text-cyan-200 border border-cyan-400/40 font-bold text-[10px] cursor-pointer" title="Giả lập Ngân hàng báo biến động số dư sang SePay tự động duyệt đơn trong 1 giây">
+               🤖 Test SePay Tự Động
+             </button>
+             <button type="button" data-ord-act="delete" data-code="${escHtml(ord.orderCode)}" class="px-2 py-1 rounded-lg bg-white/5 hover:bg-rose-500/25 text-slate-400 hover:text-rose-200 text-[10px] cursor-pointer">
+               <i class="fa-regular fa-trash-can"></i>
+             </button>
+           </div>`;
+
+      return `
+        <tr class="hover:bg-white/[0.03] transition ${isTransferred ? 'bg-amber-500/[0.06]' : ''}">
+          <td class="py-3 pr-3">
+            <div class="font-mono font-extrabold text-emerald-300 text-xs">${escHtml(ord.orderCode)}</div>
+            <div class="text-[10px] text-slate-400">${escHtml(timeStr)}</div>
+          </td>
+          <td class="py-3 px-3">
+            <div class="font-bold text-white">${escHtml(ord.customerName || 'Khách mới')}</div>
+            <div class="text-[11px] text-cyan-300 font-medium">${escHtml(ord.customerContact || 'Chưa nhập SĐT/Zalo')}</div>
+          </td>
+          <td class="py-3 px-3">
+            <div class="font-bold text-purple-200">${escHtml(ord.planName)}</div>
+            <div class="font-mono font-extrabold text-amber-300 text-xs">+${amtFmt} VNĐ</div>
+          </td>
+          <td class="py-3 px-3">
+            <div class="font-mono text-[11px] text-cyan-200">${escHtml(ord.clientHwid || '')}</div>
+            <div class="text-[10px] text-slate-400 truncate max-w-[150px]">${escHtml(ord.clientMachineLabel || '')}</div>
+          </td>
+          <td class="py-3 px-3">${stHtml}</td>
+          <td class="py-3 pl-3 text-right">${actionsHtml}</td>
+        </tr>
+      `;
+    }).join('');
+
+    tbody.querySelectorAll('button[data-ord-act]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const act = btn.getAttribute('data-ord-act');
+        const orderCode = btn.getAttribute('data-code');
+        if (!act || !orderCode) return;
+
+        if (act === 'approve') {
+          const res = await fetchAdminApi('approve-order', 'POST', { orderCode });
+          if (res.success && res.license) {
+            if (typeof window.showToast === 'function') {
+              window.showToast(`✅ Đã duyệt đơn ${orderCode} & tự cấp Key ${res.license.key} thẳng sang máy khách!`, 'success');
+            }
+            refreshAdminOverviewIfUnlocked();
+          }
+          return;
+        }
+
+        if (act === 'sim_sepay') {
+          const amt = Number(btn.getAttribute('data-amt') || 25000);
+          const r = await origFetch('/api/payment/sepay-webhook', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              transferType: 'in',
+              transferAmount: amt,
+              content: `CHUYEN KHOAN ${orderCode} THANH TOAN GOI VOICEVIET`
+            })
+          });
+          const d = await r.json().catch(() => ({}));
+          if (d.ok && d.activated) {
+            if (typeof window.showToast === 'function') {
+              window.showToast(`🤖 [SePay Webhook Tự Động] Ngân hàng báo +${amt.toLocaleString('vi-VN')}đ (${orderCode}) → Đã tự động cấp Key ${d.issuedKey}!`, 'success');
+            }
+            await syncClientLicenseStatus(false);
+            refreshAdminOverviewIfUnlocked();
+          } else if (typeof window.showToast === 'function') {
+            window.showToast(d.error || 'Lỗi giả lập SePay Webhook', 'error');
+          }
+          return;
+        }
+
+        if (act === 'delete') {
+          await fetchAdminApi('delete-order', 'POST', { orderCode });
+          refreshAdminOverviewIfUnlocked();
+        }
+      });
+    });
   }
 
   function renderAdminLicensesTable(licenses) {
@@ -603,9 +758,164 @@
     }
   }
 
+  // =========================================================================
+  // 5. REAL ORDER CHECKOUT FLOW + LIVE 3-SECOND AUTO-ACTIVATION POLLING
+  // =========================================================================
+  let activeCheckoutOrderCode = '';
+  let orderPollTimer = null;
+
+  function stopOrderPolling() {
+    if (orderPollTimer) {
+      clearInterval(orderPollTimer);
+      orderPollTimer = null;
+    }
+  }
+
+  async function openRealOrderCheckoutModal(planName, amount) {
+    const modal = document.getElementById('vietqrModal');
+    const qrImg = document.getElementById('vietqrImage');
+    const planEl = document.getElementById('vietqrPlanName');
+    const amtEl = document.getElementById('vietqrAmount');
+    const memoEl = document.getElementById('vietqrMemo');
+    const waitStatusEl = document.getElementById('checkoutOrderWaitStatus');
+    const custNameEl = document.getElementById('checkoutCustName');
+    const custContactEl = document.getElementById('checkoutCustContact');
+    const globalBtn = document.getElementById('btnGlobalStripeCheckout');
+
+    if (!modal) return;
+    stopOrderPolling();
+
+    const savedCustName = localStorage.getItem('voiceviet_cust_name') || '';
+    const savedCustContact = localStorage.getItem('voiceviet_cust_contact') || '';
+    if (custNameEl && !custNameEl.value) custNameEl.value = savedCustName;
+    if (custContactEl && !custContactEl.value) custContactEl.value = savedCustContact;
+
+    if (planEl) planEl.textContent = planName;
+    if (amtEl) amtEl.textContent = `${Number(amount).toLocaleString('vi-VN')} VNĐ`;
+    if (memoEl) memoEl.textContent = 'Đang tạo mã đơn...';
+    modal.classList.remove('hidden');
+
+    try {
+      const res = await origFetch('/api/payment/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amountVnd: Number(amount) || 25000,
+          customerName: custNameEl ? custNameEl.value.trim() : '',
+          customerContact: custContactEl ? custContactEl.value.trim() : ''
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.success && data.order) {
+        const ord = data.order;
+        activeCheckoutOrderCode = ord.orderCode;
+        if (memoEl) memoEl.textContent = ord.orderCode;
+        if (qrImg && ord.qrImageUrl) qrImg.src = ord.qrImageUrl;
+        if (globalBtn && ord.globalCheckoutUrl) {
+          globalBtn.href = ord.globalCheckoutUrl;
+          globalBtn.target = '_blank';
+          globalBtn.onclick = null;
+        }
+        if (waitStatusEl) {
+          waitStatusEl.innerHTML = ord.bankConfigured
+            ? `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>Quét QR với đúng nội dung <b>${escHtml(ord.orderCode)}</b> — Máy này sẽ tự nhận Key ngay khi tiền về!</span>`
+            : `<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span><span class="text-amber-200">Mã đơn <b>${escHtml(ord.orderCode)}</b> đã tạo! (Chủ web nhớ điền Số Tài Khoản thật trong mục Quản Lý Key & Khách)</span>`;
+        }
+        refreshAdminOverviewIfUnlocked();
+
+        // Poll every 3s: as soon as SePay or Admin approves, auto-activate Key on this machine!
+        orderPollTimer = setInterval(async () => {
+          if (modal.classList.contains('hidden') || !activeCheckoutOrderCode) {
+            stopOrderPolling();
+            return;
+          }
+          try {
+            const pRes = await origFetch(`/api/payment/order-status?code=${encodeURIComponent(activeCheckoutOrderCode)}`);
+            const pData = await pRes.json().catch(() => ({}));
+            if (pData.ok && pData.order && pData.order.status === 'paid' && pData.order.issuedKey) {
+              stopOrderPolling();
+              const issuedKey = pData.order.issuedKey;
+              setSavedKey(issuedKey);
+              await syncClientLicenseStatus(true, issuedKey);
+              modal.classList.add('hidden');
+              if (typeof window.showToast === 'function') {
+                window.showToast(`🎉 Thanh toán thành công! Đã tự động kích hoạt Key "${issuedKey}" (${pData.order.planName})!`, 'success');
+              }
+              refreshAdminOverviewIfUnlocked();
+            }
+          } catch {}
+        }, 3000);
+      }
+    } catch (err) {
+      if (waitStatusEl) waitStatusEl.textContent = `Lỗi tạo đơn: ${err.message}`;
+    }
+  }
+  window.openRealOrderCheckoutModal = openRealOrderCheckoutModal;
+
+  function setupPaymentAndBankEvents() {
+    const btnMarkPaid = document.getElementById('btnCustomerMarkTransferred');
+    const waitStatusEl = document.getElementById('checkoutOrderWaitStatus');
+    if (btnMarkPaid) {
+      btnMarkPaid.addEventListener('click', async () => {
+        if (!activeCheckoutOrderCode) return;
+        const cName = document.getElementById('checkoutCustName')?.value.trim() || '';
+        const cContact = document.getElementById('checkoutCustContact')?.value.trim() || '';
+        if (cName) localStorage.setItem('voiceviet_cust_name', cName);
+        if (cContact) localStorage.setItem('voiceviet_cust_contact', cContact);
+
+        btnMarkPaid.disabled = true;
+        const r = await origFetch('/api/payment/mark-transferred', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderCode: activeCheckoutOrderCode,
+            customerName: cName || 'Khách chuyển khoản QR',
+            customerContact: cContact || 'Đang mở màn hình chờ nhận Key'
+          })
+        });
+        btnMarkPaid.disabled = false;
+        const d = await r.json().catch(() => ({}));
+        if (d.success) {
+          if (waitStatusEl) {
+            waitStatusEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-amber-300"></i> <span class="text-amber-200 font-semibold">Đã gửi thông báo cho Quản trị viên (Mã đơn <b>${escHtml(activeCheckoutOrderCode)}</b>)! Giữ nguyên màn hình để nhận Key tự động...</span>`;
+          }
+          if (typeof window.showToast === 'function') {
+            window.showToast(`💸 Đã báo chuyển khoản đơn ${activeCheckoutOrderCode}! Hệ thống sẽ tự mở khóa ngay khi xác nhận tiền về.`, 'success');
+          }
+          refreshAdminOverviewIfUnlocked();
+        }
+      });
+    }
+
+    const btnSaveBank = document.getElementById('btnSavePaymentConfig');
+    if (btnSaveBank) {
+      btnSaveBank.addEventListener('click', async () => {
+        const payload = {
+          bankId: document.getElementById('admBankSelect')?.value || 'MB',
+          accountNo: document.getElementById('admAccountNoInput')?.value || '',
+          accountName: document.getElementById('admAccountNameInput')?.value || '',
+          globalCheckoutUrl: document.getElementById('admGlobalCheckoutInput')?.value || '',
+          telegramBotToken: document.getElementById('admTelegramBotInput')?.value || '',
+          telegramChatId: document.getElementById('admTelegramChatIdInput')?.value || '',
+          sepaySecretKey: document.getElementById('admSepaySecretInput')?.value || ''
+        };
+        const res = await fetchAdminApi('payment-config', 'POST', payload);
+        if (res.success) {
+          if (typeof window.showToast === 'function') {
+            window.showToast('🏦 Đã lưu Tài Khoản Ngân Hàng nhận tiền thật của bạn thành công!', 'success');
+          }
+          refreshAdminOverviewIfUnlocked();
+        } else if (typeof window.showToast === 'function') {
+          window.showToast(res.error || 'Lỗi lưu cấu hình ngân hàng', 'error');
+        }
+      });
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     setupCustomerLicenseModal();
     setupAdminDashboardEvents();
+    setupPaymentAndBankEvents();
     syncClientLicenseStatus(false);
   });
 })();
