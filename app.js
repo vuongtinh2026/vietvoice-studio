@@ -347,10 +347,15 @@ function normalizeVietnameseText(text) {
     .replace(/[\u00a0\u200b\u200e\u200f\ufeff]/g, ' ')
     .replace(/\r\n/g, '\n');
 
-  // Chuyển từ IN HOA toàn bộ (ví dụ: TIÊU VIÊM, QUYẾT ĐỊNH, CHƯƠNG) thành Tiêu Viêm, Quyết Định, Chương
-  // để AI không đọc tách/đánh vần từng ký tự
+  // Chuyển từ IN HOA tiếng Việt (có dấu tiếng Việt hoặc từ tiêu đề CHƯƠNG/PHẦN/QUYỂN/HỒI/TẬP) thành chữ thường viết hoa đầu từ
+  // nhưng giữ nguyên từ viết tắt tiếng Anh (AI, VIP, MP3, WAV, PRO, USB, CEO, QR, USD...) để đọc chuẩn!
   clean = clean.replace(/(?:(?<=[\s,.:;!?"'\(\)\[\]«»“”‘’—\-\n…\/~]|^))(\p{Lu}{2,})(?=(?:[\s,.:;!?"'\(\)\[\]«»“”‘’—\-\n…\/~]|$))/gu, (match) => {
-    return match.charAt(0) + match.slice(1).toLowerCase();
+    const hasViDiacritic = /[ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠƯẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲỴỶỸ]/u.test(match);
+    const isViHeading = /^(CHUONG|PHAN|QUYEN|HOI|TAP|MUC|TRUYEN)$/u.test(match);
+    if (hasViDiacritic || isViHeading) {
+      return match.charAt(0) + match.slice(1).toLowerCase();
+    }
+    return match;
   });
 
   // Tách biệt tiêu đề chương để không bị dính vào câu đầu
@@ -1057,36 +1062,56 @@ async function startBatchChapters() {
   let completedCount = parsedChapters.filter(c => c.status === 'done').length;
   updateBatchProgress(completedCount, parsedChapters.length);
 
-  for (let i = 0; i < parsedChapters.length; i++) {
+  const activeVoiceId = voiceSelect ? (voiceSelect.value || '') : '';
+  const isLocalNoLimit = activeVoiceId.startsWith('free-') || activeVoiceId.startsWith('private-');
+
+  if (isLocalNoLimit) {
+    // Run 2 chapters concurrently across the 5-Worker Parallel INT8 Server Pool!
+    const pendingChaps = parsedChapters.filter(c => c.status !== 'done');
+    let cursor = 0;
+    const workerLoop = async () => {
+      while (cursor < pendingChaps.length && !batchCancelRequested) {
+        const chap = pendingChaps[cursor++];
+        batchProgressText.textContent = `⚡ Đang xử lý đa nhân: ${chap.title}...`;
+        const ok = await synthesizeSingleChapter(chap);
+        if (ok) {
+          completedCount++;
+          updateBatchProgress(completedCount, parsedChapters.length);
+        }
+      }
+    };
+    await Promise.all([workerLoop(), workerLoop()]);
     if (batchCancelRequested) {
       showToast('Đã tạm dừng hàng đợi tạo Audiobook', 'info');
-      break;
     }
+  } else {
+    for (let i = 0; i < parsedChapters.length; i++) {
+      if (batchCancelRequested) {
+        showToast('Đã tạm dừng hàng đợi tạo Audiobook', 'info');
+        break;
+      }
 
-    const chap = parsedChapters[i];
-    if (chap.status === 'done') continue; // Skip already completed
+      const chap = parsedChapters[i];
+      if (chap.status === 'done') continue;
 
-    batchProgressText.textContent = `Đang xử lý: ${chap.title} (${i + 1}/${parsedChapters.length})...`;
+      batchProgressText.textContent = `Đang xử lý: ${chap.title} (${i + 1}/${parsedChapters.length})...`;
 
-    const startTime = Date.now();
-    const success = await synthesizeSingleChapter(chap);
-    if (success) {
-      completedCount++;
-      updateBatchProgress(completedCount, parsedChapters.length);
-    }
+      const startTime = Date.now();
+      const success = await synthesizeSingleChapter(chap);
+      if (success) {
+        completedCount++;
+        updateBatchProgress(completedCount, parsedChapters.length);
+      }
 
-    // Pacing delay between chapters: Cheap-TTS allows 3 RPM (~20s per request).
-    // Free open-source & Private cloned voices have NO rate limit and run back-to-back immediately!
-    const activeVoiceId = voiceSelect ? (voiceSelect.value || '') : '';
-    const isLocalNoLimit = activeVoiceId.startsWith('free-') || activeVoiceId.startsWith('private-');
-    if (!isLocalNoLimit && i < parsedChapters.length - 1 && !batchCancelRequested) {
-      const elapsedSec = (Date.now() - startTime) / 1000;
-      const waitSeconds = Math.max(2, Math.ceil(20 - elapsedSec));
+      if (i < parsedChapters.length - 1 && !batchCancelRequested) {
+        const elapsedSec = (Date.now() - startTime) / 1000;
+        const waitSeconds = Math.max(2, Math.ceil(20 - elapsedSec));
 
-      for (let s = waitSeconds; s > 0; s--) {
-        if (batchCancelRequested) break;
-        batchProgressText.textContent = `✓ Đã xong ${chap.title}. Nghỉ hạ nhiệt API ${s}s trước chương tiếp theo...`;
-        await new Promise(r => setTimeout(r, 1000));
+        for (let s = waitSeconds; s > 0; s--) {
+          if (batchCancelRequested) break;
+          batchProgressText.textContent = `✓ Đã xong ${chap.title}. Nghỉ hạ nhiệt API ${s}s trước chương tiếp theo...`;
+          await new Promise(r => setTimeout(r, 1000));
+        }
       }
     }
   }
@@ -1125,6 +1150,12 @@ function getCleanFileName(title) {
 // ==========================================
 function populateDynamicCountrySelect(selectEl, voicesList) {
   if (!selectEl || !voicesList || !voicesList.length) return;
+  const qApi = window.VoiceVietQuota;
+  const isVi = !qApi || qApi.getLang() === 'vi';
+  if (qApi && typeof qApi.localizeRegionSelectOptions === 'function') {
+    qApi.localizeRegionSelectOptions(selectEl);
+  }
+
   const prevVal = selectEl.value || 'all';
   const oldDynamicGroup = selectEl.querySelector('optgroup[data-dynamic-countries="1"]');
   if (oldDynamicGroup) oldDynamicGroup.remove();
@@ -1134,7 +1165,10 @@ function populateDynamicCountrySelect(selectEl, voicesList) {
     if (!v.id.startsWith('free-intl-')) return;
     const loc = v.language;
     if (!localeStats.has(loc)) {
-      localeStats.set(loc, { label: v.country || loc, count: 0 });
+      const locLabel = (qApi && typeof qApi.formatCountryLocaleLabel === 'function')
+        ? qApi.formatCountryLocaleLabel(v)
+        : (v.country || loc);
+      localeStats.set(loc, { label: locLabel, count: 0 });
     }
     localeStats.get(loc).count += 1;
   });
@@ -1142,11 +1176,13 @@ function populateDynamicCountrySelect(selectEl, voicesList) {
   if (localeStats.size > 0) {
     const og = document.createElement('optgroup');
     og.setAttribute('data-dynamic-countries', '1');
-    og.label = `🏳️ Chọn Trực Tiếp Từng Quốc Gia & Ngôn Ngữ (${localeStats.size} Ngôn ngữ)`;
+    og.label = isVi
+      ? `🏳️ Chọn Trực Tiếp Từng Quốc Gia & Ngôn Ngữ (${localeStats.size} Ngôn ngữ)`
+      : `🏳️ Select Specific Country & Language (${localeStats.size} Locales)`;
     localeStats.forEach((info, loc) => {
       const opt = document.createElement('option');
       opt.value = `locale:${loc}`;
-      opt.textContent = `${info.label} (${info.count} giọng)`;
+      opt.textContent = isVi ? `${info.label} (${info.count} giọng)` : `${info.label} (${info.count} voices)`;
       og.appendChild(opt);
     });
     selectEl.appendChild(og);
@@ -1200,17 +1236,21 @@ function matchesLanguageFilter(v, filterKey) {
 
 function syncSelectedVoiceNoteAndSample() {
   if (!voiceSelect) return;
+  const qApi = window.VoiceVietQuota;
+  const isVi = !qApi || qApi.getLang() === 'vi';
   const selId = voiceSelect.value || '';
   const found = (cheapTtsVoices || []).find(v => v.id === selId);
   if (found) {
+    const useCaseTxt = (qApi && qApi.formatVoiceUseCase) ? qApi.formatVoiceUseCase(found) : (found.useCase || found.name);
     if (found.isPrivate || selId.startsWith('private-')) {
-      voiceNoteText.innerHTML = `<span class="text-amber-300 font-semibold">🔒 Giọng Độc Quyền Chủ Sở Hữu (48kHz):</span> ${escapeHtml(found.useCase || found.name)}`;
-    } else if (found.country) {
-      voiceNoteText.textContent = `${found.useCase || found.name}`;
+      voiceNoteText.innerHTML = isVi
+        ? `<span class="text-amber-300 font-semibold">🔒 Giọng Độc Quyền Chủ Sở Hữu (48kHz):</span> ${escapeHtml(useCaseTxt)}`
+        : `<span class="text-amber-300 font-semibold">🔒 Owner Exclusive 48kHz Voice:</span> ${escapeHtml(useCaseTxt)}`;
     } else {
-      voiceNoteText.textContent = found.useCase || found.name;
+      voiceNoteText.textContent = useCaseTxt;
     }
     if (btnLoadNativeSample) {
+      btnLoadNativeSample.textContent = isVi ? '📝 Mẫu bản ngữ' : '📝 Native Sample';
       if (found.sampleText && (found.language !== 'vi' || found.isPrivate)) {
         btnLoadNativeSample.classList.remove('hidden');
       } else {
@@ -1223,6 +1263,11 @@ function syncSelectedVoiceNoteAndSample() {
 }
 
 function populateCheapTtsVoiceList(voicesList) {
+  const qApi = window.VoiceVietQuota;
+  const isVi = !qApi || qApi.getLang() === 'vi';
+  const fmtName = (v) => (qApi && qApi.formatVoiceDisplayName ? qApi.formatVoiceDisplayName(v) : v.name);
+  const fmtUse = (v) => (qApi && qApi.formatVoiceUseCase ? qApi.formatVoiceUseCase(v) : (v.useCase || v.id));
+
   const prevSelected = voiceSelect.value;
   voiceSelect.innerHTML = '';
   const activeFilter = languageFilterSelect ? languageFilterSelect.value : 'all';
@@ -1233,35 +1278,47 @@ function populateCheapTtsVoiceList(voicesList) {
     const filtered = localPool.filter(v => {
       if (!matchesLanguageFilter(v, activeFilter)) return false;
       if (!searchQuery) return true;
-      const hay = `${v.name} ${v.country || ''} ${v.useCase || ''} ${v.language || ''} ${v.id}`.toLowerCase();
+      const hay = `${v.name} ${fmtName(v)} ${v.country || ''} ${v.useCase || ''} ${fmtUse(v)} ${v.language || ''} ${v.id}`.toLowerCase();
       return hay.includes(searchQuery);
     });
-    voiceCountBadge.textContent = `${filtered.length.toLocaleString('vi-VN')} / ${localPool.length.toLocaleString('vi-VN')} giọng`;
+    const loc = isVi ? 'vi-VN' : 'en-US';
+    voiceCountBadge.textContent = isVi
+      ? `${filtered.length.toLocaleString(loc)} / ${localPool.length.toLocaleString(loc)} giọng`
+      : `${filtered.length.toLocaleString(loc)} / ${localPool.length.toLocaleString(loc)} voices`;
 
     const groupPrivate = document.createElement('optgroup');
-    groupPrivate.label = '🔒 Giọng Nhân Bản Độc Quyền Của Tôi (48kHz Chủ Sở Hữu)';
+    groupPrivate.label = isVi
+      ? '🔒 Giọng Nhân Bản Độc Quyền Của Tôi (48kHz Chủ Sở Hữu)'
+      : '🔒 My Private Cloned Voices (48kHz Owner)';
 
     const groupFreeTop = document.createElement('optgroup');
-    groupFreeTop.label = '⭐ Top Giọng AI Tiếng Việt Studio 48kHz';
+    groupFreeTop.label = isVi
+      ? '⭐ Top Giọng AI Tiếng Việt Studio 48kHz'
+      : '⭐ Featured Vietnamese 48kHz Studio Voices';
 
     const groupFreeMore = document.createElement('optgroup');
-    groupFreeMore.label = '🇻🇳 Kho Giọng Việt Đa Vùng Miền & Siêu Tốc';
+    groupFreeMore.label = isVi
+      ? '🇻🇳 Kho Giọng Việt Đa Vùng Miền & Siêu Tốc'
+      : '🇻🇳 Vietnamese Regional & Turbo Offline Voices';
 
     const intlGroupsByCountry = new Map();
 
     filtered.forEach(v => {
       const opt = document.createElement('option');
       opt.value = v.id;
+      const dispName = fmtName(v);
       opt.textContent = v.language === 'vi'
-        ? `${v.name} — ${v.useCase || v.id}`
-        : `${v.name} [${v.badge || '48kHz'}]`;
-      opt.dataset.name = v.name;
+        ? `${dispName} — ${fmtUse(v)}`
+        : `${dispName} [${v.badge || '48kHz'}]`;
+      opt.dataset.name = dispName;
       opt.dataset.lang = v.language;
 
       if (v.isPrivate || v.id.startsWith('private-')) {
         groupPrivate.appendChild(opt);
       } else if (v.language !== 'vi') {
-        const cLabel = v.country || `🌐 ${v.language.toUpperCase()}`;
+        const cLabel = (qApi && qApi.formatCountryLocaleLabel)
+          ? qApi.formatCountryLocaleLabel(v)
+          : (v.country || `🌐 ${v.language.toUpperCase()}`);
         if (!intlGroupsByCountry.has(cLabel)) {
           const og = document.createElement('optgroup');
           og.label = cLabel;
@@ -1297,25 +1354,32 @@ function populateCheapTtsVoiceList(voicesList) {
   const cloudList = voicesList.filter(v => !v.id.startsWith('free-') || v.id.startsWith('private-'));
   const filteredCloud = cloudList.filter(v => matchesLanguageFilter(v, activeFilter));
   const viCount = filteredCloud.filter(v => v.language === 'vi' || v.id.startsWith('vi')).length;
-  voiceCountBadge.textContent = `${filteredCloud.length} giọng (${viCount} VN)`;
+  voiceCountBadge.textContent = isVi
+    ? `${filteredCloud.length} giọng (${viCount} VN)`
+    : `${filteredCloud.length} voices (${viCount} VN)`;
 
   const groupPrivCloud = document.createElement('optgroup');
-  groupPrivCloud.label = '🔒 Giọng Nhân Bản Độc Quyền Của Tôi';
+  groupPrivCloud.label = isVi ? '🔒 Giọng Nhân Bản Độc Quyền Của Tôi' : '🔒 My Private Cloned Voices';
 
   const groupPro = document.createElement('optgroup');
-  groupPro.label = '🌟 24 Giọng AI PRO Tiếng Việt Mới (Truyện Ma, Kiếm Hiệp, Podcast, Ngôn Tình...)';
+  groupPro.label = isVi
+    ? '🌟 24 Giọng AI PRO Tiếng Việt Mới (Truyện Ma, Kiếm Hiệp, Podcast, Ngôn Tình...)'
+    : '🌟 24 Vietnamese Pro Cloud Voices (Audiobook, Podcast, Romance, Action...)';
 
   const groupStandard = document.createElement('optgroup');
-  groupStandard.label = '⚡ 4 Giọng Tiêu Chuẩn Tiếng Việt';
+  groupStandard.label = isVi ? '⚡ 4 Giọng Tiêu Chuẩn Tiếng Việt' : '⚡ Standard Vietnamese Cloud Voices';
 
   const groupOther = document.createElement('optgroup');
-  groupOther.label = '🌐 Giọng AI Quốc Tế Cloud (Anh, Pháp, Đức, Nhật, ...)';
+  groupOther.label = isVi
+    ? '🌐 Giọng AI Quốc Tế Cloud (Anh, Pháp, Đức, Nhật, ...)'
+    : '🌐 Global Cloud AI Voices (EN, FR, DE, JA...)';
 
   filteredCloud.forEach(v => {
     const opt = document.createElement('option');
     opt.value = v.id;
-    opt.textContent = `${v.name} (${v.useCase || v.id}) - ${v.language.toUpperCase()}`;
-    opt.dataset.name = v.name;
+    const dispName = fmtName(v);
+    opt.textContent = `${dispName} (${fmtUse(v)}) - ${v.language.toUpperCase()}`;
+    opt.dataset.name = dispName;
     opt.dataset.lang = v.language;
 
     if (v.isPrivate || v.id.startsWith('private-')) {
@@ -1344,17 +1408,78 @@ function populateCheapTtsVoiceList(voicesList) {
   syncSelectedVoiceNoteAndSample();
 }
 
+let currentStreamingAbort = null;
+
+function splitTextForProgressiveStreaming(text) {
+  const sentences = text.match(/[^.!?;\n。？！]+(?:[.!?;\n。？！]+|$)/g) || [text];
+  const cleanSents = sentences.map(s => s.trim()).filter(Boolean);
+  if (cleanSents.length <= 1 || text.length <= 185) {
+    return [text.trim()];
+  }
+
+  // Chunk 0: crisp short lead-in (~70..150 chars) so playback begins in ~1.6s!
+  const chunks = [];
+  let lead = '';
+  let idx = 0;
+  while (idx < cleanSents.length) {
+    const s = cleanSents[idx];
+    if (!lead) {
+      if (s.length > 165) {
+        // Split very long first sentence on comma/clause if possible
+        const commaIdx = s.indexOf(',', 65);
+        if (commaIdx > 60 && commaIdx < 155) {
+          chunks.push(s.slice(0, commaIdx + 1).trim());
+          cleanSents[idx] = s.slice(commaIdx + 1).trim();
+          break;
+        }
+      }
+      lead = s;
+      idx++;
+      if (lead.length >= 65) break;
+    } else if (lead.length + s.length + 1 <= 150) {
+      lead = `${lead} ${s}`;
+      idx++;
+      break;
+    } else {
+      break;
+    }
+  }
+  if (lead) chunks.push(lead);
+
+  // Remaining sentences grouped into ~260-char blocks so 5-Worker INT8 Pool chews through them in parallel!
+  let buf = '';
+  while (idx < cleanSents.length) {
+    const s = cleanSents[idx++];
+    if (!s) continue;
+    if (buf.length + s.length + 1 <= 260) {
+      buf = buf ? `${buf} ${s}` : s;
+    } else {
+      if (buf) chunks.push(buf);
+      buf = s;
+    }
+  }
+  if (buf) chunks.push(buf);
+  return chunks.length > 0 ? chunks : [text.trim()];
+}
+
 async function startCheapTtsSynthesis(text, rawCharCount = 0) {
-  // If user submits a massive text via the main button, prompt them to use Chapter mode
+  const qApi = window.VoiceVietQuota;
+  const isVi = !qApi || qApi.getLang() === 'vi';
+
   const words = text.trim().split(/\s+/).filter(Boolean).length;
   if (words > 2500) {
-    showToast(`Văn bản này rất dài (${words.toLocaleString()} từ). Vui lòng dùng Bộ chia chương bên dưới để tạo từng chương an toàn!`, 'warning');
+    showToast(
+      isVi
+        ? `Văn bản này rất dài (${words.toLocaleString()} từ). Vui lòng dùng Bộ chia chương bên dưới để tạo từng chương an toàn!`
+        : `This text is very long (${words.toLocaleString()} words). Please use the Audiobook Chapter Splitter below!`,
+      'warning'
+    );
     audiobookCard.scrollIntoView({ behavior: 'smooth' });
     return;
   }
 
   const charCost = rawCharCount > 0 ? rawCharCount : text.length;
-  if (window.VoiceVietQuota && !window.VoiceVietQuota.checkCanGenerate(charCost)) {
+  if (qApi && !qApi.checkCanGenerate(charCost)) {
     return;
   }
 
@@ -1364,94 +1489,248 @@ async function startCheapTtsSynthesis(text, rawCharCount = 0) {
     if (!authOk) return;
   }
 
+  if (currentStreamingAbort) {
+    currentStreamingAbort.abort();
+    currentStreamingAbort = null;
+  }
+  const streamAbort = new AbortController();
+  currentStreamingAbort = streamAbort;
+
   const isLocal = selectedVoice.startsWith('free-') || selectedVoice.startsWith('private-');
   const rate = parseFloat(rateRange.value) || 1.0;
   const pauseSec = parseFloat(pauseDurationRange.value) || 0.4;
   const key = cheapTtsKeyInput.value.trim();
 
-  const isLong = text.length > 4800;
-  const estChunks = Math.ceil(text.length / 4800);
+  const streamChunks = isLocal ? splitTextForProgressiveStreaming(text) : [text];
+  const useProgressiveStream = isLocal && streamChunks.length > 1;
 
   btnSpeak.disabled = true;
   btnSpeakIcon.className = 'fa-solid fa-spinner fa-spin text-sm';
-  btnSpeakText.textContent = selectedVoice.startsWith('private-')
-    ? '🔒 Đang tạo giọng độc quyền 48kHz...'
-    : (isLocal ? 'Đang tạo giọng Studio 48kHz...' : (isLong ? `Đang xử lý ${estChunks} đoạn lớn...` : 'Đang tạo âm thanh AI siêu tốc...'));
+  btnSpeakText.textContent = isVi
+    ? (useProgressiveStream ? `⚡ Đang khởi tạo phát ngay (1/${streamChunks.length})...` : 'Đang tạo giọng Studio 48kHz...')
+    : (useProgressiveStream ? `⚡ Instant Turbo Streaming (1/${streamChunks.length})...` : 'Generating 48kHz AI Voice...');
   btnStop.disabled = false;
-
-  showToast(
-    selectedVoice.startsWith('private-')
-      ? '🔒 Đang tổng hợp Giọng Nhân Bản Độc Quyền 48kHz của bạn...'
-      : (isLocal ? 'Đang tạo âm thanh AI Studio 48kHz...' : 'Đang tạo âm thanh AI...'),
-    'info'
-  );
 
   const synthStartMs = performance.now();
 
   try {
     const endpoint = isLocal ? '/api/free-tts/synthesize' : '/api/cheap-tts/synthesize';
-    const headers = { 'Content-Type': 'application/json' };
+    const baseHeaders = { 'Content-Type': 'application/json' };
     const tok = window.getOwnerToken();
-    if (tok) headers['X-Owner-Token'] = tok;
+    if (tok) baseHeaders['X-Owner-Token'] = tok;
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        text,
-        voice: selectedVoice,
-        rate,
-        key: isLocal ? undefined : (key || undefined),
-        pauses: {
-          sentence: pauseSec,
-          paragraph: pauseSec * 1.5
+    const fetchChunk = async (chunkTxt) => {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: baseHeaders,
+        signal: streamAbort.signal,
+        body: JSON.stringify({
+          text: chunkTxt,
+          voice: selectedVoice,
+          rate,
+          key: isLocal ? undefined : (key || undefined),
+          pauses: { sentence: pauseSec, paragraph: pauseSec * 1.5 }
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        if (res.status === 403 || errData.code === 'private_locked') {
+          window.setOwnerToken('');
+          if (typeof window.refreshVaultStatusUI === 'function') window.refreshVaultStatusUI();
         }
-      })
-    });
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      if (response.status === 403 || errData.code === 'private_locked') {
-        window.setOwnerToken('');
-        if (typeof window.refreshVaultStatusUI === 'function') window.refreshVaultStatusUI();
+        throw new Error(errData.error || `HTTP ${res.status}`);
       }
-      throw new Error(errData.error || `Lỗi server HTTP ${response.status}`);
+      const blob = await res.blob();
+      const buf = await blob.arrayBuffer();
+      const secHdr = parseFloat(res.headers.get('X-Audio-Seconds') || '0') || (blob.size / 96000);
+      const vName = decodeURIComponent(res.headers.get('X-Voice-Name') || selectedVoice);
+      return { blob, buf, sec: secHdr, voiceName: vName };
+    };
+
+    let finalBlob;
+    let totalSecondsFloat = 0;
+    let voiceNameHeader = selectedVoice;
+    let firstAudioElapsedMs = 0;
+
+    if (!useProgressiveStream) {
+      const single = await fetchChunk(text);
+      finalBlob = single.blob;
+      totalSecondsFloat = single.sec;
+      voiceNameHeader = single.voiceName;
+      firstAudioElapsedMs = performance.now() - synthStartMs;
+
+      if (lastGeneratedBlobUrl) URL.revokeObjectURL(lastGeneratedBlobUrl);
+      const blobUrl = URL.createObjectURL(finalBlob);
+      lastGeneratedBlobUrl = blobUrl;
+      lastGeneratedAudioBlob = finalBlob;
+
+      audioOutputCard.classList.remove('hidden');
+      audioPlayer.src = blobUrl;
+      btnDownloadAudio.href = blobUrl;
+      const isMp3Format = finalBlob.type.includes('mpeg');
+      btnDownloadAudio.download = `voiceviet-${selectedVoice}-${Date.now()}.${isMp3Format ? 'mp3' : 'wav'}`;
+      audioPlayer.volume = parseFloat(volumeRange.value) || 1.0;
+      await audioPlayer.play().catch(() => {});
+      startVisualizer();
+    } else {
+      // PROGRESSIVE TURBO STREAMING:
+      // 1. Synthesize Lead Sentence FIRST with 100% uncontested CPU (~1.4s - 1.9s) so audio plays immediately!
+      const results = new Array(streamChunks.length);
+      let doneCount = 0;
+      let playedContigIdx = 0;
+      const genSpeedBadgeEl = document.getElementById('audioGenSpeedBadge');
+      const interChunkPause = Math.min(0.32, pauseSec);
+
+      const swapPlayerPreservingTime = async (newUrl, seekTime, autoResume) => {
+        if (!audioPlayer) return;
+        await new Promise((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            audioPlayer.removeEventListener('loadedmetadata', finish);
+            resolve();
+          };
+          audioPlayer.addEventListener('loadedmetadata', finish, { once: true });
+          setTimeout(finish, 300);
+          audioPlayer.src = newUrl;
+        });
+        audioPlayer.volume = parseFloat(volumeRange.value) || 1.0;
+        if (seekTime > 0 && Number.isFinite(audioPlayer.duration) && seekTime < audioPlayer.duration - 0.05) {
+          audioPlayer.currentTime = seekTime;
+        }
+        if (autoResume) {
+          await audioPlayer.play().catch(() => {});
+          startVisualizer();
+        }
+      };
+
+      const leadRes = await fetchChunk(streamChunks[0]);
+      results[0] = leadRes;
+      doneCount = 1;
+      playedContigIdx = 0;
+      voiceNameHeader = leadRes.voiceName;
+      firstAudioElapsedMs = performance.now() - synthStartMs;
+
+      if (lastGeneratedBlobUrl) URL.revokeObjectURL(lastGeneratedBlobUrl);
+      const leadUrl = URL.createObjectURL(leadRes.blob);
+      lastGeneratedBlobUrl = leadUrl;
+      lastGeneratedAudioBlob = leadRes.blob;
+
+      audioOutputCard.classList.remove('hidden');
+      audioPlayer.src = leadUrl;
+      btnDownloadAudio.href = leadUrl;
+      btnDownloadAudio.download = `voiceviet-${selectedVoice}-${Date.now()}.wav`;
+      const leadFirstStr = qApi ? qApi.formatGenerationSpeed(firstAudioElapsedMs) : `${(firstAudioElapsedMs / 1000).toFixed(2)}s`;
+      const leadDurDetailed = qApi ? qApi.formatAudioDurationDetailed(leadRes.sec) : `${leadRes.sec.toFixed(1)}s`;
+      if (audioDurationBadge) {
+        audioDurationBadge.textContent = isVi
+          ? `🎧 Đang phát câu đầu (${leadDurDetailed})...`
+          : `🎧 Playing lead (${leadDurDetailed})...`;
+      }
+      if (audioVoiceInfo) {
+        audioVoiceInfo.textContent = isVi
+          ? `Giọng đọc: ${voiceNameHeader} • Đang ghép đa nhân (1/${streamChunks.length} đoạn)...`
+          : `Voice: ${voiceNameHeader} • Multi-core rendering (1/${streamChunks.length} chunks)...`;
+      }
+      if (genSpeedBadgeEl) {
+        genSpeedBadgeEl.textContent = isVi
+          ? `⚡ Phát ngay sau ${leadFirstStr} • Đang ghép nền (${Math.round((doneCount / streamChunks.length) * 100)}%)`
+          : `⚡ Instant play in ${leadFirstStr} • Rendering (${Math.round((doneCount / streamChunks.length) * 100)}%)`;
+      }
+      audioPlayer.volume = parseFloat(volumeRange.value) || 1.0;
+      await audioPlayer.play().catch(() => {});
+      startVisualizer();
+
+      // Seamless prefix extension if lead audio finishes playing while long tail is still rendering
+      const onInterimEnded = async () => {
+        let maxContig = 0;
+        while (maxContig + 1 < results.length && results[maxContig + 1]) {
+          maxContig++;
+        }
+        if (maxContig > playedContigIdx && doneCount < streamChunks.length) {
+          const prevDur = audioPlayer.duration || 0;
+          playedContigIdx = maxContig;
+          const prefixBlob = mergeWavBuffersClient(
+            results.slice(0, maxContig + 1).map(r => r.buf),
+            interChunkPause,
+            48000
+          );
+          if (lastGeneratedBlobUrl) URL.revokeObjectURL(lastGeneratedBlobUrl);
+          const prefixUrl = URL.createObjectURL(prefixBlob);
+          lastGeneratedBlobUrl = prefixUrl;
+          lastGeneratedAudioBlob = prefixBlob;
+          btnDownloadAudio.href = prefixUrl;
+          await swapPlayerPreservingTime(prefixUrl, prevDur, true);
+        }
+      };
+      if (audioPlayer) audioPlayer.addEventListener('ended', onInterimEnded);
+
+      // 2. Render remaining chunks across the 4x INT8 server worker pool (2 concurrent HTTP pipelines, zero contention!)
+      let nextIdx = 1;
+      const tailWorker = async () => {
+        while (nextIdx < streamChunks.length && !streamAbort.signal.aborted) {
+          const myIdx = nextIdx++;
+          const r = await fetchChunk(streamChunks[myIdx]);
+          results[myIdx] = r;
+          doneCount++;
+          const pct = Math.round((doneCount / streamChunks.length) * 100);
+          btnSpeakText.textContent = isVi
+            ? `⚡ Đang ghép siêu tốc đa nhân: ${pct}% (${doneCount}/${streamChunks.length})`
+            : `⚡ Multi-core Turbo Render: ${pct}% (${doneCount}/${streamChunks.length})`;
+          if (genSpeedBadgeEl && firstAudioElapsedMs > 0) {
+            genSpeedBadgeEl.textContent = isVi
+              ? `⚡ Phát ngay ${leadFirstStr} • Ghép đa nhân ${pct}%`
+              : `⚡ Played in ${leadFirstStr} • Merging ${pct}%`;
+          }
+          if (audioPlayer && audioPlayer.ended && doneCount < streamChunks.length) {
+            await onInterimEnded();
+          }
+        }
+      };
+
+      try {
+        await Promise.all([tailWorker(), tailWorker()]);
+      } finally {
+        if (audioPlayer) audioPlayer.removeEventListener('ended', onInterimEnded);
+      }
+
+      // 3. Merge all chunks seamlessly into 1 unified 48kHz WAV Master!
+      finalBlob = mergeWavBuffersClient(
+        results.map(r => r.buf),
+        interChunkPause,
+        48000
+      );
+      totalSecondsFloat = results.reduce((acc, r) => acc + r.sec, 0) + Math.max(0, results.length - 1) * interChunkPause;
+
+      const resumeTime = audioPlayer ? (audioPlayer.currentTime || 0) : 0;
+      const shouldContinuePlaying = audioPlayer ? (!audioPlayer.paused || audioPlayer.ended) : false;
+
+      if (lastGeneratedBlobUrl) URL.revokeObjectURL(lastGeneratedBlobUrl);
+      const fullUrl = URL.createObjectURL(finalBlob);
+      lastGeneratedBlobUrl = fullUrl;
+      lastGeneratedAudioBlob = finalBlob;
+
+      btnDownloadAudio.href = fullUrl;
+      btnDownloadAudio.download = `voiceviet-${selectedVoice}-${Date.now()}.wav`;
+
+      await swapPlayerPreservingTime(fullUrl, resumeTime, shouldContinuePlaying);
     }
 
-    const audioBlob = await response.blob();
-    const genElapsedMs = performance.now() - synthStartMs;
-    const secondsHeader = response.headers.get('X-Audio-Seconds');
-    const chunksHeader = response.headers.get('X-Total-Chunks') || '1';
-    const voiceNameHeader = decodeURIComponent(response.headers.get('X-Voice-Name') || selectedVoice);
+    const totalElapsedMs = performance.now() - synthStartMs;
+    const snap = qApi ? qApi.getSnapshot() : null;
 
-    // Deduct character quota immediately!
-    const qApi = window.VoiceVietQuota;
-    const snap = qApi ? qApi.deductCharacters(charCost) : null;
-
-    if (lastGeneratedBlobUrl) {
-      URL.revokeObjectURL(lastGeneratedBlobUrl);
-    }
-
-    const blobUrl = URL.createObjectURL(audioBlob);
-    lastGeneratedBlobUrl = blobUrl;
-    lastGeneratedAudioBlob = audioBlob;
-
-    audioOutputCard.classList.remove('hidden');
-    audioPlayer.src = blobUrl;
-    btnDownloadAudio.href = blobUrl;
-    const isMp3Format = audioBlob.type.includes('mpeg');
-    btnDownloadAudio.download = `voiceviet-${selectedVoice}-${Date.now()}.${isMp3Format ? 'mp3' : 'wav'}`;
-
-    const secondsFloat = secondsHeader ? parseFloat(secondsHeader) : (audioBlob.size / 96000);
-    const durDetailed = qApi ? qApi.formatAudioDurationDetailed(secondsFloat) : `${secondsFloat.toFixed(1)}s`;
-    const genSpeedStr = qApi ? qApi.formatGenerationSpeed(genElapsedMs) : `${(genElapsedMs / 1000).toFixed(2)}s`;
+    const durDetailed = qApi ? qApi.formatAudioDurationDetailed(totalSecondsFloat) : `${totalSecondsFloat.toFixed(1)}s`;
+    const totalSpeedStr = qApi ? qApi.formatGenerationSpeed(totalElapsedMs) : `${(totalElapsedMs / 1000).toFixed(2)}s`;
+    const firstSpeedStr = qApi ? qApi.formatGenerationSpeed(firstAudioElapsedMs) : `${(firstAudioElapsedMs / 1000).toFixed(2)}s`;
     const clockStr = qApi ? qApi.formatClockTimestamp(new Date()) : new Date().toLocaleTimeString('vi-VN');
-    const chunkNote = parseInt(chunksHeader) > 1 ? ` • Đã ghép ${chunksHeader} đoạn liền mạch` : '';
 
     audioDurationBadge.textContent = `🎧 ${qApi ? qApi.t('audio_len_label') : 'Thời lượng đọc:'} ${durDetailed}`;
     const genSpeedBadge = document.getElementById('audioGenSpeedBadge');
     if (genSpeedBadge) {
-      genSpeedBadge.textContent = `⚡ ${qApi ? qApi.t('gen_done_in') : 'Tạo xong trong'} ${genSpeedStr}`;
+      genSpeedBadge.textContent = useProgressiveStream
+        ? (isVi ? `⚡ Phát sau ${firstSpeedStr} (Trọn bộ ${totalSpeedStr})` : `⚡ Instant ${firstSpeedStr} (Total ${totalSpeedStr})`)
+        : `⚡ ${qApi ? qApi.t('gen_done_in') : 'Tạo xong trong'} ${totalSpeedStr}`;
     }
 
     const completedMetaBadge = document.getElementById('audioCompletedMetaBadge');
@@ -1466,18 +1745,25 @@ async function startCheapTtsSynthesis(text, rawCharCount = 0) {
       `;
     }
 
-    audioVoiceInfo.textContent = `Giọng đọc: ${voiceNameHeader} • Dung lượng: ${(audioBlob.size / 1024).toFixed(1)} KB${chunkNote}`;
-    saveToHistory(textInput.value.trim() || text, genSpeedStr, charCost);
+    audioVoiceInfo.textContent = isVi
+      ? `Giọng đọc: ${voiceNameHeader} • Dung lượng: ${(finalBlob.size / 1024).toFixed(1)} KB${useProgressiveStream ? ` • Ghép đa nhân ${streamChunks.length} đoạn` : ''}`
+      : `Voice: ${voiceNameHeader} • Size: ${(finalBlob.size / 1024).toFixed(1)} KB${useProgressiveStream ? ` • ${streamChunks.length}x Parallel Stream` : ''}`;
+    saveToHistory(textInput.value.trim() || text, totalSpeedStr, charCost);
 
-    audioPlayer.volume = parseFloat(volumeRange.value) || 1.0;
-    await audioPlayer.play().catch(() => {});
-
-    startVisualizer();
-    showToast(`⚡ Xong trong ${genSpeedStr} (Đọc ${secondsFloat.toFixed(1)}s) • Đã trừ ${charCost.toLocaleString('vi-VN')} ký tự!`, 'success');
+    showToast(
+      isVi
+        ? `⚡ Hoàn tất trọn bộ trong ${totalSpeedStr} (Đọc ${totalSecondsFloat.toFixed(1)}s) • Đã trừ ${charCost.toLocaleString('vi-VN')} ký tự!`
+        : `⚡ Completed in ${totalSpeedStr} (Audio ${totalSecondsFloat.toFixed(1)}s) • Used ${charCost.toLocaleString('en-US')} chars!`,
+      'success'
+    );
   } catch (err) {
+    if (err && err.name === 'AbortError') return;
     console.error('TTS synthesis error:', err);
-    showToast(`Lỗi tạo giọng nói: ${err.message}`, 'error');
+    showToast(isVi ? `Lỗi tạo giọng nói: ${err.message}` : `Synthesis error: ${err.message}`, 'error');
   } finally {
+    if (currentStreamingAbort === streamAbort) {
+      currentStreamingAbort = null;
+    }
     btnSpeak.disabled = false;
     btnSpeakIcon.className = 'fa-solid fa-play text-sm';
     if (window.VoiceVietQuota) {
@@ -1641,6 +1927,10 @@ function togglePause() {
 }
 
 function stopSpeaking() {
+  if (currentStreamingAbort) {
+    currentStreamingAbort.abort();
+    currentStreamingAbort = null;
+  }
   if (synth) synth.cancel();
   if (audioPlayer && !audioPlayer.paused) audioPlayer.pause();
   if (webSpeechKeepAlive) {
@@ -1671,6 +1961,7 @@ function switchEngine(engine) {
   tabCheapTts.classList.remove('active', 'cheap-tts-active');
   tabWebSpeech.classList.remove('active');
 
+  const isVi = !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
   if (engine === 'free') {
     if (tabFreeTts) {
       tabFreeTts.classList.add('active', 'bg-gradient-to-r', 'from-emerald-600', 'to-teal-600', 'text-white');
@@ -1681,9 +1972,9 @@ function switchEngine(engine) {
     pitchControlGroup.classList.add('hidden');
     cheapTtsPauseGroup.classList.remove('hidden');
     btnPause.classList.add('hidden');
-    btnSpeakText.textContent = '✨ Tạo Giọng AI Miễn Phí';
+    btnSpeakText.textContent = window.VoiceVietQuota ? window.VoiceVietQuota.t('btn_speak_free') : '✨ Tạo Giọng AI Miễn Phí';
     populateCheapTtsVoiceList(cheapTtsVoices);
-    showToast('Đã chuyển sang Studio 48kHz & 32 Ngôn Ngữ Quốc Tế', 'success');
+    showToast(isVi ? 'Đã chuyển sang Studio 48kHz & 142 Ngôn Ngữ Quốc Tế' : 'Switched to 48kHz Studio & 142 Global Languages', 'success');
   } else if (engine === 'cheaptts') {
     tabCheapTts.classList.add('active', 'cheap-tts-active');
     if (languageFilterContainer) languageFilterContainer.classList.remove('hidden');
@@ -1691,9 +1982,9 @@ function switchEngine(engine) {
     pitchControlGroup.classList.add('hidden');
     cheapTtsPauseGroup.classList.remove('hidden');
     btnPause.classList.add('hidden');
-    btnSpeakText.textContent = 'Tạo giọng nói AI';
+    btnSpeakText.textContent = window.VoiceVietQuota ? window.VoiceVietQuota.t('btn_speak_cloud') : 'Tạo giọng nói AI';
     populateCheapTtsVoiceList(cheapTtsVoices);
-    showToast('Đã chuyển sang Cheap-TTS Cloud AI', 'info');
+    showToast(isVi ? 'Đã chuyển sang Cheap-TTS Cloud AI' : 'Switched to Cheap-TTS Cloud AI', 'info');
   } else {
     tabWebSpeech.classList.add('active');
     if (languageFilterContainer) languageFilterContainer.classList.add('hidden');
@@ -1702,10 +1993,12 @@ function switchEngine(engine) {
     pitchControlGroup.classList.remove('hidden');
     cheapTtsPauseGroup.classList.add('hidden');
     btnPause.classList.remove('hidden');
-    btnSpeakText.textContent = 'Đọc văn bản';
-    voiceNoteText.textContent = 'Giọng đọc trình duyệt miễn phí trên máy tính của bạn.';
+    btnSpeakText.textContent = window.VoiceVietQuota ? window.VoiceVietQuota.t('btn_speak_browser') : 'Đọc văn bản';
+    voiceNoteText.textContent = isVi
+      ? 'Giọng đọc trình duyệt miễn phí trên máy tính của bạn.'
+      : 'Free built-in browser voices on your device.';
     populateBrowserVoiceList();
-    showToast('Đã chuyển sang Trình duyệt (Web Speech)', 'info');
+    showToast(isVi ? 'Đã chuyển sang Trình duyệt (Web Speech)' : 'Switched to Browser (Web Speech)', 'info');
   }
 }
 window.switchEngine = switchEngine;
@@ -2148,23 +2441,29 @@ function saveToHistory(text, genSpeed = '', charsUsed = 0) {
 }
 
 function renderHistory() {
+  const qApi = window.VoiceVietQuota;
+  const isVi = !qApi || qApi.getLang() === 'vi';
   const history = JSON.parse(localStorage.getItem('vietvoice_history') || '[]');
   historyList.innerHTML = '';
   if (history.length === 0) {
-    historyList.innerHTML = '<p class="text-xs text-slate-500 italic py-2">Chưa có đoạn văn bản nào trong lịch sử.</p>';
+    historyList.innerHTML = `<p class="text-xs text-slate-500 italic py-2">${
+      isVi ? 'Chưa có đoạn văn bản nào trong lịch sử.' : 'No recent generations yet.'
+    }</p>`;
     return;
   }
   history.forEach((item, index) => {
     const el = document.createElement('div');
     el.className = 'history-item flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60 border border-slate-700/50 cursor-pointer group';
     const speedPart = item.genSpeed ? ` • ⚡ ${escapeHtml(item.genSpeed)}` : '';
-    const charPart = item.charsUsed ? ` • −${Number(item.charsUsed).toLocaleString('vi-VN')} ký tự` : '';
+    const charPart = item.charsUsed
+      ? (isVi ? ` • −${Number(item.charsUsed).toLocaleString('vi-VN')} ký tự` : ` • −${Number(item.charsUsed).toLocaleString('en-US')} chars`)
+      : '';
     el.innerHTML = `
       <div class="flex-1 truncate mr-2">
         <p class="text-xs text-slate-200 truncate group-hover:text-amber-300 font-medium">${escapeHtml(item.text)}</p>
         <span class="text-[10px] text-slate-400">${item.time}${speedPart}${charPart}</span>
       </div>
-      <button class="delete-history opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 text-slate-500 transition text-xs" title="Xóa">
+      <button class="delete-history opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 text-slate-500 transition text-xs" title="${isVi ? 'Xóa' : 'Delete'}">
         <i class="fa-solid fa-xmark"></i>
       </button>
     `;
@@ -2172,7 +2471,7 @@ function renderHistory() {
       if (e.target.closest('.delete-history')) return;
       textInput.value = item.fullText || item.text;
       updateStats();
-      showToast('Đã tải văn bản từ lịch sử', 'info');
+      showToast(isVi ? 'Đã tải văn bản từ lịch sử' : 'Loaded script from history', 'info');
     });
     el.querySelector('.delete-history').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2181,6 +2480,18 @@ function renderHistory() {
     historyList.appendChild(el);
   });
 }
+
+window.addEventListener('voiceviet:langchange', () => {
+  if (cheapTtsVoices && cheapTtsVoices.length > 0) {
+    populateDynamicCountrySelect(languageFilterSelect, cheapTtsVoices);
+    if (currentEngine !== 'webspeech') {
+      populateCheapTtsVoiceList(cheapTtsVoices);
+    } else {
+      populateBrowserVoiceList();
+    }
+  }
+  renderHistory();
+});
 
 function deleteHistoryItem(index) {
   let history = JSON.parse(localStorage.getItem('vietvoice_history') || '[]');

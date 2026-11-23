@@ -9,6 +9,8 @@ VoiceViet Studio AI Engine v4.0
 """
 import asyncio
 import base64
+import concurrent.futures
+import ctypes
 import hashlib
 import io
 import json
@@ -20,10 +22,31 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.parse
 import urllib.request
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# Prevent OpenMP / ONNX Runtime active spin-wait contention across parallel workers
+os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
+
+
+def _boost_macos_interactive_qos() -> None:
+    """Ensure macOS Apple Silicon schedules TTS threads on Performance (P) cores instead of 600MHz Background E-cores."""
+    if sys.platform != "darwin":
+        return
+    try:
+        libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+        # Clear PRIO_DARWIN_BG (PRIO_DARWIN_PROCESS = 4) if inherited from launchd / background parent
+        libc.setpriority(4, 0, 0)
+        # QOS_CLASS_USER_INITIATED = 0x19
+        libc.pthread_set_qos_class_self_np(0x19, 0)
+    except Exception:
+        pass
+
+
+_boost_macos_interactive_qos()
 
 # 1. Eliminate 45s broken-IPv6 blackhole timeouts on HuggingFace / Microsoft Edge / Google TTS
 _ORIG_GETADDRINFO = socket.getaddrinfo
@@ -137,15 +160,15 @@ FREE_VOICES = [
     },
     {
         "id": "free-vi-namminh",
-        "name": "Nam Minh (Neural)",
+        "name": "Nam Minh (Studio 48kHz)",
         "gender": "Nam",
         "language": "vi",
         "country": "🇻🇳 Tiếng Việt",
-        "provider": "edge",
-        "model": "vi-VN-NamMinhNeural",
+        "provider": "vieneu",
+        "model": "Xuân Vĩnh",
         "featured": True,
-        "useCase": "Nam Microsoft Neural đĩnh đạc — Phóng sự, Ký sự, Thuyết minh",
-        "badge": "FREE NEURAL",
+        "useCase": "Nam Bắc đĩnh đạc, chuẩn mực — Phóng sự, Ký sự, Thuyết minh",
+        "badge": "STUDIO 48kHz",
     },
     {
         "id": "free-vi-google",
@@ -174,6 +197,12 @@ FREE_VOICES = [
     {"id": "free-vi-thuy-dung", "name": "Thùy Dung (Miền Nam 48kHz)", "gender": "Nữ", "language": "vi", "country": "🇻🇳 Tiếng Việt", "provider": "vieneu", "model": "Thùy Dung", "featured": False, "useCase": "Nữ miền Nam chuẩn tin tức — Bản tin, Tổng đài", "badge": "STUDIO 48kHz"},
     {"id": "free-vi-duc-tri", "name": "Đức Trí (Đọc truyện 48kHz)", "gender": "Nam", "language": "vi", "country": "🇻🇳 Tiếng Việt", "provider": "vieneu", "model": "Đức Trí", "featured": False, "useCase": "Nam miền Nam đọc truyện truyền cảm — Tiểu thuyết", "badge": "STUDIO 48kHz"},
     {"id": "free-vi-kim-thanh", "name": "Kim Thanh (Đọc truyện 48kHz)", "gender": "Nữ", "language": "vi", "country": "🇻🇳 Tiếng Việt", "provider": "vieneu", "model": "Kim Thanh", "featured": False, "useCase": "Nữ miền Nam ấm áp — Truyện gia đình, Tâm lý", "badge": "STUDIO 48kHz"},
+    {"id": "free-vi-quoc-tuan", "name": "Quốc Tuấn (Thuyết minh 48kHz)", "gender": "Nam", "language": "vi", "country": "🇻🇳 Tiếng Việt", "provider": "vieneu", "model": "Quốc Tuấn", "featured": False, "useCase": "Nam Bắc trầm ổn, rõ chữ — Thuyết minh, Tài liệu, Sách kinh doanh", "badge": "STUDIO 48kHz"},
+    {"id": "free-vi-thanh-binh", "name": "Thanh Bình (Kể chuyện 48kHz)", "gender": "Nam", "language": "vi", "country": "🇻🇳 Tiếng Việt", "provider": "vieneu", "model": "Thanh Bình", "featured": False, "useCase": "Nam Bắc kể chuyện truyền cảm — Văn học, Tản văn", "badge": "STUDIO 48kHz"},
+    {"id": "free-vi-minh-triet", "name": "Minh Triết (Tin tức Nam 48kHz)", "gender": "Nam", "language": "vi", "country": "🇻🇳 Tiếng Việt", "provider": "vieneu", "model": "Minh Triết", "featured": False, "useCase": "Nam miền Nam tin tức hiện đại — Điểm tin, Kinh tế, Review", "badge": "STUDIO 48kHz"},
+    {"id": "free-vi-quynh-anh", "name": "Quỳnh Anh (Đọc truyện 48kHz)", "gender": "Nữ", "language": "vi", "country": "🇻🇳 Tiếng Việt", "provider": "vieneu", "model": "Quỳnh Anh", "featured": False, "useCase": "Nữ Bắc dịu dàng — Đọc truyện, Ngôn tình, Sách nói", "badge": "STUDIO 48kHz"},
+    {"id": "free-vi-doan-trang", "name": "Đoan Trang (Tự nhiên 48kHz)", "gender": "Nữ", "language": "vi", "country": "🇻🇳 Tiếng Việt", "provider": "vieneu", "model": "Đoan Trang", "featured": False, "useCase": "Nữ Bắc thanh lịch — Giới thiệu sản phẩm, Giáo dục", "badge": "STUDIO 48kHz"},
+    {"id": "free-vi-thuc-doan", "name": "Thục Đoan (Miền Nam 48kHz)", "gender": "Nữ", "language": "vi", "country": "🇻🇳 Tiếng Việt", "provider": "vieneu", "model": "Thục Đoan", "featured": False, "useCase": "Nữ miền Nam truyền cảm — Kể chuyện đêm khuya, Tâm sự", "badge": "STUDIO 48kHz"},
     # === NHÓM 3: GIỌNG VIỆT ĐẶC TRƯNG SIÊU TỐC OFFLINE (MASTERED 48KHZ) ===
     {"id": "free-vi-ngoc-ngan", "name": "Ngọc Ngạn (Truyện ma đêm khuya)", "gender": "Nam", "language": "vi", "country": "🇻🇳 Tiếng Việt", "provider": "piper", "model": "ngocngan3701.onnx", "featured": False, "useCase": "Giọng đọc Truyện ma, Kể chuyện đêm khuya huyền thoại", "badge": "FAST OFFLINE"},
     {"id": "free-vi-tai-an", "name": "Tài An (CD Media Lịch sử)", "gender": "Nam", "language": "vi", "country": "🇻🇳 Tiếng Việt", "provider": "piper", "model": "taian4.onnx", "featured": False, "useCase": "Phân tích Lịch sử, Địa chính trị, Kinh tế", "badge": "FAST OFFLINE"},
@@ -208,19 +237,50 @@ def resolve_voice_entry(voice_id: str) -> dict:
                     return entry
     return VOICE_MAP["free-vi-ngoc-huyen"]
 
-_VIENEU_LOCK = threading.Lock()
 _PIPER_LOCK = threading.Lock()
-_VIENEU_INSTANCE = None
+_VIENEU_POOL_SIZE = 4
+_VIENEU_TLS = threading.local()
+_VIENEU_WARM_READY = False
+_VIENEU_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=_VIENEU_POOL_SIZE)
 _PIPER_CACHE: dict[str, object] = {}
 _PREVIEW_RAM_CACHE: dict[str, tuple[bytes, str, float]] = {}
 
 
-def get_vieneu():
-    global _VIENEU_INSTANCE
-    if _VIENEU_INSTANCE is None:
+def _get_thread_local_vieneu():
+    """Each ThreadPool worker owns 1 dedicated INT8 VieNeu instance — 100% lock-free & deadlock-free!"""
+    global _VIENEU_WARM_READY
+    tts = getattr(_VIENEU_TLS, "tts", None)
+    if tts is None:
+        _boost_macos_interactive_qos()
         from vieneu import Vieneu
-        _VIENEU_INSTANCE = Vieneu()
-    return _VIENEU_INSTANCE
+        try:
+            tts = Vieneu(mode="v3turbo", precision="int8", threads=2, babble_retries=0)
+        except Exception:
+            tts = Vieneu(mode="v3turbo", threads=2, babble_retries=0)
+        _VIENEU_TLS.tts = tts
+        _VIENEU_WARM_READY = True
+    return tts
+
+
+def _tls_infer_task(text_str: str, voice_or_preset) -> np.ndarray:
+    tts = _get_thread_local_vieneu()
+    return tts.infer(text_str, voice=voice_or_preset)
+
+
+def _tls_enroll_task(audio_bytes: bytes, name: str, gender: str, desc: str, tok: str) -> dict:
+    tts = _get_thread_local_vieneu()
+    return VAULT.enroll_new_private_voice(
+        vieneu_tts=tts,
+        audio_bytes=audio_bytes,
+        name=name,
+        gender=gender,
+        description=desc,
+        pin_or_token=tok,
+    )
+
+
+def run_vieneu_infer(text_str: str, voice_or_preset) -> np.ndarray:
+    return _VIENEU_EXECUTOR.submit(_tls_infer_task, text_str, voice_or_preset).result()
 
 
 def download_file_atomic(url: str, dest_path: str, min_bytes: int = 500) -> None:
@@ -311,25 +371,25 @@ def split_dramatic_blocks(text: str, base_pause: float = 0.40) -> list[tuple[str
 
         rem = cur.strip(" ,;:-")
         if rem:
-            if len(rem) > 280:
+            if len(rem) > 95:
                 sents = re.split(r"(?<=[.?!。？！])\s*", rem)
                 buf_s = ""
                 for s in sents:
                     s = s.strip()
                     if not s:
                         continue
-                    if len(buf_s) + len(s) + 1 <= 260:
+                    if len(buf_s) + len(s) + 1 <= 115:
                         buf_s = f"{buf_s} {s}".strip() if buf_s else s
                     else:
                         if buf_s:
-                            blocks.append((buf_s, max(0.30, base_pause * 1.15)))
+                            blocks.append((buf_s, max(0.28, base_pause * 1.05)))
                         buf_s = s
                 if buf_s:
-                    blocks.append((buf_s, max(0.30, base_pause * 1.15)))
+                    blocks.append((buf_s, max(0.28, base_pause * 1.05)))
             else:
                 if rem[-1] not in ".?!。？！":
                     rem += "."
-                blocks.append((rem, max(0.30, base_pause * 1.15)))
+                blocks.append((rem, max(0.28, base_pause * 1.05)))
 
         if blocks and p_idx < len(paragraphs) - 1:
             last_txt, last_p = blocks[-1]
@@ -373,31 +433,44 @@ def polish_bilingual_for_vieneu(text: str) -> str:
     return t
 
 
+def _infer_single_vieneu_phrase(clean_phrase: str, voice_or_preset) -> np.ndarray:
+    audio_f32 = _tls_infer_task(clean_phrase, voice_or_preset)
+    return trim_and_smooth_float32(audio_f32, TARGET_SR)
+
+
 def synthesize_vieneu_48k(text: str, voice_or_preset, rate: float = 1.0, pause_sec: float = 0.40) -> bytes:
-    tts = get_vieneu()
     text = polish_bilingual_for_vieneu(text)
     blocks = split_dramatic_blocks(text, base_pause=pause_sec)
     if not blocks:
         return encode_float32_to_wav_bytes(np.zeros(int(0.2 * TARGET_SR), dtype=np.float32), TARGET_SR)
 
-    pieces: list[np.ndarray] = []
-    for idx, (phrase, after_pause) in enumerate(blocks):
+    valid_items: list[tuple[str, float]] = []
+    for phrase, after_pause in blocks:
         clean_phrase = re.sub(r"[“”\"«»]", "", phrase).strip()
-        if not clean_phrase:
-            continue
-        audio_f32 = tts.infer(clean_phrase, voice=voice_or_preset)
-        seg = trim_and_smooth_float32(audio_f32, TARGET_SR)
+        if clean_phrase:
+            valid_items.append((clean_phrase, after_pause))
+
+    if not valid_items:
+        return encode_float32_to_wav_bytes(np.zeros(int(0.2 * TARGET_SR), dtype=np.float32), TARGET_SR)
+
+    # Dispatch leaf tasks directly to the 4 thread-local INT8 workers (never nested!)
+    futs = [
+        _VIENEU_EXECUTOR.submit(_infer_single_vieneu_phrase, phr, voice_or_preset)
+        for phr, _ in valid_items
+    ]
+    segs = [f.result() for f in futs]
+
+    pieces: list[np.ndarray] = []
+    for idx, seg in enumerate(segs):
         pieces.append(seg)
-        if idx < len(blocks) - 1 and after_pause > 0:
+        after_pause = valid_items[idx][1]
+        if idx < len(segs) - 1 and after_pause > 0:
             pieces.append(np.zeros(int(after_pause * TARGET_SR), dtype=np.float32))
 
-    if not pieces:
-        full = np.zeros(int(0.2 * TARGET_SR), dtype=np.float32)
-    else:
-        full = np.concatenate(pieces)
-        peak = float(np.max(np.abs(full)))
-        if peak > 0.01:
-            full = full * (0.89 / peak)
+    full = np.concatenate(pieces)
+    peak = float(np.max(np.abs(full)))
+    if peak > 0.01:
+        full = full * (0.89 / peak)
 
     wav_bytes = encode_float32_to_wav_bytes(full, TARGET_SR)
     return apply_rate_ffmpeg(wav_bytes, rate)
@@ -680,35 +753,44 @@ async def fetch_edge_mp3_hedged(text: str, edge_voice: str, rate: float = 1.0) -
 
 async def synthesize_edge_48k(text: str, edge_voice: str, lang_code: str = "vi", rate: float = 1.0, pause_sec: float = 0.40) -> bytes:
     blocks = split_dramatic_blocks(text, base_pause=pause_sec)
+    valid = []
+    for phrase, after_pause in blocks:
+        clean_phrase = re.sub(r"\[(?:cười|thở dài|hắng giọng)\]", "", phrase).strip()
+        if clean_phrase:
+            valid.append((clean_phrase, after_pause))
+
+    if not valid:
+        return encode_float32_to_wav_bytes(np.zeros(int(0.2 * TARGET_SR), dtype=np.float32), TARGET_SR)
+
+    sem = asyncio.Semaphore(8)
+
+    async def _fetch_idx(i: int, phr: str) -> bytes:
+        async with sem:
+            return await fetch_edge_mp3_hedged(phr, edge_voice, rate=rate)
+
+    try:
+        mp3_list = await asyncio.gather(*[_fetch_idx(i, p) for i, (p, _) in enumerate(valid)])
+    except Exception:
+        if not lang_code.startswith("vi"):
+            g_lang = map_locale_to_google_lang(lang_code)
+            return synthesize_google_48k(text, lang=g_lang, rate=rate, pause_sec=pause_sec)
+        raise RuntimeError(
+            "Máy chủ Microsoft Edge Neural đang bận tạm thời. "
+            "Bạn hãy chọn các giọng Studio 48kHz hoặc Giọng Nhân Bản Độc Quyền để chạy Offline 100% siêu mượt nhé!"
+        )
+
     pieces: list[np.ndarray] = []
-
     with tempfile.TemporaryDirectory() as tmpdir:
-        for idx, (phrase, after_pause) in enumerate(blocks):
-            clean_phrase = re.sub(r"\[(?:cười|thở dài|hắng giọng)\]", "", phrase).strip()
-            if not clean_phrase:
-                continue
+        for idx, mp3_bytes in enumerate(mp3_list):
             raw_mp3 = os.path.join(tmpdir, f"edge_{idx}.mp3")
-            try:
-                # Pass rate=1.0 into mp3_to_float32_48k because Edge already applies native neural prosody rate!
-                mp3_bytes = await fetch_edge_mp3_hedged(clean_phrase, edge_voice, rate=rate)
-                with open(raw_mp3, "wb") as f:
-                    f.write(mp3_bytes)
-                arr = mp3_to_float32_48k(raw_mp3, rate=1.0)
-            except Exception:
-                if not lang_code.startswith("vi"):
-                    g_lang = map_locale_to_google_lang(lang_code)
-                    return synthesize_google_48k(text, lang=g_lang, rate=rate, pause_sec=pause_sec)
-                raise RuntimeError(
-                    "Máy chủ Microsoft Edge Neural đang bận tạm thời. "
-                    "Bạn hãy chọn các giọng Studio 48kHz hoặc Giọng Nhân Bản Độc Quyền để chạy Offline 100% siêu mượt nhé!"
-                )
-
+            with open(raw_mp3, "wb") as f:
+                f.write(mp3_bytes)
+            arr = mp3_to_float32_48k(raw_mp3, rate=1.0)
             pieces.append(trim_and_smooth_float32(arr, TARGET_SR))
-            if idx < len(blocks) - 1 and after_pause > 0:
+            after_pause = valid[idx][1]
+            if idx < len(mp3_list) - 1 and after_pause > 0:
                 pieces.append(np.zeros(int(after_pause * TARGET_SR), dtype=np.float32))
 
-    if not pieces:
-        pieces.append(np.zeros(int(0.2 * TARGET_SR), dtype=np.float32))
     return encode_float32_to_wav_bytes(np.concatenate(pieces), TARGET_SR)
 
 
@@ -758,14 +840,12 @@ def dispatch_preview(
         cache_key = f"priv:{voice_id}:{rate_clamped}:{hashlib.md5(prompt.encode('utf-8')).hexdigest()[:8]}"
         if cache_key in _PREVIEW_RAM_CACHE:
             return _PREVIEW_RAM_CACHE[cache_key]
-        with _VIENEU_LOCK:
-            tts = get_vieneu()
-            audio_f32 = tts.infer(prompt, voice=preset_dict)
-            seg = trim_and_smooth_float32(audio_f32, TARGET_SR)
-            peak = float(np.max(np.abs(seg)))
-            if peak > 0.01:
-                seg = seg * (0.89 / peak)
-            wav_bytes = apply_rate_ffmpeg(encode_float32_to_wav_bytes(seg, TARGET_SR), rate_clamped)
+        audio_f32 = run_vieneu_infer(prompt, preset_dict)
+        seg = trim_and_smooth_float32(audio_f32, TARGET_SR)
+        peak = float(np.max(np.abs(seg)))
+        if peak > 0.01:
+            seg = seg * (0.89 / peak)
+        wav_bytes = apply_rate_ffmpeg(encode_float32_to_wav_bytes(seg, TARGET_SR), rate_clamped)
         dur = max(0.3, (len(wav_bytes) - 44) / (TARGET_SR * 2))
         res_tuple = (wav_bytes, "audio/wav", dur)
         _PREVIEW_RAM_CACHE[cache_key] = res_tuple
@@ -792,23 +872,35 @@ def dispatch_preview(
         _PREVIEW_RAM_CACHE[cache_hash] = res_tuple
         return res_tuple
 
-    # 3. Cold fast synthesis (lock-free for Edge & Google; single-pass for VieNeu & Piper!)
+    # 3. Cold fast synthesis (lock-free for Edge, Google & INT8 VieNeu Pool!)
     model = info["model"]
     lang_code = info.get("language", "vi")
+    used_fallback = False
 
     if provider == "edge":
         clean_p = re.sub(r"\[(?:cười|thở dài|hắng giọng)\]", "", prompt).replace("...", ",").strip()
         try:
-            audio_bytes = run_async(fetch_edge_mp3_hedged(clean_p, model, rate=rate_clamped), timeout=2.30)
+            audio_bytes = run_async(fetch_edge_mp3_hedged(clean_p, model, rate=rate_clamped), timeout=2.50)
             mime = "audio/mpeg"
             ext = "mp3"
             est_sec = max(0.8, len(audio_bytes) / 6000.0)
         except Exception:
-            g_lang = map_locale_to_google_lang(lang_code)
-            audio_bytes = fetch_google_mp3_fast(clean_p, lang=g_lang)
-            mime = "audio/mpeg"
-            ext = "mp3"
-            est_sec = max(0.8, len(audio_bytes) / 4200.0)
+            used_fallback = True
+            if lang_code.startswith("vi"):
+                # Keep authentic gender if Vietnamese Edge ever fails; NEVER substitute female Google for Male!
+                fb_model = "Xuân Vĩnh" if info.get("gender") == "Nam" else "Quỳnh Anh"
+                audio_f32 = run_vieneu_infer(clean_p, fb_model)
+                seg = trim_and_smooth_float32(audio_f32, TARGET_SR)
+                audio_bytes = apply_rate_ffmpeg(encode_float32_to_wav_bytes(seg, TARGET_SR), rate_clamped)
+                mime = "audio/wav"
+                ext = "wav"
+                est_sec = max(0.5, (len(audio_bytes) - 44) / (TARGET_SR * 2))
+            else:
+                g_lang = map_locale_to_google_lang(lang_code)
+                audio_bytes = fetch_google_mp3_fast(clean_p, lang=g_lang)
+                mime = "audio/mpeg"
+                ext = "mp3"
+                est_sec = max(0.8, len(audio_bytes) / 4200.0)
     elif provider == "google":
         if abs(rate_clamped - 1.0) <= 0.05:
             audio_bytes = fetch_google_mp3_fast(prompt, lang=model)
@@ -827,29 +919,27 @@ def dispatch_preview(
         ext = "wav"
         est_sec = max(0.5, (len(audio_bytes) - 44) / (TARGET_SR * 2))
     else:
-        # Single-pass VieNeu 48kHz inference (~1.1s - 1.4s!)
-        single_p = prompt.replace("...", ",").strip()
-        with _VIENEU_LOCK:
-            tts = get_vieneu()
-            audio_f32 = tts.infer(single_p, voice=model)
-            seg = trim_and_smooth_float32(audio_f32, TARGET_SR)
-            peak = float(np.max(np.abs(seg)))
-            if peak > 0.01:
-                seg = seg * (0.89 / peak)
-            audio_bytes = apply_rate_ffmpeg(encode_float32_to_wav_bytes(seg, TARGET_SR), rate_clamped)
+        single_p = polish_bilingual_for_vieneu(prompt.replace("...", ",").strip())
+        audio_f32 = run_vieneu_infer(single_p, model)
+        seg = trim_and_smooth_float32(audio_f32, TARGET_SR)
+        peak = float(np.max(np.abs(seg)))
+        if peak > 0.01:
+            seg = seg * (0.89 / peak)
+        audio_bytes = apply_rate_ffmpeg(encode_float32_to_wav_bytes(seg, TARGET_SR), rate_clamped)
         mime = "audio/wav"
         ext = "wav"
         est_sec = max(0.5, (len(audio_bytes) - 44) / (TARGET_SR * 2))
 
-    # Save public preview to RAM & disk cache for instant 0.01s future replays!
-    disk_out = os.path.join(PREVIEW_CACHE_DIR, f"{resolved_id}_{cache_hash}.{ext}")
-    try:
-        with open(disk_out, "wb") as f:
-            f.write(audio_bytes)
-    except OSError:
-        pass
+    # Save public preview to RAM & disk cache ONLY when genuine (never persist fallback audio!)
     res_tuple = (audio_bytes, mime, est_sec)
-    _PREVIEW_RAM_CACHE[cache_hash] = res_tuple
+    if not used_fallback:
+        disk_out = os.path.join(PREVIEW_CACHE_DIR, f"{resolved_id}_{cache_hash}.{ext}")
+        try:
+            with open(disk_out, "wb") as f:
+                f.write(audio_bytes)
+        except OSError:
+            pass
+        _PREVIEW_RAM_CACHE[cache_hash] = res_tuple
     return res_tuple
 
 
@@ -862,8 +952,7 @@ def dispatch_synthesize(
 ) -> bytes:
     if voice_id.startswith("private-"):
         preset_dict = VAULT.get_authorized_voice_preset(voice_id, owner_token)
-        with _VIENEU_LOCK:
-            return synthesize_vieneu_48k(text, preset_dict, rate=rate, pause_sec=pause_sec)
+        return synthesize_vieneu_48k(text, preset_dict, rate=rate, pause_sec=pause_sec)
 
     info = resolve_voice_entry(voice_id)
     provider = info["provider"]
@@ -871,8 +960,7 @@ def dispatch_synthesize(
     lang_code = info.get("language", "vi")
 
     if provider == "vieneu":
-        with _VIENEU_LOCK:
-            return synthesize_vieneu_48k(text, model, rate=rate, pause_sec=pause_sec)
+        return synthesize_vieneu_48k(text, model, rate=rate, pause_sec=pause_sec)
     elif provider == "piper":
         with _PIPER_LOCK:
             return synthesize_piper_mastered_48k(text, model, rate=rate, pause_sec=pause_sec)
@@ -882,8 +970,7 @@ def dispatch_synthesize(
     elif provider == "google":
         return synthesize_google_48k(text, lang=model, rate=rate, pause_sec=pause_sec)
     else:
-        with _VIENEU_LOCK:
-            return synthesize_vieneu_48k(text, "Ngọc Huyền", rate=rate, pause_sec=pause_sec)
+        return synthesize_vieneu_48k(text, "Ngọc Huyền", rate=rate, pause_sec=pause_sec)
 
 
 def get_public_voices() -> list[dict]:
@@ -927,7 +1014,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self._send_json(200, {"ok": True, "warm": _VIENEU_INSTANCE is not None})
+            self._send_json(200, {"ok": True, "warm": _VIENEU_WARM_READY})
         elif self.path == "/voices":
             self._send_json(200, {"success": True, "voices": get_public_voices()})
         elif self.path == "/private/status":
@@ -974,16 +1061,9 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 name = str(data.get("name", "Giọng Cá Nhân Mới")).strip() or "Giọng Cá Nhân Mới"
                 gender = str(data.get("gender", "Nam"))
                 desc = str(data.get("description", "Giọng nhân bản cá nhân độc quyền (48kHz Studio)"))
-                with _VIENEU_LOCK:
-                    tts = get_vieneu()
-                    created = VAULT.enroll_new_private_voice(
-                        vieneu_tts=tts,
-                        audio_bytes=audio_bytes,
-                        name=name,
-                        gender=gender,
-                        description=desc,
-                        pin_or_token=tok,
-                    )
+                created = _VIENEU_EXECUTOR.submit(
+                    _tls_enroll_task, audio_bytes, name, gender, desc, tok
+                ).result()
                 self._send_json(200, {"success": True, "voice": created, "voices": VAULT.list_private_voices_public()})
                 return
 
@@ -1046,14 +1126,32 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(500, {"success": False, "error": str(e)})
 
 
+class ReusableThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
 def run_daemon(port: int = 3099) -> None:
+    orig_ppid = os.getppid()
+
+    if orig_ppid > 1:
+        def _parent_watchdog():
+            while True:
+                time.sleep(2.0)
+                if os.getppid() != orig_ppid:
+                    os._exit(0)
+
+        threading.Thread(target=_parent_watchdog, daemon=True).start()
+
     def _warmup():
         try:
-            with _VIENEU_LOCK:
-                tts = get_vieneu()
-                # JIT warm ONNX graph + espeak-ng phonemizer immediately so first user click is ~1.2s!
-                _ = tts.infer("Chào.", voice="Ngọc Huyền")
-            sys.stderr.write(f"[VoiceViet Daemon v5.5] VieNeu 48kHz JIT warmed + 142 Global Languages ready on port {port}!\n")
+            # Lock-free, non-blocking INT8 worker warmup (zero cross-thread barriers or queues!)
+            futs = [_VIENEU_EXECUTOR.submit(_tls_infer_task, "Chào.", "Ngọc Huyền") for _ in range(_VIENEU_POOL_SIZE)]
+            for f in futs:
+                f.result()
+            sys.stderr.write(
+                f"[VoiceViet Daemon v8.1] {_VIENEU_POOL_SIZE}x Parallel INT8 VieNeu 48kHz Workers + 142 Global Languages ready on port {port}!\n"
+            )
 
             # Pre-cache popular Vietnamese & Flagship International previews on disk so clicks play in 0.01s!
             prewarm_ids = [
@@ -1079,13 +1177,13 @@ def run_daemon(port: int = 3099) -> None:
                     dispatch_preview(pid, custom_text="", rate=1.0)
                 except Exception:
                     pass
-            sys.stderr.write("[VoiceViet Daemon v5.5] Pre-cached instant 0.01s voice previews ready!\n")
+            sys.stderr.write("[VoiceViet Daemon v8.1] Pre-cached instant 0.01s voice previews ready!\n")
         except Exception as e:
             sys.stderr.write(f"[VoiceViet Daemon] Warmup note: {e}\n")
 
     threading.Thread(target=_warmup, daemon=True).start()
-    server = ThreadingHTTPServer(("127.0.0.1", port), EngineDaemonHandler)
-    sys.stderr.write(f"[VoiceViet Daemon v5.5] Listening at http://127.0.0.1:{port}\n")
+    server = ReusableThreadingHTTPServer(("127.0.0.1", port), EngineDaemonHandler)
+    sys.stderr.write(f"[VoiceViet Daemon v8.1] Listening at http://127.0.0.1:{port}\n")
     server.serve_forever()
 
 

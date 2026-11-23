@@ -69,14 +69,15 @@
 
   function applyHeroCollapseState(collapsed) {
     if (!studioHeroBody) return;
+    const qApi = window.VoiceVietQuota;
     if (collapsed) {
       studioHeroBody.classList.add('hidden');
       if (heroToggleIcon) heroToggleIcon.className = 'fa-solid fa-chevron-down text-[10px]';
-      if (heroToggleText) heroToggleText.textContent = 'Mở rộng giới thiệu';
+      if (heroToggleText) heroToggleText.textContent = qApi ? qApi.t('hero_expand') : 'Mở rộng giới thiệu';
     } else {
       studioHeroBody.classList.remove('hidden');
       if (heroToggleIcon) heroToggleIcon.className = 'fa-solid fa-chevron-up text-[10px]';
-      if (heroToggleText) heroToggleText.textContent = 'Thu gọn';
+      if (heroToggleText) heroToggleText.textContent = qApi ? qApi.t('hero_collapse') : 'Thu gọn';
     }
   }
 
@@ -185,6 +186,12 @@
 
   function populateCatalogCountrySelect(selectEl, voicesList) {
     if (!selectEl || !voicesList || !voicesList.length) return;
+    const qApi = window.VoiceVietQuota;
+    const isVi = !qApi || qApi.getLang() === 'vi';
+    if (qApi && typeof qApi.localizeRegionSelectOptions === 'function') {
+      qApi.localizeRegionSelectOptions(selectEl);
+    }
+
     const prevVal = selectEl.value || 'all';
     const oldGroup = selectEl.querySelector('optgroup[data-dynamic-countries="1"]');
     if (oldGroup) oldGroup.remove();
@@ -194,7 +201,10 @@
       if (!v.id.startsWith('free-intl-')) return;
       const loc = v.language;
       if (!localeStats.has(loc)) {
-        localeStats.set(loc, { label: v.country || loc, count: 0 });
+        const locLabel = (qApi && typeof qApi.formatCountryLocaleLabel === 'function')
+          ? qApi.formatCountryLocaleLabel(v)
+          : (v.country || loc);
+        localeStats.set(loc, { label: locLabel, count: 0 });
       }
       localeStats.get(loc).count += 1;
     });
@@ -202,11 +212,13 @@
     if (localeStats.size > 0) {
       const og = document.createElement('optgroup');
       og.setAttribute('data-dynamic-countries', '1');
-      og.label = `🏳️ Chọn Trực Tiếp Từng Quốc Gia & Ngôn Ngữ (${localeStats.size} Ngôn ngữ)`;
+      og.label = isVi
+        ? `🏳️ Chọn Trực Tiếp Từng Quốc Gia & Ngôn Ngữ (${localeStats.size} Ngôn ngữ)`
+        : `🏳️ Select Specific Country & Language (${localeStats.size} Locales)`;
       localeStats.forEach((info, loc) => {
         const opt = document.createElement('option');
         opt.value = `locale:${loc}`;
-        opt.textContent = `${info.label} (${info.count} giọng)`;
+        opt.textContent = isVi ? `${info.label} (${info.count} giọng)` : `${info.label} (${info.count} voices)`;
         og.appendChild(opt);
       });
       selectEl.appendChild(og);
@@ -228,6 +240,16 @@
   }
 
   function buildVoiceOptionsHtml(selectedId) {
+    const qApi = window.VoiceVietQuota;
+    const isVi = !qApi || qApi.getLang() === 'vi';
+    const fmtName = (v) => (qApi && qApi.formatVoiceDisplayName ? qApi.formatVoiceDisplayName(v) : v.name);
+    const fmtGender = (g) => {
+      if (isVi) return g || 'VN';
+      if (g === 'Nam') return 'Male';
+      if (g === 'Nữ') return 'Female';
+      return g || 'Studio';
+    };
+
     if (!allCatalogVoices || allCatalogVoices.length === 0) {
       return `
         <option value="free-vi-ngoc-huyen" ${selectedId === 'free-vi-ngoc-huyen' ? 'selected' : ''}>✨ Ngọc Huyền (Studio 48kHz)</option>
@@ -242,25 +264,25 @@
 
     let html = '';
     if (privVoices.length > 0) {
-      html += '<optgroup label="🔒 Giọng Nhân Bản Độc Quyền Của Tôi (48kHz Chủ Sở Hữu)">';
+      html += `<optgroup label="${isVi ? '🔒 Giọng Nhân Bản Độc Quyền Của Tôi (48kHz Chủ Sở Hữu)' : '🔒 My Private Cloned Voices (48kHz Owner)'}">`;
       privVoices.forEach(v => {
         const sel = v.id === selectedId ? 'selected' : '';
-        html += `<option value="${v.id}" ${sel}>🔒 ${escapeHtmlSafe(v.name)} (${v.gender || 'Chính chủ'})</option>`;
+        html += `<option value="${v.id}" ${sel}>🔒 ${escapeHtmlSafe(fmtName(v))} (${fmtGender(v.gender)})</option>`;
       });
       html += '</optgroup>';
     }
 
-    html += '<optgroup label="✨ Giọng AI Tiếng Việt Studio 48kHz (Khuyên dùng)">';
+    html += `<optgroup label="${isVi ? '✨ Giọng AI Tiếng Việt Studio 48kHz (Khuyên dùng)' : '✨ Vietnamese 48kHz Studio Voices (Recommended)'}">`;
     freeStudioVi.forEach(v => {
       const sel = v.id === selectedId ? 'selected' : '';
-      html += `<option value="${v.id}" ${sel}>✨ ${escapeHtmlSafe(v.name)} (${v.gender || 'VN'})</option>`;
+      html += `<option value="${v.id}" ${sel}>✨ ${escapeHtmlSafe(fmtName(v))} (${fmtGender(v.gender)})</option>`;
     });
     html += '</optgroup>';
 
     if (freeGlobal.length > 0) {
       const byCountry = new Map();
       freeGlobal.forEach(v => {
-        const cKey = v.country || v.language;
+        const cKey = (qApi && qApi.formatCountryLocaleLabel) ? qApi.formatCountryLocaleLabel(v) : (v.country || v.language);
         if (!byCountry.has(cKey)) byCountry.set(cKey, []);
         byCountry.get(cKey).push(v);
       });
@@ -268,17 +290,17 @@
         html += `<optgroup label="${escapeHtmlSafe(cLabel)}">`;
         items.forEach(v => {
           const sel = v.id === selectedId ? 'selected' : '';
-          html += `<option value="${v.id}" ${sel}>${escapeHtmlSafe(v.name)}</option>`;
+          html += `<option value="${v.id}" ${sel}>${escapeHtmlSafe(fmtName(v))}</option>`;
         });
         html += '</optgroup>';
       });
     }
 
     if (proCloud.length > 0) {
-      html += '<optgroup label="⚡ Giọng Cheap-TTS Cloud">';
+      html += `<optgroup label="${isVi ? '⚡ Giọng Cheap-TTS Cloud' : '⚡ Cheap-TTS Cloud Voices'}">`;
       proCloud.forEach(v => {
         const sel = v.id === selectedId ? 'selected' : '';
-        html += `<option value="${v.id}" ${sel}>${escapeHtmlSafe(v.name)} (${v.id})</option>`;
+        html += `<option value="${v.id}" ${sel}>${escapeHtmlSafe(fmtName(v))} (${v.id})</option>`;
       });
       html += '</optgroup>';
     }
@@ -293,17 +315,34 @@
     });
   }
 
+  function syncCatalogRegionTabActive() {
+    const activeVal = catalogLanguageFilter ? catalogLanguageFilter.value : 'all';
+    document.querySelectorAll('.catalog-region-tab').forEach(tab => {
+      const reg = tab.getAttribute('data-region') || 'all';
+      if (reg === activeVal) {
+        tab.className = 'catalog-region-tab px-3 py-1.5 rounded-xl bg-emerald-500/25 text-emerald-200 border border-emerald-400/50 text-xs font-bold transition cursor-pointer';
+      } else {
+        tab.className = 'catalog-region-tab px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition cursor-pointer';
+      }
+    });
+  }
+
   function renderCatalogCards(resetLimit = false) {
     if (!voiceCatalogGrid || !allCatalogVoices.length) return;
     if (resetLimit) catalogDisplayLimit = 90;
 
+    const qApi = window.VoiceVietQuota;
+    const isVi = !qApi || qApi.getLang() === 'vi';
     const cat = catalogLanguageFilter ? catalogLanguageFilter.value : 'all';
     const query = voiceSearchInput ? voiceSearchInput.value.toLowerCase().trim() : '';
+    syncCatalogRegionTabActive();
 
     const visibleVoices = allCatalogVoices.filter(v => {
       if (!matchesCatalogCategory(v, cat)) return false;
       if (!query) return true;
-      const hay = `${v.name} ${v.country || ''} ${v.useCase || ''} ${v.language || ''} ${v.id}`.toLowerCase();
+      const locName = qApi && qApi.formatVoiceDisplayName ? qApi.formatVoiceDisplayName(v) : '';
+      const locUse = qApi && qApi.formatVoiceUseCase ? qApi.formatVoiceUseCase(v) : '';
+      const hay = `${v.name} ${locName} ${v.country || ''} ${v.useCase || ''} ${locUse} ${v.language || ''} ${v.id}`.toLowerCase();
       return hay.includes(query);
     });
 
@@ -311,13 +350,17 @@
       const normalizedLangs = new Set(
         visibleVoices.map(v => (v.id.startsWith('free-') || v.id.startsWith('private-')) ? v.language : 'vi')
       );
-      catalogTotalCountBadge.textContent = `${visibleVoices.length.toLocaleString('vi-VN')} Giọng • ${normalizedLangs.size} Ngôn ngữ`;
+      catalogTotalCountBadge.textContent = isVi
+        ? `${visibleVoices.length.toLocaleString('vi-VN')} Giọng • ${normalizedLangs.size} Ngôn ngữ`
+        : `${visibleVoices.length.toLocaleString('en-US')} Voices • ${normalizedLangs.size} Languages`;
     }
 
     voiceCatalogGrid.innerHTML = '';
     if (visibleVoices.length === 0) {
       if (catalogLoadMoreWrap) catalogLoadMoreWrap.classList.add('hidden');
-      voiceCatalogGrid.innerHTML = '<div class="col-span-full text-center py-8 text-xs text-slate-400 italic">Không tìm thấy giọng đọc nào khớp với bộ lọc hiện tại.</div>';
+      voiceCatalogGrid.innerHTML = `<div class="col-span-full text-center py-8 text-xs text-slate-400 italic">${
+        isVi ? 'Không tìm thấy giọng đọc nào khớp với bộ lọc hiện tại.' : 'No voices match your current filter.'
+      }</div>`;
       return;
     }
 
@@ -330,20 +373,23 @@
       const isGlobal = v.id.startsWith('free-') && v.language !== 'vi';
       const isPro = v.id.startsWith('vi-pro-');
 
-      const cleanLetters = v.name.replace(/[^\p{L}\s]/gu, '').trim();
-      const initials = (cleanLetters || v.name).split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+      const dispName = (qApi && qApi.formatVoiceDisplayName) ? qApi.formatVoiceDisplayName(v) : v.name;
+      const dispUseCase = (qApi && qApi.formatVoiceUseCase) ? qApi.formatVoiceUseCase(v) : (v.useCase || v.id);
+
+      const cleanLetters = dispName.replace(/[^\p{L}\s]/gu, '').trim();
+      const initials = (cleanLetters || dispName).split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
       let badgeColor = 'bg-amber-500/20 text-amber-300 border-amber-500/30';
       let avatarBg = 'bg-slate-800 text-amber-400 border border-slate-700';
       let cardBorder = 'border-slate-800 hover:border-amber-500/50';
-      let badgeText = v.badge || 'Tiêu Chuẩn';
+      let badgeText = v.badge || (isVi ? 'Tiêu Chuẩn' : 'STANDARD');
       let btnBg = 'bg-slate-800 hover:bg-slate-700 text-slate-200';
 
       if (isPriv) {
         badgeColor = 'bg-amber-500/25 text-amber-300 border-amber-400/50';
         avatarBg = 'bg-gradient-to-tr from-amber-500 to-orange-600 text-slate-950';
         cardBorder = 'border-amber-500/50 hover:border-amber-400 bg-gradient-to-br from-amber-950/20 to-slate-900/90';
-        badgeText = '🔒 ĐỘC QUYỀN 48kHz';
+        badgeText = isVi ? '🔒 ĐỘC QUYỀN 48kHz' : '🔒 EXCLUSIVE 48kHz';
         btnBg = 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 text-slate-950 font-bold';
       } else if (isFreeVi) {
         badgeColor = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
@@ -374,18 +420,18 @@
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-1.5">
-              <h4 class="text-xs font-extrabold text-white line-clamp-2 leading-snug" title="${escapeHtmlSafe(v.name)}">${escapeHtmlSafe(v.name)}</h4>
+              <h4 class="text-xs font-extrabold text-white line-clamp-2 leading-snug" title="${escapeHtmlSafe(dispName)}">${escapeHtmlSafe(dispName)}</h4>
               <span class="text-[9px] ${badgeColor} border px-1.5 py-0.5 rounded-md font-mono font-semibold shrink-0">${escapeHtmlSafe(badgeText)}</span>
             </div>
-            <p class="text-[11px] text-slate-300/90 font-medium mt-1 line-clamp-2 leading-snug">${escapeHtmlSafe(v.useCase || v.id)}</p>
+            <p class="text-[11px] text-slate-300/90 font-medium mt-1 line-clamp-2 leading-snug">${escapeHtmlSafe(dispUseCase)}</p>
           </div>
         </div>
         <div class="flex items-center gap-2 pt-1 border-t border-white/5">
-          <button class="preview-voice-quick-btn px-3 py-1.5 bg-white/5 hover:bg-white/10 text-amber-300 border border-white/10 rounded-xl text-xs font-bold transition cursor-pointer shrink-0" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
-            <i class="fa-solid fa-volume-high mr-1"></i>Nghe thử
+          <button class="preview-voice-quick-btn px-3 py-1.5 bg-white/5 hover:bg-white/10 text-amber-300 border border-white/10 rounded-xl text-xs font-bold transition cursor-pointer shrink-0" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(dispName)}">
+            <i class="fa-solid fa-volume-high mr-1"></i>${isVi ? 'Nghe thử' : 'Preview'}
           </button>
-          <button class="select-voice-quick-btn flex-1 py-1.5 ${btnBg} rounded-xl text-xs font-bold transition cursor-pointer shadow" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
-            Chọn Giọng Này
+          <button class="select-voice-quick-btn flex-1 py-1.5 ${btnBg} rounded-xl text-xs font-bold transition cursor-pointer shadow" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(dispName)}">
+            ${isVi ? 'Chọn Giọng Này' : 'Select Voice'}
           </button>
         </div>
       `;
@@ -398,7 +444,9 @@
       const remaining = visibleVoices.length - slice.length;
       if (remaining > 0) {
         catalogLoadMoreWrap.classList.remove('hidden');
-        btnLoadMoreCatalog.innerHTML = `<i class="fa-solid fa-angles-down mr-1"></i> Xem thêm ${Math.min(150, remaining)} giọng đọc tiếp theo (còn ${remaining.toLocaleString('vi-VN')} giọng)...`;
+        btnLoadMoreCatalog.innerHTML = isVi
+          ? `<i class="fa-solid fa-angles-down mr-1"></i> Xem thêm ${Math.min(150, remaining)} giọng đọc tiếp theo (còn ${remaining.toLocaleString('vi-VN')} giọng)...`
+          : `<i class="fa-solid fa-angles-down mr-1"></i> Load ${Math.min(150, remaining)} more voices (${remaining.toLocaleString('en-US')} remaining)...`;
       } else {
         catalogLoadMoreWrap.classList.add('hidden');
       }
@@ -435,7 +483,7 @@
           voiceSelect.dispatchEvent(new Event('change'));
           switchView('viewStudio');
           if (typeof showToast === 'function') {
-            showToast(`Đã chọn giọng: ${vName}`, 'success');
+            showToast(isVi ? `Đã chọn giọng: ${vName}` : `Selected voice: ${vName}`, 'success');
           }
         }
       });
@@ -471,6 +519,26 @@
   if (catalogLanguageFilter) {
     catalogLanguageFilter.addEventListener('change', () => renderCatalogCards(true));
   }
+
+  document.querySelectorAll('.catalog-region-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const reg = tab.getAttribute('data-region') || 'all';
+      if (catalogLanguageFilter) {
+        catalogLanguageFilter.value = reg;
+        renderCatalogCards(true);
+      }
+    });
+  });
+
+  window.addEventListener('voiceviet:langchange', () => {
+    if (allCatalogVoices && allCatalogVoices.length > 0) {
+      populateCatalogCountrySelect(catalogLanguageFilter, allCatalogVoices);
+      refreshAllDialogueSelects();
+      renderCatalogCards(false);
+    }
+    const isCollapsed = studioHeroBody ? studioHeroBody.classList.contains('hidden') : false;
+    applyHeroCollapseState(isCollapsed);
+  });
 
   // =========================================================================
   // 4.5 PRIVATE VOICE CLONE VAULT (OWNER PIN + MULTI-WINDOW 48KHZ ENROLLMENT)

@@ -201,7 +201,7 @@
         <button class="nav-tab" data-view="viewBatchWord">
           <span class="nav-icon-box"><i class="fa-solid fa-file-word text-xs text-blue-400"></i></span>
           <span class="whitespace-nowrap" data-i18n="nav_batch">Hàng Đợi File Word</span>
-          <span class="text-[9px] bg-blue-500/20 text-blue-300 border border-blue-500/35 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap">>70k từ</span>
+          <span class="text-[9px] bg-blue-500/20 text-blue-300 border border-blue-500/35 px-1.5 py-0.5 rounded-md ml-auto font-bold shrink-0 whitespace-nowrap"><span class="lang-only-vi">&gt;70k từ</span><span class="lang-only-global hidden">&gt;70k w</span></span>
         </button>
 
         <button class="nav-tab" data-view="viewVoices">
@@ -1179,14 +1179,17 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
             <div>
               <div class="flex flex-wrap items-center gap-2.5">
                 <h2 class="text-base sm:text-lg font-extrabold font-display text-white flex items-center gap-2">
-                  <i class="fa-solid fa-earth-americas text-emerald-400"></i> Đại Thư Viện Giọng Đọc AI Đa Quốc Gia Chuẩn ElevenLabs
+                  <i class="fa-solid fa-earth-americas text-emerald-400"></i>
+                  <span class="lang-only-vi">Đại Thư Viện Giọng Đọc AI Đa Quốc Gia Chuẩn ElevenLabs</span>
+                  <span class="lang-only-global hidden">Global 110-Country AI Voice Library (48kHz Studio)</span>
                 </h2>
                 <span id="catalogTotalCountBadge" class="text-[10px] bg-emerald-500/20 text-emerald-200 border border-emerald-400/40 px-3 py-0.5 rounded-full font-mono font-extrabold">
-                  1.177 Giọng • 110 Quốc gia • 142 Ngôn ngữ
+                  1.183 Giọng • 110 Quốc gia • 142 Ngôn ngữ
                 </span>
               </div>
               <p class="text-xs text-slate-300/90 mt-1">
-                Đầy đủ giọng Nam & Nữ bản địa cho từng vùng lãnh thổ (Ấn Độ 10 ngôn ngữ, Trung/Đài/HK 6 phương ngữ, Đông Nam Á 13 ngôn ngữ, Mỹ, Châu Âu, 16 nước Ả Rập, Mỹ Latinh, Châu Phi) — bấm <b>Nghe thử</b> phát liền tức thì!
+                <span class="lang-only-vi">Đầy đủ giọng Nam & Nữ bản địa cho từng vùng lãnh thổ (Ấn Độ 10 ngôn ngữ, Trung/Đài/HK 6 phương ngữ, Đông Nam Á 13 ngôn ngữ, Mỹ, Châu Âu, 16 nước Ả Rập, Mỹ Latinh, Châu Phi) — bấm <b>Nghe thử</b> phát liền tức thì!</span>
+                <span class="lang-only-global hidden">Authentic Male & Female native voices across every territory (USA/UK, Europe, East Asia, Southeast Asia, India, 16 Arab Nations, Latin America & Africa) — click <b>Preview</b> for instant &lt;0.05s playback!</span>
               </p>
             </div>
 
@@ -1207,6 +1210,21 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
               </select>
               <input type="text" id="voiceSearchInput" placeholder="🔍 Tìm tên nước, ngôn ngữ, giọng đọc..." class="bg-[#050811] border border-white/15 rounded-xl px-3.5 py-2 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 w-60">
             </div>
+          </div>
+
+          <!-- Localized Region Quick Sub-Tabs -->
+          <div id="catalogQuickRegionTabs" class="flex flex-wrap items-center gap-2 pb-1">
+            <button type="button" class="catalog-region-tab px-3 py-1.5 rounded-xl bg-emerald-500/25 text-emerald-200 border border-emerald-400/50 text-xs font-bold transition cursor-pointer" data-region="all" data-label-vi="🌍 Tất cả (110 Nước)" data-label-en="🌍 All (110 Countries)">🌍 Tất cả (110 Nước)</button>
+            <button type="button" class="catalog-region-tab px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition cursor-pointer" data-region="vi" data-label-vi="🇻🇳 Tiếng Việt 48kHz" data-label-en="🇻🇳 Vietnamese 48kHz">🇻🇳 Tiếng Việt 48kHz</button>
+            <button type="button" class="catalog-region-tab px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition cursor-pointer" data-region="region:english_world" data-label-vi="🇺🇸🇬🇧 Tiếng Anh Toàn Cầu" data-label-en="🇺🇸🇬🇧 Global English">🇺🇸🇬🇧 Tiếng Anh Toàn Cầu</button>
+            <button type="button" class="catalog-region-tab px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition cursor-pointer" data-region="region:east_asia" data-label-vi="🌏 Đông Á (Trung/Nhật/Hàn)" data-label-en="🌏 East Asia (CN/JP/KR)">🌏 Đông Á (Trung/Nhật/Hàn)</button>
+            <button type="button" class="catalog-region-tab px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition cursor-pointer" data-region="region:sea" data-label-vi="🌴 Đông Nam Á" data-label-en="🌴 Southeast Asia">🌴 Đông Nam Á</button>
+            <button type="button" class="catalog-region-tab px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition cursor-pointer" data-region="region:europe_west" data-label-vi="🇪🇺 Tây & Nam Âu" data-label-en="🇪🇺 Western Europe">🇪🇺 Tây & Nam Âu</button>
+            <button type="button" class="catalog-region-tab px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition cursor-pointer" data-region="region:europe_north_east" data-label-vi="❄️ Nga & Đông Âu" data-label-en="❄️ Russia & E. Europe">❄️ Nga & Đông Âu</button>
+            <button type="button" class="catalog-region-tab px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition cursor-pointer" data-region="region:south_asia" data-label-vi="🇮🇳 Nam Á & Ấn Độ" data-label-en="🇮🇳 South Asia & India">🇮🇳 Nam Á & Ấn Độ</button>
+            <button type="button" class="catalog-region-tab px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition cursor-pointer" data-region="region:americas_es_pt" data-label-vi="🌎 Mỹ Latinh & Brazil" data-label-en="🌎 Latin America">🌎 Mỹ Latinh & Brazil</button>
+            <button type="button" class="catalog-region-tab px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition cursor-pointer" data-region="region:middle_east_central" data-label-vi="🕌 Trung Đông & Ả Rập" data-label-en="🕌 Middle East & Arab">🕌 Trung Đông & Ả Rập</button>
+            <button type="button" class="catalog-region-tab px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition cursor-pointer" data-region="region:africa" data-label-vi="🦁 Châu Phi" data-label-en="🦁 Africa">🦁 Châu Phi</button>
           </div>
 
           <div id="voiceCatalogGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5"></div>
@@ -2312,12 +2330,12 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
   <!-- Mammoth.js for Word (.docx) document parsing -->
   <script src="/mammoth.browser.min.js"></script>
   <!-- Quota Manager, Generation Timer & 8-Language Global i18n -->
-  <script src="quota_and_i18n.js?v=7.2"></script>
+  <script src="quota_and_i18n.js?v=8.2"></script>
   <!-- Main Studio Engine Logic -->
-  <script src="app.js?v=7.2"></script>
+  <script src="app.js?v=8.2"></script>
   <!-- Pro Studio Extensions (Private Vault, 110 Countries, Multi-Speaker Stem Studio, VietQR) -->
-  <script src="studio_pro.js?v=7.2"></script>
+  <script src="studio_pro.js?v=8.2"></script>
   <!-- Option 2 License Key, HWID Lock, Real Order/Bank Checkout & Owner Admin Console -->
-  <script src="license_client_ui.js?v=7.2"></script>
+  <script src="license_client_ui.js?v=8.2"></script>
 </body>
 </html>

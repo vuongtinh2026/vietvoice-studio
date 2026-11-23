@@ -698,6 +698,291 @@
     }
   }
 
+    // =======================================================================
+    // VOICE, COUNTRY & REGION DYNAMIC LOCALIZATION HELPERS (ALL 8 LANGUAGES)
+    // =======================================================================
+    const REGION_LABELS = {
+      vi: {
+        all: '🌍 Tất cả Thế Giới (110 Nước • 142 Ngôn ngữ)',
+        private: '🔒 Giọng Nhân Bản Độc Quyền Của Tôi',
+        vi: '🇻🇳 Tiếng Việt (Studio 48kHz)',
+        'region:east_asia': '🌏 Khu vực Đông Á (Trung / Đài / HK / Nhật / Hàn / Mông Cổ)',
+        'region:sea': '🌴 Khu vực Đông Nam Á (Thái / Indo / Mã / Sing / Phil / Khmer / Lào / Myanmar)',
+        'region:south_asia': '🇮🇳 Khu vực Nam Á & Ấn Độ (10 Ngôn ngữ Ấn Độ / Pakistan / Nepal / Sri Lanka)',
+        'region:english_world': '🇺🇸🇬🇧 Khối Tiếng Anh Toàn Cầu (Mỹ / Anh / Úc / Canada / NZ / Ireland)',
+        'region:europe_west': '🇪🇺 Tây & Nam Âu (Pháp / Đức / TBN / Ý / BĐN / Hà Lan / Bỉ / Thụy Sĩ)',
+        'region:europe_north_east': '❄️ Nga, Bắc Âu & Đông Âu (Nga / Ukraina / Ba Lan / Thụy Điển / Na Uy / Séc / Hy Lạp...)',
+        'region:americas_es_pt': '🌎 Mỹ Latinh & Brazil (Brazil / Mexico / Argentina / Colombia / Chile... 21 vùng)',
+        'region:middle_east_central': '🕌 Trung Đông, 16 Nước Ả Rập & Trung Á (Thổ Nhĩ Kỳ / Iran / Israel / Dubai / Ai Cập...)',
+        'region:africa': '🦁 Châu Phi (Nam Phi 3 ngôn ngữ / Nigeria / Kenya / Tanzania / Ethiopia...)'
+      },
+      en: {
+        all: '🌍 All World (110 Countries • 142 Languages)',
+        private: '🔒 My Private Cloned Voices',
+        vi: '🇻🇳 Vietnamese (48kHz Studio)',
+        'region:east_asia': '🌏 East Asia (China / Taiwan / HK / Japan / Korea / Mongolia)',
+        'region:sea': '🌴 Southeast Asia (Thailand / Indonesia / Malaysia / SG / PH / Khmer / Lao)',
+        'region:south_asia': '🇮🇳 South Asia & India (10 Indian Languages / Pakistan / Nepal / Sri Lanka)',
+        'region:english_world': '🇺🇸🇬🇧 Global English (USA / UK / Australia / Canada / NZ / Ireland)',
+        'region:europe_west': '🇪🇺 Western & Southern Europe (France / Germany / Spain / Italy / Portugal / NL)',
+        'region:europe_north_east': '❄️ Russia, Nordic & Eastern Europe (Russia / Ukraine / Poland / Sweden / Norway)',
+        'region:americas_es_pt': '🌎 Latin America & Brazil (Brazil / Mexico / Argentina / Colombia / Chile... 21 locales)',
+        'region:middle_east_central': '🕌 Middle East, 16 Arab Nations & Central Asia (Turkey / UAE / Saudi / Egypt...)',
+        'region:africa': '🦁 Africa (South Africa / Nigeria / Kenya / Tanzania / Ethiopia...)'
+      }
+    };
+
+    const VI_VOICE_USECASE_EN = {
+      'free-vi-ngoc-huyen': 'Natural expressive Northern Female — Movie Recap, Storytelling & Summaries',
+      'free-vi-thien-tam': 'Warm calm Male narrator — Audiobook, Meditation & Late-night Stories',
+      'free-vi-minh-quan': 'Clear authoritative Northern Male — Commentary, Tech & News',
+      'free-vi-adam-tiktok': 'Humorous natural Male — TikTok / Reels / Shorts (supports [laugh])',
+      'free-vi-hoaimy': 'Sweet Neural Female — Novels, Romance & Lifestyle',
+      'free-vi-namminh': 'Authoritative Northern Male 48kHz — Documentary, Reportage & Narration',
+      'free-vi-google': 'Iconic Classic Female — Memes, Quick News & Short Clips',
+      'free-vi-truc-ly': 'Friendly conversational Northern Female — Podcast, Healing & Radio',
+      'free-vi-pham-tuyen': 'Powerful heroic Northern Male — Martial Arts, Fantasy & Action',
+      'free-vi-my-duyen': 'Gentle Southern Female — Romance & Short Stories',
+      'free-vi-hai-dang': 'Broadcast News Anchor Male — News Bulletin & Corporate Presentation',
+      'free-vi-mai-anh': 'Crisp News Anchor Female — Breaking News, Journalism & Finance',
+      'free-vi-thien-minh': 'Warm Northern Male storyteller — Audiobooks & Bedtime Stories',
+      'free-vi-thai-son': 'Deep warm Southern Male — History, Documentary & Memoir',
+      'free-vi-ngoc-linh': 'Graceful Northern Female — Historical Drama & Classic Literature',
+      'free-vi-adam-nam': 'Youthful natural Southern Male — Vlog, Review & Entertainment',
+      'free-vi-quang-son': 'Authentic Central Accent Male — Cultural Stories & Travel',
+      'free-vi-ngoc-tran': 'Sweet Central Accent Female — Essays, Travel & Storytelling',
+      'free-vi-thuy-dung': 'Standard Southern Female — News Broadcast & IVR Assistant',
+      'free-vi-duc-tri': 'Expressive Southern Male — Novels & Long-form Fiction',
+      'free-vi-kim-thanh': 'Warm Southern Female — Family Stories & Psychology',
+      'free-vi-quoc-tuan': 'Steady clear Northern Male — Documentary, Business Books & Guides',
+      'free-vi-thanh-binh': 'Expressive Northern Male — Literature, Essays & Audiobooks',
+      'free-vi-minh-triet': 'Modern Southern Male — Daily News, Economy & Reviews',
+      'free-vi-quynh-anh': 'Gentle Northern Female — Audiobooks, Romance & Fiction',
+      'free-vi-doan-trang': 'Polished Northern Female — Product Demo & E-Learning',
+      'free-vi-thuc-doan': 'Expressive Southern Female — Late-night Radio & Storytelling',
+      'free-vi-ngoc-ngan': 'Legendary Late-night Ghost & Mystery Storyteller (Turbo Offline)',
+      'free-vi-tai-an': 'Historical, Geopolitics & Economic Analysis Male (Turbo Offline)',
+      'free-vi-manh-dung': 'Energetic Commercial TVC & Promo Male (Turbo Offline)',
+      'free-vi-ban-mai': 'Standard Northern Female for Long Articles & Books (Turbo Offline)',
+      'free-vi-duy-oryx': 'Ultra-Deep Cinematic Bass Male — Trailers & Podcasts (Turbo Offline)',
+      'free-vi-minh-khang': 'Science, Mystery & Discovery Narrator Male (Turbo Offline)'
+    };
+
+    const _dnCache = {};
+    function getDisplayNames(lang, type) {
+      const key = `${lang}:${type}`;
+      if (!_dnCache[key]) {
+        try {
+          _dnCache[key] = new Intl.DisplayNames([lang === 'vi' ? 'vi' : (I18N[lang] ? lang : 'en'), 'en'], { type });
+        } catch {
+          _dnCache[key] = null;
+        }
+      }
+      return _dnCache[key];
+    }
+
+    function extractFlagEmoji(str) {
+      const m = String(str || '').match(/[\u{1F1E6}-\u{1F1FF}]{2}/u);
+      return m ? m[0] : '🌐';
+    }
+
+    function formatCountryLocaleLabel(voiceObj, langOverride) {
+      const lang = langOverride || currentLang;
+      if (!voiceObj) return '';
+      if (lang === 'vi') return voiceObj.country || voiceObj.language || '';
+
+      const loc = String(voiceObj.language || 'en');
+      const flag = extractFlagEmoji(voiceObj.country);
+      if (loc === 'vi' || loc.startsWith('vi-')) {
+        return '🇻🇳 Vietnam — Vietnamese';
+      }
+
+      const parts = loc.split('-');
+      const langCode = parts[0].toLowerCase();
+      let regionCode = (parts.find(p => p.length === 2 && p === p.toUpperCase()) || '').toUpperCase();
+      const subDialect = parts.length >= 3 ? parts[parts.length - 1] : '';
+
+      const regDN = getDisplayNames(lang, 'region');
+      const langDN = getDisplayNames(lang, 'language');
+
+      let countryName = '';
+      if (regionCode && regDN) {
+        try { countryName = regDN.of(regionCode) || regionCode; } catch { countryName = regionCode; }
+      }
+      let langName = '';
+      if (langDN) {
+        try { langName = langDN.of(langCode) || langCode.toUpperCase(); } catch { langName = langCode.toUpperCase(); }
+      }
+      const dialectMap = {
+        liaoning: 'Northeast Liaoning',
+        shaanxi: 'Shaanxi Xi’an',
+        wuu: 'Shanghainese',
+        yue: 'Cantonese'
+      };
+      const dialectNote = subDialect && dialectMap[subDialect.toLowerCase()] ? ` (${dialectMap[subDialect.toLowerCase()]})` : '';
+      if (countryName && langName) {
+        return `${flag} ${countryName} — ${langName}${dialectNote}`;
+      }
+      return `${flag} ${langName || countryName || loc}`;
+    }
+
+    function formatVoiceDisplayName(voiceObj, langOverride) {
+      const lang = langOverride || currentLang;
+      if (!voiceObj) return '';
+      let n = String(voiceObj.name || '');
+      if (lang === 'vi') return n;
+
+      // Translate gender & Vietnamese descriptors inside voice name!
+      n = n
+        .replace(/\(Nam\)/g, '(Male)')
+        .replace(/\(Nữ\)/g, '(Female)')
+        .replace(/\(Đa Ngôn Ngữ\)/gi, '(Multilingual)')
+        .replace(/\(Podcast 48kHz\)/gi, '(48kHz Podcast)')
+        .replace(/\(Kiếm hiệp 48kHz\)/gi, '(48kHz Martial Arts)')
+        .replace(/\(Ngôn tình 48kHz\)/gi, '(48kHz Romance)')
+        .replace(/\(Thời sự 48kHz\)/gi, '(48kHz News Anchor)')
+        .replace(/\(Tin tức 48kHz\)/gi, '(48kHz News)')
+        .replace(/\(Tin tức Nam 48kHz\)/gi, '(48kHz Southern News)')
+        .replace(/\(Kể chuyện 48kHz\)/gi, '(48kHz Storytelling)')
+        .replace(/\(Miền Nam 48kHz\)/gi, '(48kHz Southern)')
+        .replace(/\(Miền Trung 48kHz\)/gi, '(48kHz Central)')
+        .replace(/\(Cổ trang 48kHz\)/gi, '(48kHz Historical)')
+        .replace(/\(Đọc truyện 48kHz\)/gi, '(48kHz Audiobook)')
+        .replace(/\(Thuyết minh 48kHz\)/gi, '(48kHz Documentary)')
+        .replace(/\(Tự nhiên 48kHz\)/gi, '(48kHz Natural)')
+        .replace(/\(Truyện ma đêm khuya\)/gi, '(Late-Night Mystery)')
+        .replace(/\(CD Media Lịch sử\)/gi, '(History & Documentary)')
+        .replace(/\(Quảng cáo TVC\)/gi, '(Commercial Promo)')
+        .replace(/\(Chuẩn giọng Bắc\)/gi, '(Standard Northern)')
+        .replace(/\(Nam Siêu Trầm\)/gi, '(Deep Bass Cinema)')
+        .replace(/\(Kiến Giải Mã\)/gi, '(Science & Discovery)')
+        .replace(/^Chị Google$/i, 'Classic Google Voice (VN)');
+
+      // Replace trailing "• 🇨🇳 Trung Quốc" with localized "• 🇨🇳 China"
+      if (n.includes('•') && voiceObj.language && voiceObj.language !== 'vi') {
+        const leftPart = n.split('•')[0].trim();
+        const flag = extractFlagEmoji(voiceObj.country || n);
+        const parts = String(voiceObj.language).split('-');
+        const regionCode = (parts.find(p => p.length === 2 && p === p.toUpperCase()) || '').toUpperCase();
+        const regDN = getDisplayNames(lang, 'region');
+        let cName = regionCode;
+        if (regionCode && regDN) {
+          try { cName = regDN.of(regionCode) || regionCode; } catch {}
+        }
+        if (cName) {
+          n = `${leftPart} • ${flag} ${cName}`;
+        }
+      }
+      return n;
+    }
+
+    function formatVoiceUseCase(voiceObj, langOverride) {
+      const lang = langOverride || currentLang;
+      if (!voiceObj) return '';
+      const raw = String(voiceObj.useCase || '');
+      if (lang === 'vi') return raw;
+
+      if (VI_VOICE_USECASE_EN[voiceObj.id]) {
+        return VI_VOICE_USECASE_EN[voiceObj.id];
+      }
+      if (voiceObj.isPrivate || String(voiceObj.id || '').startsWith('private-')) {
+        return 'Encrypted Personal 48kHz Cloned Voice (Owner Protected)';
+      }
+
+      // International voices: "🇨🇳 Trung Quốc — ... • Nữ Bản Xứ — Warm"
+      const locCountry = formatCountryLocaleLabel(voiceObj, lang);
+      if (raw.includes('•')) {
+        const afterBullet = raw.split('•').slice(1).join('•').trim();
+        const translatedTrait = afterBullet
+          .replace(/Nữ Bản Xứ/gi, 'Native Female')
+          .replace(/Nam Bản Xứ/gi, 'Native Male')
+          .replace(/Nam Flagship Polyglot/gi, 'Flagship Polyglot Male')
+          .replace(/Nữ Flagship Polyglot/gi, 'Flagship Polyglot Female')
+          .replace(/Nam Kể Chuyện Trầm Ấm Đa Ngôn Ngữ/gi, 'Warm Storytelling Multilingual Male')
+          .replace(/Nữ Studio Ấm Áp Đa Ngôn Ngữ/gi, 'Warm Studio Multilingual Female')
+          .replace(/Nam Trầm Điện Ảnh \/ Trailer Đa Ngôn Ngữ/gi, 'Deep Cinematic Trailer Multilingual Male')
+          .replace(/Nữ Biểu Cảm Trẻ Trung Đa Ngôn Ngữ/gi, 'Expressive Youthful Multilingual Female')
+          .replace(/Nam Lịch Lãm Đa Ngôn Ngữ/gi, 'Refined Multilingual Male')
+          .replace(/Nam Phóng Sự \/ Tài Liệu Đa Ngôn Ngữ/gi, 'Documentary Multilingual Male')
+          .replace(/Nữ Thanh Lịch Châu Âu Đa Ngôn Ngữ/gi, 'Elegant Multilingual Female')
+          .replace(/Nữ Sôi Nổi Podcast Đa Ngôn Ngữ/gi, 'Upbeat Podcast Multilingual Female');
+        return `${locCountry} • ${translatedTrait}`;
+      }
+      return locCountry || raw;
+    }
+
+    function localizeRegionSelectOptions(selectEl, langOverride) {
+      if (!selectEl) return;
+      const lang = langOverride || currentLang;
+      const dict = lang === 'vi' ? REGION_LABELS.vi : REGION_LABELS.en;
+      [...selectEl.options].forEach(opt => {
+        if (dict[opt.value]) {
+          opt.textContent = dict[opt.value];
+        }
+      });
+    }
+
+    function localizeStaticControls(lang) {
+      const isVi = lang === 'vi';
+      // 1. Country & Region Selects (#languageFilterSelect & #catalogLanguageFilter)
+      localizeRegionSelectOptions(document.getElementById('languageFilterSelect'), lang);
+      localizeRegionSelectOptions(document.getElementById('catalogLanguageFilter'), lang);
+
+      // 2. MP3 Bitrate Select (#mp3BitrateSelect)
+      const mp3Sel = document.getElementById('mp3BitrateSelect');
+      if (mp3Sel) {
+        const mp3Labels = isVi
+          ? {
+              '48k': 'Siêu nhẹ (48 kbps Mono - Giảm 65%)',
+              '64k': 'Cân bằng (64 kbps Mono - Nét cao)',
+              '32k': 'Cực nhẹ (32 kbps Mono - Tiết kiệm nhất)',
+              '128k': 'Gốc phòng thu (128 kbps)'
+            }
+          : {
+              '48k': 'Ultra Compact (48 kbps Mono - 65% smaller)',
+              '64k': 'Balanced (64 kbps Mono - High Clarity)',
+              '32k': 'Smallest Size (32 kbps Mono)',
+              '128k': 'Studio Master (128 kbps)'
+            };
+        [...mp3Sel.options].forEach(o => {
+          if (mp3Labels[o.value]) o.textContent = mp3Labels[o.value];
+        });
+      }
+
+      // 3. Key Badge, Vault Badge, Batch Badge, Native Sample Button & Emotion Cue Buttons
+      const hdrKeyLbl = document.getElementById('headerKeyStatusLabel');
+      if (hdrKeyLbl && (hdrKeyLbl.textContent.trim() === 'Nhập Key' || hdrKeyLbl.textContent.trim() === 'License Key')) {
+        hdrKeyLbl.textContent = isVi ? 'Nhập Key' : 'License Key';
+      }
+      const vaultBdg = document.getElementById('sidebarVaultBadge');
+      if (vaultBdg && !vaultBdg.textContent.includes('Mở') && !vaultBdg.textContent.includes('Unlocked')) {
+        vaultBdg.textContent = isVi ? '🔒 Khóa' : '🔒 Locked';
+      }
+      const btnSample = document.getElementById('btnLoadNativeSample');
+      if (btnSample) {
+        btnSample.textContent = isVi ? '📝 Mẫu bản ngữ' : '📝 Native Sample';
+      }
+
+      // Emotion cue buttons display label
+      document.querySelectorAll('.insert-cue-btn, .insert-dialogue-cue-btn').forEach(btn => {
+        const cue = (btn.getAttribute('data-cue') || '').trim();
+        if (cue === '[cười]') btn.innerHTML = isVi ? '😄 <code>[cười]</code>' : '😄 <code>[cười]</code> Laugh';
+        else if (cue === '[thở dài]') btn.innerHTML = isVi ? '😮‍💨 <code>[thở dài]</code>' : '😮‍💨 <code>[thở dài]</code> Sigh';
+        else if (cue === '[hắng giọng]') btn.innerHTML = isVi ? '🎙️ <code>[hắng giọng]</code>' : '🎙️ <code>[hắng giọng]</code> Ahem';
+      });
+
+      // 4. Global Voice Library (#viewVoices) Header, Search & Sub-Tabs!
+      const catSearch = document.getElementById('voiceSearchInput');
+      if (catSearch) {
+        catSearch.setAttribute('placeholder', isVi ? '🔍 Tìm tên nước, ngôn ngữ, giọng đọc...' : '🔍 Search country, language, or voice...');
+      }
+      document.querySelectorAll('.catalog-region-tab').forEach(tab => {
+        const viTxt = tab.getAttribute('data-label-vi');
+        const enTxt = tab.getAttribute('data-label-en');
+        if (viTxt && enTxt) tab.textContent = isVi ? viTxt : enTxt;
+      });
+    }
+
   function applyLanguage(lang) {
     if (!I18N[lang]) lang = 'en';
     currentLang = lang;
@@ -718,7 +1003,11 @@
     });
 
     updatePricingCurrencyForLanguage(lang);
+    localizeStaticControls(lang);
     renderQuotaUI(0);
+
+    // Notify app.js & studio_pro.js to re-render dynamic Voice Dropdowns, Country Lists, History & Voice Cards immediately!
+    window.dispatchEvent(new CustomEvent('voiceviet:langchange', { detail: { lang } }));
   }
 
   // =========================================================================
@@ -834,6 +1123,10 @@
     formatAudioDurationDetailed,
     formatGenerationSpeed,
     formatClockTimestamp,
-    formatNumberLocale
+    formatNumberLocale,
+    formatCountryLocaleLabel,
+    formatVoiceDisplayName,
+    formatVoiceUseCase,
+    localizeRegionSelectOptions
   };
 })();
