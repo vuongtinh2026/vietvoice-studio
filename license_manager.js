@@ -616,6 +616,19 @@ export function createLicenseManager(baseDir) {
       }
     }
 
+    // 1.5 Copy official customer tutorial videos/posters if present
+    const tutorialsSrc = path.join(baseDir, 'tutorials');
+    if (fs.existsSync(tutorialsSrc)) {
+      const tutorialsDest = path.join(outDir, 'tutorials');
+      fs.mkdirSync(tutorialsDest, { recursive: true });
+      for (const tf of fs.readdirSync(tutorialsSrc)) {
+        const tfSrc = path.join(tutorialsSrc, tf);
+        if (fs.statSync(tfSrc).isFile()) {
+          fs.copyFileSync(tfSrc, path.join(tutorialsDest, tf));
+        }
+      }
+    }
+
     // 2. Obfuscate / Encode all Frontend JS Logic files in the customer package!
     const protectedJsFiles = [
       'quota_and_i18n.js',

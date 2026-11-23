@@ -309,6 +309,15 @@
               <div class="flex flex-wrap items-center gap-2 shrink-0">
                 <button
                   type="button"
+                  data-jump-view="viewGuide"
+                  class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500/25 to-blue-500/20 hover:from-cyan-500/35 hover:to-blue-500/30 text-cyan-200 border border-cyan-400/45 text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-lg"
+                >
+                  <i class="fa-solid fa-circle-play text-cyan-300"></i>
+                  <span class="lang-only-vi">Video Hướng Dẫn AI</span>
+                  <span class="lang-only-global hidden">Video Tutorial</span>
+                </button>
+                <button
+                  type="button"
                   data-jump-view="viewVoiceClone"
                   class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500/25 to-orange-500/20 hover:from-amber-500/35 hover:to-orange-500/30 text-amber-200 border border-amber-400/40 text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-lg"
                 >
@@ -1445,6 +1454,60 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
 
       <!-- ================= VIEW 6: CẨM NANG HƯỚNG DẪN SỬ DỤNG CHI TIẾT (VIETNAMESE & GLOBAL ENGLISH) ================= -->
       <div id="viewGuide" class="content-view hidden flex flex-col gap-6">
+        <!-- OFFICIAL FULL HD VIDEO TUTORIAL PLAYER (NARRATED BY AI HAI DANG 48kHz) -->
+        <div id="guideVideoShowcase" class="glass-panel rounded-3xl p-6 lg:p-7 border border-cyan-400/40 flex flex-col gap-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-400/35 text-[11px] font-extrabold text-cyan-200">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span class="lang-only-vi">🎬 VIDEO HƯỚNG DẪN CHÍNH THỨC • GIỌNG AI HẢI ĐĂNG (THỜI SỰ 48kHz)</span>
+                <span class="lang-only-global hidden">🎬 OFFICIAL 1080p VIDEO WALKTHROUGH • 48kHz AI NARRATION</span>
+              </div>
+              <h3 class="text-lg sm:text-xl font-extrabold font-display text-white mt-2">
+                <span class="lang-only-vi">Xem Video Hướng Dẫn Chi Tiết Từ A–Z (Full HD 1080p • Có Thuyết Minh & Phụ Đề)</span>
+                <span class="lang-only-global hidden">Complete Step-by-Step Studio Walkthrough (Full HD 1080p)</span>
+              </h3>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <a
+                href="/tutorials/huong_dan_voiceviet_hai_dang_1080p.mp4"
+                download="Huong-Dan-VoiceViet-Studio-Hai-Dang-1080p.mp4"
+                class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-cyan-200 border border-cyan-400/40 text-xs font-extrabold transition flex items-center gap-2 cursor-pointer"
+              >
+                <i class="fa-solid fa-download text-cyan-300"></i>
+                <span class="lang-only-vi">Tải Video Hướng Dẫn (.MP4)</span>
+                <span class="lang-only-global hidden">Download .MP4 (1080p)</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="rounded-2xl overflow-hidden border border-white/15 bg-[#050712] shadow-2xl">
+            <video
+              id="tutorialVideoPlayer"
+              controls
+              preload="metadata"
+              playsinline
+              poster="/tutorials/huong_dan_poster_1080p.jpg"
+              class="w-full aspect-video bg-[#050712] outline-none"
+            >
+              <source src="/tutorials/huong_dan_voiceviet_hai_dang_1080p.mp4" type="video/mp4" />
+              Trình duyệt của bạn không hỗ trợ phát video HTML5.
+            </video>
+          </div>
+
+          <!-- Interactive Scene Timestamp Jump Bar -->
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <span class="text-[11px] font-bold text-slate-400 mr-1"><i class="fa-solid fa-clock text-cyan-400 mr-1"></i>Chuyển nhanh phân cảnh:</span>
+            <button type="button" onclick="const v=document.getElementById('tutorialVideoPlayer');if(v){v.currentTime=0;v.play();}" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-slate-200 hover:text-cyan-200 border border-white/10 text-[11px] font-semibold transition cursor-pointer">00:00 • 1. Tổng quan & Đa ngôn ngữ</button>
+            <button type="button" onclick="const v=document.getElementById('tutorialVideoPlayer');if(v){v.currentTime=19.9;v.play();}" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-slate-200 hover:text-cyan-200 border border-white/10 text-[11px] font-semibold transition cursor-pointer">00:20 • 2. Chọn giọng & Cảm xúc</button>
+            <button type="button" onclick="const v=document.getElementById('tutorialVideoPlayer');if(v){v.currentTime=48.0;v.play();}" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-slate-200 hover:text-cyan-200 border border-white/10 text-[11px] font-semibold transition cursor-pointer">00:48 • 3. Tốc độ & Tải MP3/WAV</button>
+            <button type="button" onclick="const v=document.getElementById('tutorialVideoPlayer');if(v){v.currentTime=67.1;v.play();}" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-slate-200 hover:text-cyan-200 border border-white/10 text-[11px] font-semibold transition cursor-pointer">01:07 • 4. Truyện dài & File Word</button>
+            <button type="button" onclick="const v=document.getElementById('tutorialVideoPlayer');if(v){v.currentTime=89.4;v.play();}" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-slate-200 hover:text-cyan-200 border border-white/10 text-[11px] font-semibold transition cursor-pointer">01:29 • 5. Đa giọng CapCut</button>
+            <button type="button" onclick="const v=document.getElementById('tutorialVideoPlayer');if(v){v.currentTime=111.2;v.play();}" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-slate-200 hover:text-cyan-200 border border-white/10 text-[11px] font-semibold transition cursor-pointer">01:51 • 6. Gói cước & VietQR</button>
+            <button type="button" onclick="const v=document.getElementById('tutorialVideoPlayer');if(v){v.currentTime=134.3;v.play();}" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-slate-200 hover:text-cyan-200 border border-white/10 text-[11px] font-semibold transition cursor-pointer">02:14 • 7. Tổng kết</button>
+          </div>
+        </div>
+
         <div class="glass-panel rounded-3xl p-6 lg:p-8 flex flex-col gap-6">
           <!-- Vietnamese Guide -->
           <div id="guideContentVi" class="flex flex-col gap-6">

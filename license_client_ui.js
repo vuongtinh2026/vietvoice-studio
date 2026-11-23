@@ -92,12 +92,16 @@
       });
       const data = await res.json().catch(() => ({ ok: false, error: 'Lỗi đọc dữ liệu bản quyền' }));
 
-      // Hide Owner Admin tab if running on an exported Customer Client Build!
-      if (data.isCustomerClient) {
+      // Hide Owner Admin tab if running on an exported Customer Client Build or ?customer_demo=1!
+      const isCustDemoUrl = new URLSearchParams(window.location.search).get('customer_demo') === '1';
+      if (data.isCustomerClient || isCustDemoUrl) {
         const admNav = document.getElementById('navTabAdminLicenses');
         const admMob = document.getElementById('mobileTabAdminLicenses');
         if (admNav) admNav.classList.add('hidden');
         if (admMob) admMob.classList.add('hidden');
+        if (isCustDemoUrl) {
+          document.querySelectorAll('option[value^="private"]').forEach(o => o.remove());
+        }
       }
 
       const hwidEl = document.getElementById('clientLocalHwidText');

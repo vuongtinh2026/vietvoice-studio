@@ -442,8 +442,11 @@ const MIME_TYPES = {
   '.wasm': 'application/wasm',
   '.wav': 'audio/wav',
   '.mp3': 'audio/mpeg',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon'
 };
@@ -1290,7 +1293,44 @@ const server = http.createServer(async (req, res) => {
     }
 
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': contentType });
+    const total = stats.size;
+    const range = req.headers.range;
+
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (match) {
+        const start = match[1] ? parseInt(match[1], 10) : 0;
+        const end = match[2] ? Math.min(parseInt(match[2], 10), total - 1) : total - 1;
+        if (start >= total || start > end) {
+          res.writeHead(416, { 'Content-Range': `bytes */${total}` });
+          res.end();
+          return;
+        }
+        const chunkSize = (end - start) + 1;
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${total}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunkSize,
+          'Content-Type': contentType
+        });
+        if (req.method === 'HEAD') {
+          res.end();
+          return;
+        }
+        fs.createReadStream(filePath, { start, end }).pipe(res);
+        return;
+      }
+    }
+
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Content-Length': total,
+      'Accept-Ranges': 'bytes'
+    });
+    if (req.method === 'HEAD') {
+      res.end();
+      return;
+    }
     const stream = fs.createReadStream(filePath);
     stream.pipe(res);
   });
