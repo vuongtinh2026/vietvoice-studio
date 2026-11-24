@@ -580,7 +580,7 @@ function attachQuotaHeaders(headersObj, licState) {
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Owner-Token, X-Audio-Bitrate, X-License-Key, X-Client-HWID, X-Client-Machine, X-Simulated-HWID, X-Simulated-Machine');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Owner-Token, X-Audio-Bitrate, X-License-Key, X-Client-HWID, X-Client-Machine, X-Simulated-HWID, X-Simulated-Machine, X-File-Name, X-Source-Lang, X-Target-Lang');
   res.setHeader('Access-Control-Expose-Headers', 'X-Audio-Seconds, X-Audio-Voice, X-Voice-Name, X-Total-Chunks, X-License-Mode, X-License-Used, X-License-Max, X-License-Remaining, X-License-Plan, X-License-Hwid');
 
   if (req.method === 'OPTIONS') {
@@ -914,25 +914,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 1. API: Get Voices Catalog (includes Private Cloned Voices + 32 Global Languages + 24 Pro Vietnamese voices)
+  // 1. API: Get Voices Catalog (Self-contained Voxly 48kHz Studio + Private Cloned + 110-Country Global Voices; zero 3rd-party paid engines)
   if (pathname === '/api/cheap-tts/voices' && req.method === 'GET') {
     try {
-      const keyHeader = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-      const activeKey = keyHeader || DEFAULT_KEY;
-      let voices = [];
-      try {
-        voices = await getVoicesWithPython(activeKey);
-      } catch (pyErr) {
-        console.warn('Python voices catalog fallback to Node:', pyErr.message);
-        const tts = getTtsClient(activeKey);
-        voices = await tts.voices();
-      }
-      try {
-        const freeVoices = await getVoicesFree();
-        voices = [...freeVoices, ...voices];
-      } catch (fErr) {
-        console.warn('Could not load free voices:', fErr.message);
-      }
+      const voices = await getVoicesFree();
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ success: true, voices }));
     } catch (err) {
@@ -1204,6 +1189,248 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // =========================================================================
+  // 2.5 API: MULTILINGUAL AUDIO & VIDEO AI DUBBING STUDIO (.MP3 / .MP4 / .WAV)
+  // =========================================================================
+  if (pathname === '/api/dubbing/transcribe-translate' && req.method === 'POST') {
+    const dubDir = path.join('/tmp', 'voxly_dub_sessions');
+    fs.mkdirSync(dubDir, { recursive: true });
+    // Prune temp files older than 45 minutes
+    try {
+      const cutoff = Date.now() - 45 * 60 * 1000;
+      for (const fn of fs.readdirSync(dubDir)) {
+        const fp = path.join(dubDir, fn);
+        const st = fs.statSync(fp);
+        if (st.mtimeMs < cutoff) fs.unlinkSync(fp);
+      }
+    } catch {}
+
+    const rawName = decodeURIComponent(String(req.headers['x-file-name'] || 'input.mp3'));
+    const rawExt = (path.extname(rawName) || '.mp3').toLowerCase().replace(/[^.a-z0-9]/g, '') || '.mp3';
+    const sourceLang = String(req.headers['x-source-lang'] || 'auto').trim() || 'auto';
+    const targetLang = String(req.headers['x-target-lang'] || 'vi').trim() || 'vi';
+    const sessionId = `dub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const mediaPath = path.join(dubDir, `${sessionId}_orig${rawExt}`);
+
+    try {
+      await new Promise((resolve, reject) => {
+        let total = 0;
+        const maxUploadBytes = 160 * 1024 * 1024; // 160 MB
+        const ws = fs.createWriteStream(mediaPath);
+        req.on('data', chunk => {
+          total += chunk.length;
+          if (total > maxUploadBytes) {
+            ws.destroy();
+            req.destroy();
+            reject(new Error('Dung lượng file vượt quá giới hạn 160MB!'));
+          }
+        });
+        req.pipe(ws);
+        ws.on('finish', resolve);
+        ws.on('error', reject);
+        req.on('error', reject);
+      });
+
+      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/transcribe-translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mediaPath, sourceLang, targetLang })
+      });
+      const data = await dRes.json().catch(() => ({}));
+      if (!dRes.ok || !data.success) {
+        throw new Error(data.error || `Lỗi nhận diện giọng nói (HTTP ${dRes.status})`);
+      }
+
+      fs.writeFileSync(
+        path.join(dubDir, `${sessionId}_meta.json`),
+        JSON.stringify({
+          sessionId,
+          origPath: mediaPath,
+          origName: rawName,
+          isVideo: Boolean(data.isVideo),
+          durationSec: data.durationSec || 0,
+          createdAt: Date.now()
+        }),
+        'utf-8'
+      );
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        ...data,
+        mediaSessionId: sessionId,
+        fileName: rawName
+      }));
+    } catch (err) {
+      console.error('[Voxly Dubbing Transcribe Error]:', err.message);
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  if (pathname === '/api/dubbing/retranslate' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req);
+      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/translate-text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: payload.text || '',
+          sourceLang: payload.sourceLang || 'auto',
+          targetLang: payload.targetLang || 'vi'
+        })
+      });
+      const data = await dRes.json().catch(() => ({}));
+      if (!dRes.ok || !data.success) {
+        throw new Error(data.error || 'Lỗi dịch văn bản');
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(data));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  if (pathname === '/api/dubbing/render' && req.method === 'POST') {
+    try {
+      const tStart = Date.now();
+      const payload = await readJsonBody(req);
+      const rawText = String(payload.text || '').trim();
+      const voice = String(payload.voice || 'free-vi-ngoc-huyen').trim();
+      const rate = parseFloat(payload.rate) || 1.0;
+      const pause = parseFloat(payload.pause) || 0.35;
+      const bgMixMode = payload.bgMixMode === 'duck15' ? 'duck15' : 'mute';
+      const autoFitTiming = payload.autoFitTiming !== false;
+      const mediaSessionId = String(payload.mediaSessionId || '').replace(/[^a-zA-Z0-9_]/g, '');
+      const ownerToken = req.headers['x-owner-token'] || payload.ownerToken || '';
+
+      if (!rawText) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: 'Vui lòng nhập nội dung bản dịch để lồng tiếng.' }));
+        return;
+      }
+
+      const charCost = rawText.length;
+      const preCheck = await verifyAndConsumeLicenseQuota(req, payload, charCost, true);
+      if (!preCheck.ok) {
+        res.writeHead(preCheck.status || 403, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, code: preCheck.code, error: preCheck.error }));
+        return;
+      }
+
+      if (!cachedFreeVoices) {
+        await getVoicesFree().catch(() => {});
+      }
+
+      const cleanText = normalizeTextForVoice(rawText, voice);
+      const synthResult = await synthesizeFree(cleanText, voice, rate, pause, ownerToken);
+
+      const dubDir = path.join('/tmp', 'voxly_dub_sessions');
+      fs.mkdirSync(dubDir, { recursive: true });
+      const outId = `out_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const wavFile = `${outId}.wav`;
+      const mp3File = `${outId}.mp3`;
+      const wavPath = path.join(dubDir, wavFile);
+      const mp3Path = path.join(dubDir, mp3File);
+      fs.writeFileSync(wavPath, synthResult.audio);
+
+      const ffmpegBin = fs.existsSync('/opt/homebrew/bin/ffmpeg') ? '/opt/homebrew/bin/ffmpeg' : 'ffmpeg';
+      await new Promise((resolve, reject) => {
+        execFile(ffmpegBin, ['-y', '-i', wavPath, '-codec:a', 'libmp3lame', '-b:a', '96k', '-ac', '1', '-ar', '48000', mp3Path], (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      let dubbedVideoUrl = null;
+      if (mediaSessionId) {
+        const metaPath = path.join(dubDir, `${mediaSessionId}_meta.json`);
+        if (fs.existsSync(metaPath)) {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+          if (meta.isVideo && meta.origPath && fs.existsSync(meta.origPath)) {
+            const mp4File = `${outId}_dubbed.mp4`;
+            const mp4Path = path.join(dubDir, mp4File);
+            const muxRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/mux-video`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                origVideoPath: meta.origPath,
+                dubWavPath: wavPath,
+                outMp4Path: mp4Path,
+                bgMixMode,
+                autoFitTiming
+              })
+            });
+            const muxData = await muxRes.json().catch(() => ({}));
+            if (muxRes.ok && muxData.success && fs.existsSync(mp4Path)) {
+              dubbedVideoUrl = `/api/dubbing/download/${mp4File}`;
+            }
+          }
+        }
+      }
+
+      const committed = await verifyAndConsumeLicenseQuota(req, payload, charCost, false);
+      const headers = attachQuotaHeaders({ 'Content-Type': 'application/json; charset=utf-8' }, committed);
+      res.writeHead(200, headers);
+      res.end(JSON.stringify({
+        success: true,
+        audioWavUrl: `/api/dubbing/download/${wavFile}`,
+        audioMp3Url: `/api/dubbing/download/${mp3File}`,
+        dubbedVideoUrl,
+        audioSeconds: Number(synthResult.seconds.toFixed(1)),
+        voiceName: synthResult.voice.name || voice,
+        charsUsed: charCost,
+        elapsedMs: Date.now() - tStart
+      }));
+    } catch (err) {
+      console.error('[Voxly Dubbing Render Error]:', err.message);
+      res.writeHead(err.status || 500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, code: err.code || 'dub_failed', error: err.message }));
+    }
+    return;
+  }
+
+  if (pathname.startsWith('/api/dubbing/download/') && (req.method === 'GET' || req.method === 'HEAD')) {
+    const safeFile = path.basename(pathname.slice('/api/dubbing/download/'.length)).replace(/[^a-zA-Z0-9._-]/g, '');
+    const fullTarget = path.join('/tmp', 'voxly_dub_sessions', safeFile);
+    if (!safeFile || !fs.existsSync(fullTarget)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('404 Not Found');
+      return;
+    }
+    const ext = path.extname(safeFile).toLowerCase();
+    const mime = MIME_TYPES[ext] || 'application/octet-stream';
+    const stats = fs.statSync(fullTarget);
+    const total = stats.size;
+    const range = req.headers.range;
+    if (range) {
+      const m = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (m) {
+        const start = m[1] ? parseInt(m[1], 10) : 0;
+        const end = m[2] ? Math.min(parseInt(m[2], 10), total - 1) : total - 1;
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${total}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': (end - start) + 1,
+          'Content-Type': mime
+        });
+        if (req.method === 'HEAD') { res.end(); return; }
+        fs.createReadStream(fullTarget, { start, end }).pipe(res);
+        return;
+      }
+    }
+    res.writeHead(200, {
+      'Content-Type': mime,
+      'Content-Length': total,
+      'Accept-Ranges': 'bytes'
+    });
+    if (req.method === 'HEAD') { res.end(); return; }
+    fs.createReadStream(fullTarget).pipe(res);
+    return;
+  }
+
   // 3. API: Convert WAV to lightweight Studio MP3 using FFmpeg (libmp3lame)
   if (pathname === '/api/audio/convert-to-mp3' && req.method === 'POST') {
     const tempId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -1256,7 +1483,7 @@ const server = http.createServer(async (req, res) => {
             'Content-Type': 'audio/mpeg',
             'Content-Length': stats.size,
             'X-Audio-Bitrate': bitrate,
-            'Content-Disposition': 'attachment; filename="voiceviet-audiobook.mp3"'
+            'Content-Disposition': 'attachment; filename="voxly-audiobook.mp3"'
           });
 
           const readStream = fs.createReadStream(tempMp3);
@@ -1359,7 +1586,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`=======================================================`);
-  console.log(`🎙️  VoiceViet Studio v4.0 đang chạy tại: http://0.0.0.0:${PORT}`);
-  console.log(`🔒 Bảo vệ Giọng Nhân Bản Độc Quyền + 32 Ngôn Ngữ Quốc Tế`);
+  console.log(`🎙️  Voxly Studio đang chạy tại: http://0.0.0.0:${PORT}`);
+  console.log(`🔒 Bảo vệ Giọng Nhân Bản Độc Quyền + 142 Ngôn Ngữ + Dịch Audio/Video AI`);
   console.log(`=======================================================`);
 });

@@ -18,8 +18,8 @@
       unlimited: false,
       vndPrice: '0',
       usdPrice: '$0',
-      nameVi: 'Gói Miễn Phí',
-      nameEn: 'Free Starter'
+      nameVi: 'Gói Khởi Đầu',
+      nameEn: 'Starter Plan'
     },
     basic: {
       id: 'basic',
@@ -68,18 +68,17 @@
   // =========================================================================
   const I18N = {
     vi: {
-      brand_sub: 'Phòng thu AI 48kHz • Nhân bản giọng độc quyền • 110 Quốc gia',
-      tab_free: '✨ Studio 48kHz & Quốc Tế',
-      tab_cheap: 'Cheap-TTS Cloud',
-      tab_cheap_badge: '128 Giọng',
-      tab_web: 'Web Speech',
+      page_title: 'Voxly — Phòng Thu Giọng Nói AI, Nhân Bản Giọng & Dịch Audio/Video 48kHz',
+      brand_sub: 'Phòng thu AI 48kHz • Dịch Audio/Video • 110 Quốc gia',
+      tab_free: '✨ Phòng Thu AI 48kHz • 142 Ngôn Ngữ',
       quota_label: 'Còn lại:',
       chars_unit: 'ký tự',
-      btn_upgrade_vip: 'Nâng Cấp VIP',
+      btn_upgrade_vip: 'Nâng Cấp Gói',
       btn_help_guide: 'Hướng Dẫn',
       sidebar_sec_studio: 'Phòng Thu Sáng Tạo',
       sidebar_sec_biz: 'Thương Mại & Hỗ Trợ',
       nav_studio: 'Studio Soạn Thảo',
+      nav_dubbing: 'Dịch Audio & Video',
       nav_clone: 'Nhân Bản Giọng',
       nav_dialogue: 'Hội Thoại Đa Giọng',
       nav_batch: 'Hàng Đợi File Word',
@@ -87,17 +86,19 @@
       nav_voices_badge: '110 Nước',
       nav_pricing: 'Bảng Giá & Gói Cước',
       nav_guide: 'Hướng Dẫn Sử Dụng',
+      nav_admin: 'Quản Lý Key & Khách',
       quota_month_title: 'Hạn mức tháng',
       sidebar_upgrade_link: 'Nâng cấp →',
-      hero_eyebrow: 'AI AUDIO MASTERING STUDIO • CHUẨN ĐIỆN ẢNH 48.000 Hz',
+      hero_eyebrow: 'VOXLY AI MASTERING STUDIO • CHUẨN ĐIỆN ẢNH 48.000 Hz',
       hero_collapse: 'Thu gọn',
       hero_expand: 'Mở rộng giới thiệu',
-      hero_title: 'Đánh Thức Mọi Câu Chữ Thành Giọng Nói AI Sống Động & Đầy Cảm Xúc',
-      hero_desc: 'Tạo Audiobook hàng vạn từ, nhân bản giọng chính chủ khóa mật mã riêng tư, tự động phân vai truyện dài xuất thẳng Track CapCut và lồng tiếng đa quốc gia trên 110 nước • 142 ngôn ngữ chỉ trong tích tắc.',
+      hero_title: 'Đánh Thức Mọi Câu Chữ & Video Thành Giọng Nói AI Đa Ngôn Ngữ Sống Động',
+      hero_desc: 'Tạo Audiobook siêu tốc, dịch & lồng tiếng file MP3/MP4 sang 142 ngôn ngữ, nhân bản giọng chính chủ khóa mật mã riêng tư và tách vai hội thoại xuất thẳng CapCut chỉ trong tích tắc.',
+      hero_btn_dub: 'Dịch File MP3 / MP4',
       hero_btn_clone: 'Giọng Độc Quyền Của Tôi',
-      hero_btn_voices: 'Kho 1.177 Giọng Quốc Tế',
-      feat1_title: '1.177+ Giọng Toàn Cầu',
-      feat1_desc: '110 Quốc gia & 142 ngôn ngữ bản xứ nghe thử tức thì <0.05s',
+      hero_btn_voices: 'Kho 1.055+ Giọng Quốc Tế',
+      feat1_title: 'Dịch Audio & Video MP4',
+      feat1_desc: 'Đưa file MP3/MP4 vào tự nhận diện, dịch & lồng tiếng quốc gia khác',
       feat2_title: 'Két Sắt Nhân Bản 48kHz',
       feat2_desc: 'Mã hóa PBKDF2-SHA256 độc quyền chỉ mình chủ sở hữu dùng',
       feat3_title: 'Đa Giọng & Stem CapCut',
@@ -122,10 +123,10 @@
       stat_words: 'từ',
       stat_est: 'Thời lượng ước tính:',
       drop_hint: 'Kéo thả trực tiếp file .docx hoặc .txt vào khung soạn thảo',
-      idle_wave: 'Phổ âm Aurora 48kHz sẵn sàng — Nhấn Tạo Giọng Nói AI để xuất bản âm thanh',
-      btn_speak_free: '✨ Tạo Giọng AI Miễn Phí',
-      btn_speak_cloud: 'Tạo Giọng Nói AI',
-      btn_speak_web: 'Đọc Văn Bản',
+      idle_wave: 'Phổ âm Aurora 48kHz sẵn sàng — Nhấn Tạo Giọng Đọc AI để xuất bản âm thanh',
+      btn_speak_free: '✨ Tạo Giọng Đọc AI',
+      btn_speak_cloud: '✨ Tạo Giọng Đọc AI',
+      btn_speak_web: '✨ Tạo Giọng Đọc AI',
       btn_stop: 'Dừng',
       shortcut_hint: 'xuất âm thanh tức thì',
       out_title: 'Bản Thu Master Đã Xuất Xưởng',
@@ -144,7 +145,7 @@
       hist_title: 'Lịch Sử Bản Thu Gần Đây',
       btn_clear_hist: 'Xóa hết',
       pricing_eyebrow: 'Bảng Giá Chính Thức • Tự Động Kích Hoạt Toàn Cầu 24/7',
-      pricing_title: 'Bảng Giá Gói Cước VoiceViet Studio',
+      pricing_title: 'Bảng Giá Gói Cước Voxly Studio',
       pricing_sub: 'Chi phí siêu tiết kiệm cho nhà sáng tạo YouTube, TikTok, Review Phim & Studio Audiobook — Hỗ trợ thanh toán VietQR (Việt Nam) & Quốc Tế (Visa / Mastercard / PayPal).',
       per_month_unit: 'VNĐ / 1 tháng',
       gen_done_in: 'Tạo xong trong',
@@ -156,18 +157,17 @@
       unlimited_text: 'Không giới hạn'
     },
     en: {
-      brand_sub: '48kHz AI Mastering Studio • Private Voice Cloning • 110 Countries',
-      tab_free: '✨ 48kHz Studio & Global',
-      tab_cheap: 'Cheap-TTS Cloud',
-      tab_cheap_badge: '128 Voices',
-      tab_web: 'Web Speech',
+      page_title: 'Voxly — 48kHz AI Voice Studio, Voice Cloning & Audio/Video Dubbing',
+      brand_sub: '48kHz AI Studio • Audio/Video Dubbing • 110 Countries',
+      tab_free: '✨ 48kHz AI Studio • 142 Languages',
       quota_label: 'Credits:',
       chars_unit: 'chars',
-      btn_upgrade_vip: 'Upgrade Pro',
+      btn_upgrade_vip: 'Upgrade Plan',
       btn_help_guide: 'User Guide',
       sidebar_sec_studio: 'Creative Studio',
       sidebar_sec_biz: 'Billing & Support',
       nav_studio: 'Studio Editor',
+      nav_dubbing: 'Audio & Video Dubbing',
       nav_clone: 'Private Voice Clone',
       nav_dialogue: 'Multi-Speaker Studio',
       nav_batch: 'Word Batch Queue',
@@ -175,19 +175,21 @@
       nav_voices_badge: '110 Countries',
       nav_pricing: 'Pricing & Plans',
       nav_guide: 'How-To Guide',
+      nav_admin: 'License & Client Admin',
       quota_month_title: 'Monthly Quota',
       sidebar_upgrade_link: 'Upgrade →',
-      hero_eyebrow: 'AI AUDIO MASTERING STUDIO • CINEMATIC 48,000 Hz',
+      hero_eyebrow: 'VOXLY AI AUDIO STUDIO • CINEMATIC 48,000 Hz',
       hero_collapse: 'Collapse',
       hero_expand: 'Expand Banner',
-      hero_title: 'Turn Any Script or Novel Into Lifelike, Expressive 48kHz AI Speech',
-      hero_desc: 'Produce full-length Audiobooks, lock your personal cloned voice in an encrypted vault, split multi-character dialogues into CapCut stems, and dub across 110 countries & 142 languages in seconds.',
+      hero_title: 'Turn Scripts, Audio & Videos Into Lifelike 48kHz Multilingual AI Speech',
+      hero_desc: 'Produce full-length Audiobooks, translate & dub MP3/MP4 files into 142 languages, lock your personal cloned voice in an encrypted vault, and export synced CapCut dialogue stems in seconds.',
+      hero_btn_dub: 'Translate MP3 / MP4',
       hero_btn_clone: 'My Private Voice Vault',
-      hero_btn_voices: 'Explore 1,177 Global Voices',
-      feat1_title: '1,177+ Global Voices',
-      feat1_desc: '110 Countries & 142 native locales with <0.05s instant preview',
+      hero_btn_voices: 'Explore 1,055+ Global Voices',
+      feat1_title: 'MP3 & MP4 AI Dubbing',
+      feat1_desc: 'Upload audio or video to auto-transcribe, translate & dub in 142 languages',
       feat2_title: '48kHz Encrypted Clone',
-      feat2_desc: 'PBKDF2-SHA256 owner-locked voice cloning vault',
+      feat2_desc: 'PBKDF2-SHA256 owner-locked personal voice cloning vault',
       feat3_title: 'Multi-Speaker & CapCut',
       feat3_desc: 'Auto-detect story dialogues & export synced character stems',
       feat4_title: '70,000+ Word Audiobooks',
@@ -211,9 +213,9 @@
       stat_est: 'Est. audio duration:',
       drop_hint: 'Drag & drop .docx or .txt files directly into the editor',
       idle_wave: '48kHz Aurora Spectrum Ready — Click Generate AI Voice to render audio',
-      btn_speak_free: '✨ Generate 48kHz AI Voice',
-      btn_speak_cloud: 'Generate Cloud AI Voice',
-      btn_speak_web: 'Speak Browser Voice',
+      btn_speak_free: '✨ Generate AI Voice',
+      btn_speak_cloud: '✨ Generate AI Voice',
+      btn_speak_web: '✨ Generate AI Voice',
       btn_stop: 'Stop',
       shortcut_hint: 'instant render',
       out_title: 'Master Audio Rendered',
@@ -232,7 +234,7 @@
       hist_title: 'Recent Generations',
       btn_clear_hist: 'Clear all',
       pricing_eyebrow: 'Official Global Pricing • Instant 24/7 Activation',
-      pricing_title: 'VoiceViet Studio Global Plans',
+      pricing_title: 'Voxly Studio Global Plans',
       pricing_sub: 'Ultra-affordable plans for YouTube Creators, TikTokers, Podcasters & Audiobook Studios — Instant checkout via Card / PayPal / VietQR.',
       per_month_unit: '/ month',
       gen_done_in: 'Generated in',
@@ -293,7 +295,7 @@
       lbl_pauses: '句间停顿 (Pauses)',
       lbl_volume: '音量增益 (Volume)',
       hist_title: '最近生成记录',
-      pricing_title: 'VoiceViet Studio 会员套餐',
+      pricing_title: 'Voxly Studio 会员套餐',
       per_month_unit: '/ 月',
       gen_done_in: '生成耗时',
       audio_len_label: '音频时长:',
@@ -323,7 +325,7 @@
       btn_test_voice: '瞬時プレビュー (<0.05秒)',
       right_title: 'ボイス調整パネル',
       lbl_country_lang: '国と言語を選択',
-      pricing_title: 'VoiceViet Studio 料金プラン',
+      pricing_title: 'Voxly Studio 料金プラン',
       per_month_unit: '/ 月',
       gen_done_in: '生成時間',
       audio_len_label: '音声の長さ:',
@@ -352,7 +354,7 @@
       btn_test_voice: '즉시 미리듣기 (<0.05초)',
       right_title: '음성 마스터링 설정',
       lbl_country_lang: '국가 및 언어',
-      pricing_title: 'VoiceViet Studio 글로벌 요금제',
+      pricing_title: 'Voxly Studio 글로벌 요금제',
       per_month_unit: '/ 월',
       gen_done_in: '생성 소요시간',
       audio_len_label: '오디오 길이:',
@@ -381,7 +383,7 @@
       btn_test_voice: 'Vista Previa (<0.05s)',
       right_title: 'Ajustes de Voz IA',
       lbl_country_lang: 'País e Idioma',
-      pricing_title: 'Planes de VoiceViet Studio',
+      pricing_title: 'Planes de Voxly Studio',
       per_month_unit: '/ mes',
       gen_done_in: 'Generado en',
       audio_len_label: 'Duración:',
@@ -410,7 +412,7 @@
       btn_test_voice: 'Écoute Instantanée (<0.05s)',
       right_title: 'Réglages Vocaux',
       lbl_country_lang: 'Pays & Langue',
-      pricing_title: 'Abonnements VoiceViet Studio',
+      pricing_title: 'Abonnements Voxly Studio',
       per_month_unit: '/ mois',
       gen_done_in: 'Généré en',
       audio_len_label: 'Durée audio:',
@@ -439,7 +441,7 @@
       btn_test_voice: 'Предпрослушивание (<0.05с)',
       right_title: 'Настройки голоса',
       lbl_country_lang: 'Страна и язык',
-      pricing_title: 'Тарифные планы VoiceViet Studio',
+      pricing_title: 'Тарифные планы Voxly Studio',
       per_month_unit: '/ мес.',
       gen_done_in: 'Создано за',
       audio_len_label: 'Длительность:',
@@ -595,6 +597,15 @@
       usedSubEl.innerHTML = currentLang === 'vi'
         ? `Đã dùng: <b class="text-purple-300 font-mono">${formatNumberLocale(snap.used)}</b> ký tự`
         : `Used: <b class="text-purple-300 font-mono">${formatNumberLocale(snap.used)}</b> chars`;
+    }
+
+    // Update top header active plan badge (never display "FREE"!)
+    const hdrPlanBadge = document.getElementById('headerActivePlanBadge');
+    if (hdrPlanBadge) {
+      const pid = snap.plan.id || 'free';
+      const tierMapVi = { free: 'STARTER', basic: 'GÓI THƯỜNG', standard: 'PHỔ THÔNG', vip: 'GÓI VIP', unlimited: 'UNLIMITED' };
+      const tierMapEn = { free: 'STARTER', basic: 'CREATOR', standard: 'PRO', vip: 'VIP', unlimited: 'UNLIMITED' };
+      hdrPlanBadge.textContent = currentLang === 'vi' ? (tierMapVi[pid] || 'PRO') : (tierMapEn[pid] || 'PRO');
     }
 
     // Show/hide Owner Test Quota Controls inside VietQR Modal based on Owner Vault Token
@@ -981,6 +992,47 @@
         const enTxt = tab.getAttribute('data-label-en');
         if (viTxt && enTxt) tab.textContent = isVi ? viTxt : enTxt;
       });
+
+      // 5. Audiobook Splitter Selects + Voice Clone Gender Select + Placeholders!
+      const splitSel = document.getElementById('splitModeSelect');
+      if (splitSel) {
+        [...splitSel.options].forEach(o => {
+          if (o.value === 'auto') o.textContent = isVi ? 'Theo Chương (Tự tách nếu quá dài)' : 'By Chapter (Auto-split if long)';
+          if (o.value === 'words') o.textContent = isVi ? 'Chia đều theo số từ (Bỏ qua tiêu đề)' : 'Equal Word Count (Ignore headings)';
+        });
+      }
+      const wordsSel = document.getElementById('wordsPerPartSelect');
+      if (wordsSel) {
+        const wMap = isVi
+          ? { '600': '600 từ (~2.5p - Siêu tốc)', '800': '800 từ (~3.5p - Nhanh)', '1000': '1.000 từ (~4.5p - Chuẩn khuyên dùng)', '1200': '1.200 từ (~5.5p)', '1500': '1.500 từ (~7.0p)', '2000': '2.000 từ (~9.0p - Dài)' }
+          : { '600': '600 words (~2.5m - Ultra Fast)', '800': '800 words (~3.5m - Fast)', '1000': '1,000 words (~4.5m - Recommended)', '1200': '1,200 words (~5.5m)', '1500': '1,500 words (~7.0m)', '2000': '2,000 words (~9.0m - Long)' };
+        [...wordsSel.options].forEach(o => { if (wMap[o.value]) o.textContent = wMap[o.value]; });
+      }
+      const cloneGen = document.getElementById('cloneVoiceGenderSelect');
+      if (cloneGen) {
+        [...cloneGen.options].forEach(o => {
+          if (o.value === 'Nam') o.textContent = isVi ? 'Nam' : 'Male';
+          if (o.value === 'Nữ') o.textContent = isVi ? 'Nữ' : 'Female';
+        });
+      }
+      const setPh = (id, viPh, enPh) => {
+        const el = document.getElementById(id);
+        if (el) el.setAttribute('placeholder', isVi ? viPh : enPh);
+      };
+      setPh('ownerPinInput', 'Nhập Mã PIN / Mật khẩu Chủ Sở Hữu để mở khóa...', 'Enter Owner PIN / Password to unlock vault...');
+      setPh('currentPinInput', 'Nhập PIN hiện tại...', 'Current Owner PIN...');
+      setPh('newPinInput', 'Nhập mật khẩu bí mật mới...', 'New secret PIN / password...');
+      setPh('cloneVoiceNameInput', 'Ví dụ: Giọng Của Tôi (Kể Truyện Độc Quyền)', 'e.g., My Studio Voice (Exclusive Narrator)');
+      setPh('cloneVoiceDescInput', 'Ví dụ: Giọng chính chủ kênh YouTube — Cấm sử dụng trái phép', 'e.g., Official YouTube Channel Voice — Owner Protected');
+      setPh('modalOwnerPinInput', 'Nhập Mã PIN Chủ Sở Hữu...', 'Enter Owner PIN...');
+      setPh('clientLicenseKeyInput', 'Ví dụ: VVPRO-VIP8-8888-DEMO', 'e.g., VVPRO-VIP8-8888-DEMO');
+      setPh('dialogueScriptInput',
+        'Bạn có thể dán trực tiếp chương truyện dài có lời dẫn & dấu ngoặc kép “...”, hoặc viết theo vai:\nC: Buổi chiều cuối thu... gió thổi xào xạc qua khung cửa sổ nhỏ.\nA: Quân này... đã mười năm rồi chúng ta mới gặp lại nhau đúng không?\nB: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!',
+        'Paste a full story chapter with narration & quotes "...", or write role lines:\nC: Late autumn afternoon... a gentle breeze drifted through the window.\nA: It has been ten years since we last met, hasn\'t it?\nB: [cười] Indeed... time really flies!'
+      );
+      if (document && t('page_title')) {
+        document.title = t('page_title');
+      }
     }
 
   function applyLanguage(lang) {

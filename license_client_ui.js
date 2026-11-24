@@ -35,7 +35,7 @@
   const origFetch = window.fetch.bind(window);
   window.fetch = async function (input, init = {}) {
     const urlStr = typeof input === 'string' ? input : (input && input.url ? input.url : '');
-    const isSynthApi = urlStr.includes('/api/free-tts/synthesize') || urlStr.includes('/api/cheap-tts/synthesize');
+    const isSynthApi = urlStr.includes('/api/free-tts/synthesize') || urlStr.includes('/api/cheap-tts/synthesize') || urlStr.includes('/api/dubbing/render');
 
     if (isSynthApi) {
       const headers = new Headers(init.headers || {});
@@ -119,17 +119,22 @@
       if (hwidEl) hwidEl.textContent = simSecondPcActive ? 'HWID-FAKE-PC02-9999 (Máy Lạ Test)' : (data.localHwid || data.hwid || 'HWID-...');
       if (machEl) machEl.textContent = simSecondPcActive ? 'Windows-11-May-Khach-La-Thu-2' : (data.localMachineLabel || data.machineLabel || '');
 
+      const isVi = !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
       if (data.ok) {
-        if (planBadge) planBadge.textContent = `${data.planName || 'Gói Miễn Phí'} (${data.daysLeft || 30} ngày)`;
+        if (planBadge) {
+          planBadge.textContent = isVi
+            ? `${data.planName || 'Gói Khởi Đầu'} (${data.daysLeft || 30} ngày)`
+            : `${data.planName || 'Starter Plan'} (${data.daysLeft || 30} days)`;
+        }
         if (remText) {
           remText.textContent = data.unlimited
-            ? '♾️ Không giới hạn'
-            : `${Number(data.remainingChars || 0).toLocaleString('vi-VN')} / ${Number(data.maxChars || 0).toLocaleString('vi-VN')} ký tự`;
+            ? (isVi ? '♾️ Không giới hạn' : '♾️ Unlimited')
+            : `${Number(data.remainingChars || 0).toLocaleString(isVi ? 'vi-VN' : 'en-US')} / ${Number(data.maxChars || 0).toLocaleString(isVi ? 'vi-VN' : 'en-US')} ${isVi ? 'ký tự' : 'chars'}`;
         }
         if (hdrLabel) {
           hdrLabel.textContent = data.mode === 'licensed' && data.key
             ? `${data.key.slice(0, 10)}...`
-            : 'Nhập Key';
+            : (isVi ? 'Nhập Key' : 'License Key');
         }
         if (window.VoiceVietQuota && typeof window.VoiceVietQuota.syncFromServer === 'function') {
           window.VoiceVietQuota.syncFromServer({

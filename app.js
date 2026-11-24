@@ -260,7 +260,7 @@ const canvasCtx = visualizerCanvas.getContext('2d');
 const idleWaveMsg = document.getElementById('idleWaveMsg');
 
 // State Variables
-let currentEngine = 'cheaptts';
+let currentEngine = 'free';
 let synth = window.speechSynthesis;
 let browserVoices = [];
 let cheapTtsVoices = [];
@@ -283,10 +283,10 @@ let batchFiles = [];
 let isWordBatchRunning = false;
 let wordBatchCancelRequested = false;
 
-// Preset sample texts (Vietnamese)
+// Preset sample texts (Vietnamese & English)
 const SAMPLES = {
-  intro: "Xin chào các bạn! Chào mừng bạn đến với VoiceViet. Ứng dụng đã kết nối trực tiếp tài khoản Cheap-TTS với các giọng đọc AI tự nhiên như Ngọc Huyền, Minh Quân, Mạnh Dũng.",
-  news: "Trí tuệ nhân tạo đang thay đổi cách con người làm việc và giao tiếp hàng ngày. Các công nghệ tổng hợp giọng nói ngày càng trở nên tự nhiên, mang đến trải nghiệm sống động và tiện lợi cho mọi người.",
+  intro: "Xin chào các bạn! Chào mừng bạn đến với Voxly — Phòng thu giọng nói AI 48kHz, dịch âm thanh đa ngôn ngữ và lồng tiếng trên 110 quốc gia.",
+  news: "Trí tuệ nhân tạo đang thay đổi cách con người làm việc và sáng tạo nội dung mỗi ngày. Trên nền tảng Voxly, các giọng đọc chuẩn phòng thu 48kHz mang đến trải nghiệm tự nhiên và sống động như người thật.",
   novel: `Chương 1: Khởi Đầu Mới
 Đáy sâu của vực thẳm dường như bị bao phủ bởi một làn sương mù dày đặc màu xám tro. Tiêu Viêm đứng trên mỏm đá cao, ánh mắt sắc bén nhìn về phía trước. Hắn cảm nhận được một luồng khí tức cực kỳ cường hãn đang từ từ thức tỉnh.
 
@@ -295,6 +295,19 @@ Chương 2: Quyết Định Sinh Tử
 
 Chương 3: Lửa Xanh Bùng Cháy
 Lời nói vừa dứt, ngọn lửa xanh biếc trong tay hắn bỗng nhiên bùng cháy mãnh liệt, xé toạc màn sương mù u ám xung quanh. Con đường phía trước rốt cuộc đã hiện ra rõ ràng.`
+};
+
+const SAMPLES_EN = {
+  intro: "Welcome to Voxly AI Studio! Experience ultra-lifelike 48kHz voice generation, encrypted voice cloning, and automatic audio & video dubbing across 142 languages.",
+  news: "Artificial intelligence is transforming modern digital storytelling. With multi-core streaming on Voxly, creators can generate studio-mastered voiceovers in just over one second.",
+  novel: `Chapter 1: A New Horizon
+Beneath the silver mist of the northern ridge, Adrian stood quietly at the edge of the ancient observatory, listening to the distant echo across the valley.
+
+Chapter 2: The Turning Point
+"Are you certain we should open the vault tonight?" Elena asked softly. Adrian nodded with calm resolve: "Every journey begins the moment we step beyond hesitation."
+
+Chapter 3: Dawn Over the Peaks
+As the first golden light broke through the clouds, the hidden pathway ahead finally revealed itself in crystal clarity.`
 };
 
 // ==========================================
@@ -1496,10 +1509,10 @@ async function startCheapTtsSynthesis(text, rawCharCount = 0) {
   const streamAbort = new AbortController();
   currentStreamingAbort = streamAbort;
 
-  const isLocal = selectedVoice.startsWith('free-') || selectedVoice.startsWith('private-');
+  const isLocal = true;
   const rate = parseFloat(rateRange.value) || 1.0;
   const pauseSec = parseFloat(pauseDurationRange.value) || 0.4;
-  const key = cheapTtsKeyInput.value.trim();
+  const key = cheapTtsKeyInput ? cheapTtsKeyInput.value.trim() : '';
 
   const streamChunks = isLocal ? splitTextForProgressiveStreaming(text) : [text];
   const useProgressiveStream = isLocal && streamChunks.length > 1;
@@ -1568,7 +1581,7 @@ async function startCheapTtsSynthesis(text, rawCharCount = 0) {
       audioPlayer.src = blobUrl;
       btnDownloadAudio.href = blobUrl;
       const isMp3Format = finalBlob.type.includes('mpeg');
-      btnDownloadAudio.download = `voiceviet-${selectedVoice}-${Date.now()}.${isMp3Format ? 'mp3' : 'wav'}`;
+      btnDownloadAudio.download = `voxly-${selectedVoice}-${Date.now()}.${isMp3Format ? 'mp3' : 'wav'}`;
       audioPlayer.volume = parseFloat(volumeRange.value) || 1.0;
       await audioPlayer.play().catch(() => {});
       startVisualizer();
@@ -1620,7 +1633,7 @@ async function startCheapTtsSynthesis(text, rawCharCount = 0) {
       audioOutputCard.classList.remove('hidden');
       audioPlayer.src = leadUrl;
       btnDownloadAudio.href = leadUrl;
-      btnDownloadAudio.download = `voiceviet-${selectedVoice}-${Date.now()}.wav`;
+      btnDownloadAudio.download = `voxly-${selectedVoice}-${Date.now()}.wav`;
       const leadFirstStr = qApi ? qApi.formatGenerationSpeed(firstAudioElapsedMs) : `${(firstAudioElapsedMs / 1000).toFixed(2)}s`;
       const leadDurDetailed = qApi ? qApi.formatAudioDurationDetailed(leadRes.sec) : `${leadRes.sec.toFixed(1)}s`;
       if (audioDurationBadge) {
@@ -1712,7 +1725,7 @@ async function startCheapTtsSynthesis(text, rawCharCount = 0) {
       lastGeneratedAudioBlob = finalBlob;
 
       btnDownloadAudio.href = fullUrl;
-      btnDownloadAudio.download = `voiceviet-${selectedVoice}-${Date.now()}.wav`;
+      btnDownloadAudio.download = `voxly-${selectedVoice}-${Date.now()}.wav`;
 
       await swapPlayerPreservingTime(fullUrl, resumeTime, shouldContinuePlaying);
     }
@@ -1950,56 +1963,16 @@ function stopSpeaking() {
 // 5. ENGINE SWITCHER
 // ==========================================
 function switchEngine(engine) {
-  if (currentEngine === engine) return;
-  stopSpeaking();
-  currentEngine = engine;
-
-  if (tabFreeTts) {
-    tabFreeTts.classList.remove('active', 'bg-gradient-to-r', 'from-emerald-600', 'to-teal-600', 'text-white');
-    tabFreeTts.classList.add('text-slate-400');
+  currentEngine = 'free';
+  if (languageFilterContainer) languageFilterContainer.classList.remove('hidden');
+  if (cheapTtsConfigCard) cheapTtsConfigCard.classList.add('hidden');
+  if (pitchControlGroup) pitchControlGroup.classList.add('hidden');
+  if (cheapTtsPauseGroup) cheapTtsPauseGroup.classList.remove('hidden');
+  if (btnPause) btnPause.classList.add('hidden');
+  if (btnSpeakText) {
+    btnSpeakText.textContent = window.VoiceVietQuota ? window.VoiceVietQuota.t('btn_speak_free') : '✨ Tạo Giọng Đọc AI';
   }
-  tabCheapTts.classList.remove('active', 'cheap-tts-active');
-  tabWebSpeech.classList.remove('active');
-
-  const isVi = !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
-  if (engine === 'free') {
-    if (tabFreeTts) {
-      tabFreeTts.classList.add('active', 'bg-gradient-to-r', 'from-emerald-600', 'to-teal-600', 'text-white');
-      tabFreeTts.classList.remove('text-slate-400');
-    }
-    if (languageFilterContainer) languageFilterContainer.classList.remove('hidden');
-    cheapTtsConfigCard.classList.add('hidden');
-    pitchControlGroup.classList.add('hidden');
-    cheapTtsPauseGroup.classList.remove('hidden');
-    btnPause.classList.add('hidden');
-    btnSpeakText.textContent = window.VoiceVietQuota ? window.VoiceVietQuota.t('btn_speak_free') : '✨ Tạo Giọng AI Miễn Phí';
-    populateCheapTtsVoiceList(cheapTtsVoices);
-    showToast(isVi ? 'Đã chuyển sang Studio 48kHz & 142 Ngôn Ngữ Quốc Tế' : 'Switched to 48kHz Studio & 142 Global Languages', 'success');
-  } else if (engine === 'cheaptts') {
-    tabCheapTts.classList.add('active', 'cheap-tts-active');
-    if (languageFilterContainer) languageFilterContainer.classList.remove('hidden');
-    cheapTtsConfigCard.classList.remove('hidden');
-    pitchControlGroup.classList.add('hidden');
-    cheapTtsPauseGroup.classList.remove('hidden');
-    btnPause.classList.add('hidden');
-    btnSpeakText.textContent = window.VoiceVietQuota ? window.VoiceVietQuota.t('btn_speak_cloud') : 'Tạo giọng nói AI';
-    populateCheapTtsVoiceList(cheapTtsVoices);
-    showToast(isVi ? 'Đã chuyển sang Cheap-TTS Cloud AI' : 'Switched to Cheap-TTS Cloud AI', 'info');
-  } else {
-    tabWebSpeech.classList.add('active');
-    if (languageFilterContainer) languageFilterContainer.classList.add('hidden');
-    if (btnLoadNativeSample) btnLoadNativeSample.classList.add('hidden');
-    cheapTtsConfigCard.classList.add('hidden');
-    pitchControlGroup.classList.remove('hidden');
-    cheapTtsPauseGroup.classList.add('hidden');
-    btnPause.classList.remove('hidden');
-    btnSpeakText.textContent = window.VoiceVietQuota ? window.VoiceVietQuota.t('btn_speak_browser') : 'Đọc văn bản';
-    voiceNoteText.textContent = isVi
-      ? 'Giọng đọc trình duyệt miễn phí trên máy tính của bạn.'
-      : 'Free built-in browser voices on your device.';
-    populateBrowserVoiceList();
-    showToast(isVi ? 'Đã chuyển sang Trình duyệt (Web Speech)' : 'Switched to Browser (Web Speech)', 'info');
-  }
+  populateCheapTtsVoiceList(cheapTtsVoices);
 }
 window.switchEngine = switchEngine;
 
@@ -2237,15 +2210,16 @@ async function previewSpecificVoice(voiceId, voiceLabel) {
 window.previewSpecificVoice = previewSpecificVoice;
 
 function updateUIForPlaying(playing) {
+  const isVi = !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
   if (playing) {
     btnSpeak.classList.add('bg-rose-600', 'speaking-active');
-    btnSpeakText.textContent = 'Đang đọc...';
-    btnPause.disabled = false;
+    btnSpeakText.textContent = isVi ? 'Đang đọc...' : 'Speaking...';
+    if (btnPause) btnPause.disabled = false;
     btnStop.disabled = false;
   } else {
     btnSpeak.classList.remove('bg-rose-600', 'speaking-active');
-    btnSpeakText.textContent = currentEngine === 'free' ? '✨ Tạo Giọng AI Miễn Phí' : (currentEngine === 'cheaptts' ? 'Tạo giọng nói AI' : 'Đọc văn bản');
-    btnPause.disabled = true;
+    btnSpeakText.textContent = window.VoiceVietQuota ? window.VoiceVietQuota.t('btn_speak_free') : '✨ Tạo Giọng Đọc AI';
+    if (btnPause) btnPause.disabled = true;
     btnStop.disabled = true;
   }
 }
@@ -2482,15 +2456,25 @@ function renderHistory() {
 }
 
 window.addEventListener('voiceviet:langchange', () => {
+  const isVi = !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
   if (cheapTtsVoices && cheapTtsVoices.length > 0) {
     populateDynamicCountrySelect(languageFilterSelect, cheapTtsVoices);
-    if (currentEngine !== 'webspeech') {
-      populateCheapTtsVoiceList(cheapTtsVoices);
-    } else {
-      populateBrowserVoiceList();
-    }
+    populateCheapTtsVoiceList(cheapTtsVoices);
   }
   renderHistory();
+  renderBatchFileList();
+  if (!isWordBatchRunning && batchWordProgressText) {
+    batchWordProgressText.textContent = isVi
+      ? 'Sẵn sàng xử lý danh sách file Word...'
+      : 'Ready to process Word (.docx) batch queue...';
+  }
+  if (!isWordBatchRunning && batchWordCompletedStats) {
+    const doneCnt = batchFiles.filter(f => f.status === 'done').length;
+    batchWordCompletedStats.innerHTML = isVi
+      ? `<i class="fa-solid fa-check-double text-emerald-400 mr-1"></i> Đã tải về: <b class="text-emerald-400">${doneCnt}</b> file`
+      : `<i class="fa-solid fa-check-double text-emerald-400 mr-1"></i> Downloaded: <b class="text-emerald-400">${doneCnt}</b> files`;
+  }
+  updateMp3BitrateUI(mp3BitrateSelect ? mp3BitrateSelect.value : '48k');
 });
 
 function deleteHistoryItem(index) {
@@ -2548,17 +2532,20 @@ function escapeHtml(string) {
 }
 
 function updateMp3BitrateUI(bitrate) {
+  const isVi = !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
   if (mp3QualityBadge) {
     mp3QualityBadge.textContent = `${bitrate} Mono`;
   }
   if (mergedFormatText) {
-    const label = bitrate === '48k' ? 'MP3 (48 kbps Siêu nhẹ)' :
-                  bitrate === '64k' ? 'MP3 (64 kbps Tiêu chuẩn)' :
-                  bitrate === '32k' ? 'MP3 (32 kbps Cực nhẹ)' : `MP3 (${bitrate})`;
+    const label = isVi
+      ? (bitrate === '48k' ? 'MP3 (48 kbps Siêu nhẹ)' : bitrate === '64k' ? 'MP3 (64 kbps Tiêu chuẩn)' : bitrate === '32k' ? 'MP3 (32 kbps Cực nhẹ)' : `MP3 (${bitrate})`)
+      : (bitrate === '48k' ? 'MP3 (48 kbps Compact)' : bitrate === '64k' ? 'MP3 (64 kbps Balanced)' : bitrate === '32k' ? 'MP3 (32 kbps Ultra Light)' : `MP3 (${bitrate})`);
     mergedFormatText.textContent = label;
   }
   if (singleMp3Text) {
-    singleMp3Text.textContent = (bitrate === '48k' || bitrate === '32k') ? `Tải .MP3 (${bitrate})` : 'Tải .MP3';
+    singleMp3Text.textContent = isVi
+      ? ((bitrate === '48k' || bitrate === '32k') ? `Tải .MP3 (${bitrate})` : 'Tải .MP3')
+      : ((bitrate === '48k' || bitrate === '32k') ? `Download .MP3 (${bitrate})` : 'Download .MP3');
   }
 }
 
@@ -2685,11 +2672,17 @@ async function extractTextFromFileItem(item) {
 }
 
 function renderBatchFileList() {
+  if (!batchWordFileList) return;
+  const isVi = !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
   batchWordFileList.innerHTML = '';
-  batchWordCountBadge.textContent = `${batchFiles.length} file`;
+  if (batchWordCountBadge) {
+    batchWordCountBadge.textContent = isVi ? `${batchFiles.length} file` : `${batchFiles.length} files`;
+  }
 
   if (batchFiles.length === 0) {
-    batchWordFileList.innerHTML = '<p class="text-xs text-slate-500 italic py-2">Chưa có file nào trong hàng đợi.</p>';
+    batchWordFileList.innerHTML = `<p class="text-xs text-slate-500 italic py-2">${
+      isVi ? 'Chưa có file nào trong hàng đợi.' : 'No files in queue yet.'
+    }</p>`;
     return;
   }
 
@@ -2715,7 +2708,7 @@ function renderBatchFileList() {
             </span>
           </div>
           <p class="text-[11px] text-slate-400 mt-0.5 file-meta-info">
-            ${sizeKB} KB ${item.words > 0 ? `• ~${item.words.toLocaleString()} từ` : ''} ${item.duration ? `• Thời lượng: ${item.duration}` : ''}
+            ${sizeKB} KB ${item.words > 0 ? (isVi ? `• ~${item.words.toLocaleString()} từ` : `• ~${item.words.toLocaleString()} words`) : ''} ${item.duration ? (isVi ? `• Thời lượng: ${item.duration}` : `• Length: ${item.duration}`) : ''}
           </p>
         </div>
       </div>
@@ -2723,11 +2716,11 @@ function renderBatchFileList() {
       <div class="flex items-center gap-2 shrink-0 self-end sm:self-center">
         ${item.status === 'done' && item.mp3Url ? `
           <a href="${item.mp3Url}" download="${getCleanFileName(item.name)}.mp3" class="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-medium transition flex items-center gap-1">
-            <i class="fa-solid fa-cloud-arrow-down"></i> Tải lại .MP3
+            <i class="fa-solid fa-cloud-arrow-down"></i> ${isVi ? 'Tải lại .MP3' : 'Re-download .MP3'}
           </a>
         ` : ''}
         ${item.status === 'pending' || item.status === 'error' ? `
-          <button class="btn-remove-batch-file p-1.5 hover:text-rose-400 text-slate-500 transition text-xs cursor-pointer" title="Xóa file khỏi hàng đợi">
+          <button class="btn-remove-batch-file p-1.5 hover:text-rose-400 text-slate-500 transition text-xs cursor-pointer" title="${isVi ? 'Xóa file khỏi hàng đợi' : 'Remove file'}">
             <i class="fa-solid fa-trash-can"></i>
           </button>
         ` : ''}
@@ -2793,21 +2786,25 @@ function getStatusBadgeClass(status) {
 }
 
 function getStatusBadgeText(status) {
+  const isVi = !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
   switch (status) {
-    case 'processing': return '<i class="fa-solid fa-spinner fa-spin text-[9px] mr-1"></i> Đang tạo audio AI...';
-    case 'converting': return '<i class="fa-solid fa-file-zipper text-[9px] mr-1"></i> Đang nén .MP3...';
-    case 'done': return '<i class="fa-solid fa-check text-[9px] mr-1"></i> Đã xong & Đã tải về';
-    case 'error': return '<i class="fa-solid fa-xmark text-[9px] mr-1"></i> Bị lỗi';
-    default: return 'Chờ xử lý';
+    case 'processing': return isVi ? '<i class="fa-solid fa-spinner fa-spin text-[9px] mr-1"></i> Đang tạo audio AI...' : '<i class="fa-solid fa-spinner fa-spin text-[9px] mr-1"></i> Rendering AI audio...';
+    case 'converting': return isVi ? '<i class="fa-solid fa-file-zipper text-[9px] mr-1"></i> Đang nén .MP3...' : '<i class="fa-solid fa-file-zipper text-[9px] mr-1"></i> Encoding .MP3...';
+    case 'done': return isVi ? '<i class="fa-solid fa-check text-[9px] mr-1"></i> Đã xong & Đã tải về' : '<i class="fa-solid fa-check text-[9px] mr-1"></i> Completed & Saved';
+    case 'error': return isVi ? '<i class="fa-solid fa-xmark text-[9px] mr-1"></i> Bị lỗi' : '<i class="fa-solid fa-xmark text-[9px] mr-1"></i> Error';
+    default: return isVi ? 'Chờ xử lý' : 'Queued';
   }
 }
 
 function updateWordBatchProgress(completed, total) {
+  const isVi = !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
   if (batchWordProgressPercent) batchWordProgressPercent.textContent = `${percent}%`;
   if (batchWordProgressBar) batchWordProgressBar.style.width = `${percent}%`;
   if (batchWordCompletedStats) {
-    batchWordCompletedStats.innerHTML = `<i class="fa-solid fa-check-double text-emerald-400 mr-1"></i> Đã tải về: <b class="text-emerald-400">${completed}</b> / ${total} file`;
+    batchWordCompletedStats.innerHTML = isVi
+      ? `<i class="fa-solid fa-check-double text-emerald-400 mr-1"></i> Đã tải về: <b class="text-emerald-400">${completed}</b> / ${total} file`
+      : `<i class="fa-solid fa-check-double text-emerald-400 mr-1"></i> Downloaded: <b class="text-emerald-400">${completed}</b> / ${total} files`;
   }
 }
 
@@ -3016,8 +3013,8 @@ async function startWordBatchQueue() {
 // ==========================================
 function setupEventListeners() {
   if (tabFreeTts) tabFreeTts.addEventListener('click', () => switchEngine('free'));
-  tabCheapTts.addEventListener('click', () => switchEngine('cheaptts'));
-  tabWebSpeech.addEventListener('click', () => switchEngine('webspeech'));
+  if (tabCheapTts) tabCheapTts.addEventListener('click', () => switchEngine('free'));
+  if (tabWebSpeech) tabWebSpeech.addEventListener('click', () => switchEngine('free'));
 
   if (languageFilterSelect) {
     languageFilterSelect.addEventListener('change', () => {
@@ -3055,18 +3052,22 @@ function setupEventListeners() {
     });
   }
 
-  btnToggleKeyEdit.addEventListener('click', () => {
-    keyEditBox.classList.toggle('hidden');
-  });
+  if (btnToggleKeyEdit && keyEditBox) {
+    btnToggleKeyEdit.addEventListener('click', () => {
+      keyEditBox.classList.toggle('hidden');
+    });
+  }
 
-  btnSaveCheapTtsKey.addEventListener('click', () => {
-    const key = cheapTtsKeyInput.value.trim();
-    if (key) {
-      showToast('Đã lưu mã khóa Cheap-TTS mới!', 'success');
-      keyEditBox.classList.add('hidden');
-      loadCheapTtsVoices();
-    }
-  });
+  if (btnSaveCheapTtsKey && cheapTtsKeyInput) {
+    btnSaveCheapTtsKey.addEventListener('click', () => {
+      const key = cheapTtsKeyInput.value.trim();
+      if (key) {
+        showToast('Đã lưu cài đặt!', 'success');
+        if (keyEditBox) keyEditBox.classList.add('hidden');
+        loadCheapTtsVoices();
+      }
+    });
+  }
 
   // Audiobook batch events
   btnScrollToAudiobook.addEventListener('click', () => {
@@ -3119,8 +3120,8 @@ function setupEventListeners() {
         }
 
         const mp3Blob = await res.blob();
-        const selectedVoice = voiceSelect.value || 'cheap-tts';
-        const filename = `cheap-tts-${selectedVoice}-${Date.now()}.mp3`;
+        const selectedVoice = voiceSelect.value || 'voxly-studio';
+        const filename = `voxly-${selectedVoice}-${Date.now()}.mp3`;
         const url = URL.createObjectURL(mp3Blob);
         const a = document.createElement('a');
         a.href = url;
@@ -3333,10 +3334,12 @@ function setupEventListeners() {
   document.querySelectorAll('.sample-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const sampleKey = btn.dataset.sample;
-      if (SAMPLES[sampleKey]) {
-        textInput.value = SAMPLES[sampleKey];
+      const isVi = !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
+      const dict = isVi ? SAMPLES : SAMPLES_EN;
+      if (dict[sampleKey]) {
+        textInput.value = dict[sampleKey];
         updateStats();
-        showToast(`Đã áp dụng mẫu "${btn.textContent}"`, 'info');
+        showToast(isVi ? `Đã áp dụng mẫu "${btn.textContent}"` : `Loaded sample "${btn.textContent}"`, 'info');
       }
     });
   });

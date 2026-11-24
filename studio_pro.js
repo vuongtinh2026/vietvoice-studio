@@ -536,6 +536,24 @@
       refreshAllDialogueSelects();
       renderCatalogCards(false);
     }
+    setVaultUnlockedBadges(lastVaultUnlocked);
+    renderPrivateVoicesCards(lastVaultVoices, lastVaultUnlocked);
+    syncDefaultSpeakerCardTitlesForLang();
+    renderParsedSegmentsPanel();
+    const isVi = isViStudio();
+    if (!pendingCloneBlob && cloneSelectedFileName) {
+      cloneSelectedFileName.textContent = isVi
+        ? 'Chưa chọn file giọng mẫu (.mp3, .wav, .m4a, .ogg, .flac)'
+        : 'No sample audio selected (.mp3, .wav, .m4a, .ogg, .flac)';
+    }
+    if (recordCloneMicText && (!micRecorder || micRecorder.state !== 'recording')) {
+      recordCloneMicText.textContent = isVi ? 'Thu Âm Micro' : 'Record Mic';
+    }
+    if (dialogueStatus && (dialogueStatus.textContent.includes('Sẵn sàng') || dialogueStatus.textContent.includes('Ready to parse'))) {
+      dialogueStatus.textContent = isVi
+        ? 'Sẵn sàng bóc tách & tạo hội thoại đa giọng...'
+        : 'Ready to parse & render multi-speaker dialogue...';
+    }
     const isCollapsed = studioHeroBody ? studioHeroBody.classList.contains('hidden') : false;
     applyHeroCollapseState(isCollapsed);
   });
@@ -573,40 +591,64 @@
   let pendingCloneBlob = null;
   let micRecorder = null;
   let micChunks = [];
+  let lastVaultVoices = [];
+  let lastVaultUnlocked = false;
+
+  function isViStudio() {
+    return !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
+  }
 
   function setVaultUnlockedBadges(isUnlocked) {
+    lastVaultUnlocked = Boolean(isUnlocked);
+    const isVi = isViStudio();
     if (vaultLockStatusBadge) {
       if (isUnlocked) {
         vaultLockStatusBadge.className = 'text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1';
-        vaultLockStatusBadge.innerHTML = '<i class="fa-solid fa-unlock text-[10px]"></i> ĐÃ MỞ KHÓA CHỦ SỞ HỮU';
+        vaultLockStatusBadge.innerHTML = isVi
+          ? '<i class="fa-solid fa-unlock text-[10px]"></i> ĐÃ MỞ KHÓA CHỦ SỞ HỮU'
+          : '<i class="fa-solid fa-unlock text-[10px]"></i> OWNER VAULT UNLOCKED';
       } else {
         vaultLockStatusBadge.className = 'text-[11px] bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1';
-        vaultLockStatusBadge.innerHTML = '<i class="fa-solid fa-lock text-[10px]"></i> ĐANG KHÓA BẢO VỆ';
+        vaultLockStatusBadge.innerHTML = isVi
+          ? '<i class="fa-solid fa-lock text-[10px]"></i> ĐANG KHÓA BẢO VỆ'
+          : '<i class="fa-solid fa-lock text-[10px]"></i> LOCKED & PROTECTED';
       }
     }
     if (sidebarVaultBadge) {
       if (isUnlocked) {
         sidebarVaultBadge.className = 'text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded-md ml-auto font-semibold';
-        sidebarVaultBadge.textContent = '🔓 Đã Mở';
+        sidebarVaultBadge.textContent = isVi ? '🔓 Đã Mở' : '🔓 Unlocked';
       } else {
         sidebarVaultBadge.className = 'text-[9px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1.5 py-0.5 rounded-md ml-auto font-semibold';
-        sidebarVaultBadge.textContent = '🔒 Khóa';
+        sidebarVaultBadge.textContent = isVi ? '🔒 Khóa' : '🔒 Locked';
       }
     }
   }
 
   function renderPrivateVoicesCards(voices, isUnlocked) {
+    lastVaultVoices = Array.isArray(voices) ? voices : [];
+    lastVaultUnlocked = Boolean(isUnlocked);
     if (!privateVoicesList) return;
+    const isVi = isViStudio();
+    const qApi = window.VoiceVietQuota;
+
     if (privateVoicesCountBadge) {
-      privateVoicesCountBadge.textContent = `${voices.length} giọng độc quyền`;
+      privateVoicesCountBadge.textContent = isVi
+        ? `${lastVaultVoices.length} giọng độc quyền`
+        : `${lastVaultVoices.length} exclusive voice${lastVaultVoices.length === 1 ? '' : 's'}`;
     }
-    if (!voices || voices.length === 0) {
-      privateVoicesList.innerHTML = '<div class="col-span-full p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400 italic text-center">Chưa có giọng nhân bản nào trong két sắt. Hãy tải file thu âm giọng của bạn lên khung bên dưới để nhân bản!</div>';
+    if (!lastVaultVoices.length) {
+      privateVoicesList.innerHTML = `<div class="col-span-full p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400 italic text-center">${
+        isVi
+          ? 'Chưa có giọng nhân bản nào trong két sắt. Hãy tải file thu âm giọng của bạn lên khung bên dưới để nhân bản!'
+          : 'No cloned voices in your vault yet. Upload a voice sample or record via microphone below to clone your voice!'
+      }</div>`;
       return;
     }
 
     privateVoicesList.innerHTML = '';
-    voices.forEach(v => {
+    lastVaultVoices.forEach(v => {
+      const dispUse = (qApi && qApi.formatVoiceUseCase) ? qApi.formatVoiceUseCase(v) : (v.useCase || '');
       const card = document.createElement('div');
       card.className = 'p-4 rounded-2xl bg-gradient-to-br from-slate-900 via-amber-950/15 to-slate-900 border border-amber-500/40 flex flex-col justify-between gap-3 shadow-xl';
       card.innerHTML = `
@@ -619,27 +661,27 @@
               <h4 class="text-xs sm:text-sm font-bold text-white flex flex-wrap items-center gap-1.5">
                 <span>${escapeHtmlSafe(v.name)}</span>
                 <span class="text-[9px] px-1.5 py-0.5 rounded font-mono ${isUnlocked ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'}">
-                  ${isUnlocked ? '🔓 Sẵn sàng' : '🔒 Đang khóa'}
+                  ${isUnlocked ? (isVi ? '🔓 Sẵn sàng' : '🔓 Ready') : (isVi ? '🔒 Đang khóa' : '🔒 Locked')}
                 </span>
               </h4>
-              <p class="text-[11px] text-slate-300 mt-1 leading-relaxed">${escapeHtmlSafe(v.useCase || '')}</p>
-              ${v.createdAt ? `<p class="text-[10px] text-slate-500 mt-1 font-mono">Mã hóa lúc: ${escapeHtmlSafe(v.createdAt)} • Chuẩn 48.000 Hz</p>` : ''}
+              <p class="text-[11px] text-slate-300 mt-1 leading-relaxed">${escapeHtmlSafe(dispUse)}</p>
+              ${v.createdAt ? `<p class="text-[10px] text-slate-500 mt-1 font-mono">${isVi ? 'Mã hóa lúc:' : 'Encrypted:'} ${escapeHtmlSafe(v.createdAt)} • 48,000 Hz</p>` : ''}
             </div>
           </div>
-          <button type="button" class="btn-delete-private-voice text-slate-500 hover:text-rose-400 text-xs p-1 cursor-pointer transition" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}" title="Xóa vĩnh viễn giọng này khỏi két sắt">
+          <button type="button" class="btn-delete-private-voice text-slate-500 hover:text-rose-400 text-xs p-1 cursor-pointer transition" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}" title="${isVi ? 'Xóa vĩnh viễn giọng này khỏi két sắt' : 'Permanently delete from vault'}">
             <i class="fa-regular fa-trash-can"></i>
           </button>
         </div>
 
         <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80">
           <button type="button" class="btn-preview-priv px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
-            <i class="fa-solid fa-volume-high"></i> Nghe thử 48kHz
+            <i class="fa-solid fa-volume-high"></i> ${isVi ? 'Nghe thử 48kHz' : 'Preview 48kHz'}
           </button>
           <button type="button" class="btn-use-priv-studio flex-1 py-1.5 px-3 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 text-slate-950 text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-1.5" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}">
-            <i class="fa-solid fa-wand-magic-sparkles"></i> Chọn Dùng Ở Studio
+            <i class="fa-solid fa-wand-magic-sparkles"></i> ${isVi ? 'Chọn Dùng Ở Studio' : 'Use in Studio'}
           </button>
-          <button type="button" class="btn-use-priv-dialogue px-3 py-1.5 rounded-lg bg-cyan-600/25 hover:bg-cyan-600/40 text-cyan-300 border border-cyan-500/40 text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}" title="Đưa giọng của bạn vào vai Người dẫn chuyện trong Hội Thoại Đa Giọng">
-            <i class="fa-solid fa-comments mr-1"></i>Đa Giọng
+          <button type="button" class="btn-use-priv-dialogue px-3 py-1.5 rounded-lg bg-cyan-600/25 hover:bg-cyan-600/40 text-cyan-300 border border-cyan-500/40 text-xs font-semibold transition cursor-pointer" data-voice-id="${v.id}" data-voice-name="${escapeHtmlSafe(v.name)}" title="${isVi ? 'Đưa giọng của bạn vào vai Người dẫn chuyện trong Hội Thoại Đa Giọng' : 'Assign to Narrator (C) in Multi-Speaker Studio'}">
+            <i class="fa-solid fa-comments mr-1"></i>${isVi ? 'Đa Giọng' : 'Multi-Speaker'}
           </button>
         </div>
       `;
@@ -1001,15 +1043,31 @@
   const btnDownloadAllSeparatedTracks = document.getElementById('btnDownloadAllSeparatedTracks');
 
   const SPEAKER_THEMES = {
-    A: { border: 'border-purple-500/40', text: 'text-purple-400', badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30', defaultVoice: 'free-vi-ngoc-huyen', defaultLabel: 'Nhân vật Nữ (A)' },
-    B: { border: 'border-cyan-500/40', text: 'text-cyan-400', badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30', defaultVoice: 'free-vi-minh-quan', defaultLabel: 'Nhân vật Nam (B)' },
-    C: { border: 'border-amber-500/40', text: 'text-amber-400', badge: 'bg-amber-500/20 text-amber-300 border-amber-500/30', defaultVoice: 'free-vi-thien-tam', defaultLabel: 'Người dẫn chuyện (C)' },
-    D: { border: 'border-emerald-500/40', text: 'text-emerald-400', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', defaultVoice: 'free-vi-truc-ly', defaultLabel: 'Nhân vật D' },
-    E: { border: 'border-rose-500/40', text: 'text-rose-400', badge: 'bg-rose-500/20 text-rose-300 border-rose-500/30', defaultVoice: 'free-vi-pham-tuyen', defaultLabel: 'Nhân vật E' },
-    F: { border: 'border-indigo-500/40', text: 'text-indigo-400', badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30', defaultVoice: 'free-vi-my-duyen', defaultLabel: 'Nhân vật F' },
-    G: { border: 'border-orange-500/40', text: 'text-orange-400', badge: 'bg-orange-500/20 text-orange-300 border-orange-500/30', defaultVoice: 'free-vi-hai-dang', defaultLabel: 'Nhân vật G' },
-    H: { border: 'border-teal-500/40', text: 'text-teal-400', badge: 'bg-teal-500/20 text-teal-300 border-teal-500/30', defaultVoice: 'free-vi-ngoc-ngan', defaultLabel: 'Nhân vật H' }
+    A: { border: 'border-purple-500/40', text: 'text-purple-400', badge: 'bg-purple-500/20 text-purple-300 border-purple-500/30', defaultVoice: 'free-vi-ngoc-huyen', defaultLabel: 'Nhân vật Nữ (A)', defaultLabelEn: 'Female Role (A)' },
+    B: { border: 'border-cyan-500/40', text: 'text-cyan-400', badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30', defaultVoice: 'free-vi-minh-quan', defaultLabel: 'Nhân vật Nam (B)', defaultLabelEn: 'Male Role (B)' },
+    C: { border: 'border-amber-500/40', text: 'text-amber-400', badge: 'bg-amber-500/20 text-amber-300 border-amber-500/30', defaultVoice: 'free-vi-thien-tam', defaultLabel: 'Người dẫn chuyện (C)', defaultLabelEn: 'Narrator (C)' },
+    D: { border: 'border-emerald-500/40', text: 'text-emerald-400', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', defaultVoice: 'free-vi-truc-ly', defaultLabel: 'Nhân vật D', defaultLabelEn: 'Character D' },
+    E: { border: 'border-rose-500/40', text: 'text-rose-400', badge: 'bg-rose-500/20 text-rose-300 border-rose-500/30', defaultVoice: 'free-vi-pham-tuyen', defaultLabel: 'Nhân vật E', defaultLabelEn: 'Character E' },
+    F: { border: 'border-indigo-500/40', text: 'text-indigo-400', badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30', defaultVoice: 'free-vi-my-duyen', defaultLabel: 'Nhân vật F', defaultLabelEn: 'Character F' },
+    G: { border: 'border-orange-500/40', text: 'text-orange-400', badge: 'bg-orange-500/20 text-orange-300 border-orange-500/30', defaultVoice: 'free-vi-hai-dang', defaultLabel: 'Nhân vật G', defaultLabelEn: 'Character G' },
+    H: { border: 'border-teal-500/40', text: 'text-teal-400', badge: 'bg-teal-500/20 text-teal-300 border-teal-500/30', defaultVoice: 'free-vi-ngoc-ngan', defaultLabel: 'Nhân vật H', defaultLabelEn: 'Character H' }
   };
+
+  function getDefaultSpeakerRoleLabel(key) {
+    const th = SPEAKER_THEMES[key] || SPEAKER_THEMES.D;
+    return isViStudio() ? th.defaultLabel : th.defaultLabelEn;
+  }
+
+  function syncDefaultSpeakerCardTitlesForLang() {
+    activeSpeakerKeys.forEach(k => {
+      const th = SPEAKER_THEMES[k];
+      if (!th) return;
+      const cur = speakerNamesMap[k] || '';
+      if (!cur || cur === th.defaultLabel || cur === th.defaultLabelEn) {
+        updateSpeakerCardTitle(k, getDefaultSpeakerRoleLabel(k));
+      }
+    });
+  }
 
   const EXTRA_KEYS = ['D', 'E', 'F', 'G', 'H'];
   let activeSpeakerKeys = ['A', 'B', 'C'];
@@ -1073,7 +1131,7 @@
       defaultVoice = malePool[activeSpeakerKeys.length % malePool.length];
     }
 
-    const roleLabel = customLabel || theme.defaultLabel;
+    const roleLabel = customLabel || getDefaultSpeakerRoleLabel(key);
     speakerNamesMap[key] = roleLabel;
 
     const card = document.createElement('div');
@@ -1276,9 +1334,12 @@
       return;
     }
 
+    const isVi = isViStudio();
     dialogueParsedPanel.classList.remove('hidden');
     if (dialogueParsedCountBadge) {
-      dialogueParsedCountBadge.textContent = `${parsedDialogueSegments.length} đoạn thoại`;
+      dialogueParsedCountBadge.textContent = isVi
+        ? `${parsedDialogueSegments.length} đoạn thoại`
+        : `${parsedDialogueSegments.length} segments`;
     }
 
     // Role counts summary
@@ -1288,7 +1349,7 @@
       dialogueRoleSummaryBadges.innerHTML = Object.keys(counts).map(k => {
         const th = getTheme(k);
         const label = speakerNamesMap[k] || k;
-        return `<span class="px-2 py-0.5 rounded-full border text-[10px] font-semibold ${th.badge}">${escapeHtmlSafe(label)}: ${counts[k]} câu</span>`;
+        return `<span class="px-2 py-0.5 rounded-full border text-[10px] font-semibold ${th.badge}">${escapeHtmlSafe(label)}: ${counts[k]} ${isVi ? 'câu' : 'lines'}</span>`;
       }).join('');
     }
 
@@ -1300,7 +1361,7 @@
 
       const speakerOpts = activeSpeakerKeys.map(k => {
         const sel = k === seg.speaker ? 'selected' : '';
-        return `<option value="${k}" ${sel}>${escapeHtmlSafe(speakerNamesMap[k] || `Vai ${k}`)}</option>`;
+        return `<option value="${k}" ${sel}>${escapeHtmlSafe(speakerNamesMap[k] || (isVi ? `Vai ${k}` : `Role ${k}`))}</option>`;
       }).join('');
 
       row.innerHTML = `
@@ -1313,13 +1374,13 @@
         </div>
         <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
           ${seg.blobUrl ? `
-            <button type="button" class="btn-play-single-seg px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] cursor-pointer" data-seg-idx="${idx}" title="Nghe riêng câu này">
+            <button type="button" class="btn-play-single-seg px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] cursor-pointer" data-seg-idx="${idx}" title="${isVi ? 'Nghe riêng câu này' : 'Play line'}">
               <i class="fa-solid fa-play"></i> ${seg.durationSec ? `${seg.durationSec.toFixed(1)}s` : ''}
             </button>
-            <a href="${seg.blobUrl}" download="cau-${idx + 1}-${seg.speaker}.wav" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[11px]" title="Tải lẻ câu này">
+            <a href="${seg.blobUrl}" download="line-${idx + 1}-${seg.speaker}.wav" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 text-[11px]" title="${isVi ? 'Tải lẻ câu này' : 'Download line'}">
               <i class="fa-solid fa-download"></i>
             </a>
-          ` : '<span class="text-[10px] text-slate-500 italic">Chưa tạo audio</span>'}
+          ` : `<span class="text-[10px] text-slate-500 italic">${isVi ? 'Chưa tạo audio' : 'Pending'}</span>`}
         </div>
       `;
 
@@ -1372,26 +1433,37 @@
 
   if (btnLoadDialogueSample && dialogueScriptInput) {
     btnLoadDialogueSample.addEventListener('click', () => {
-      updateSpeakerCardTitle('A', 'Huyền (A)');
-      updateSpeakerCardTitle('B', 'Quân (B)');
-      updateSpeakerCardTitle('C', 'Người dẫn chuyện (C)');
-      dialogueScriptInput.value =
+      if (isViStudio()) {
+        updateSpeakerCardTitle('A', 'Huyền (A)');
+        updateSpeakerCardTitle('B', 'Quân (B)');
+        updateSpeakerCardTitle('C', 'Người dẫn chuyện (C)');
+        dialogueScriptInput.value =
 `C: Buổi sáng cuối thu tại quán cà phê phố cổ... hai người bạn cũ gặp lại nhau sau mười năm xa cách.
 A: Chào Quân... Đã lâu quá rồi chúng ta mới có dịp ngồi lại cùng nhau thế này!
 B: [cười] Chào Huyền! Trông cậu vẫn rạng rỡ như ngày xưa vậy... thời gian dường như bỏ quên cậu rồi.
-A: Cậu khéo miệng quá! Nghe nói gần đây cậu đang phát triển một dự án sách nói AI rất thành công?
+A: Cậu khéo miệng quá! Nghe nói gần đây cậu đang phát triển một dự án phòng thu AI trên Voxly rất thành công?
 B: Đúng vậy Huyền... công cụ mới giúp bóc tách từng nhân vật và xuất file riêng cho từng giọng cực kỳ tiện lợi.
 C: Cuộc trò chuyện giữa hai người bạn diễn ra trong tiếng nhạc nhẹ nhàng... và nắng ấm đầu đông.`;
+      } else {
+        updateSpeakerCardTitle('A', 'Ava (A)');
+        updateSpeakerCardTitle('B', 'Andrew (B)');
+        updateSpeakerCardTitle('C', 'Narrator (C)');
+        dialogueScriptInput.value =
+`C: On a crisp autumn morning at a quiet downtown cafe... two old friends reunited after ten years apart.
+A: Hey Andrew... It has been so long since we had a chance to sit down like this!
+B: Great to see you, Ava! You haven't changed a bit... how has your new audiobook channel been going?
+A: Better than ever! With Voxly Studio, we split every character into synced CapCut tracks in seconds.
+C: Their conversation continued warmly as the morning sunlight streamed through the glass window.`;
+      }
       runAutoParseAndPreview(true);
     });
   }
 
   if (btnLoadLongStorySample && dialogueScriptInput) {
     btnLoadLongStorySample.addEventListener('click', () => {
-      updateSpeakerCardTitle('A', 'Nhân vật Nữ (A)');
-      updateSpeakerCardTitle('B', 'Nhân vật Nam (B)');
-      updateSpeakerCardTitle('C', 'Người dẫn chuyện (C)');
-      dialogueScriptInput.value =
+      syncDefaultSpeakerCardTitlesForLang();
+      if (isViStudio()) {
+        dialogueScriptInput.value =
 `Đêm đã về khuya... từng hạt mưa rơi tí tách bên hiên nhà vắng lặng. Quân đứng lặng lẽ bên khung cửa sổ, ánh mắt trầm tư nhìn về phía con ngõ nhỏ rồi khẽ cất tiếng hỏi: “Huyền này... suốt ngần ấy năm qua, có bao giờ em hối tiếc về quyết định ngày hôm ấy không?”
 
 Huyền khẽ đặt tách trà nóng xuống mặt bàn gỗ... cô im lặng một thoáng rồi mỉm cười nhẹ nhàng đáp: “[thở dài] Chuyện cũ cũng như cơn mưa ngoài kia vậy anh ạ... lúc mới đổ xuống thì xối xả lắm, nhưng rồi trời cũng sẽ tạnh thôi.”
@@ -1399,6 +1471,14 @@ Huyền khẽ đặt tách trà nóng xuống mặt bàn gỗ... cô im lặng m
 Quân quay lại nhìn cô, giọng anh trầm ấm hơn: “[cười] Ừ nhỉ... nghe em nói vậy tự dưng lòng anh cũng thấy nhẹ nhõm hơn rất nhiều rồi.”
 
 Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương hoa sữa dịu ngọt của những ngày cuối thu Hà Nội.`;
+      } else {
+        dialogueScriptInput.value =
+`Late into the night... raindrops tapped softly against the quiet porch. Andrew stood by the window, gazing down the misty lane before asking gently: "Ava... after all these years, did you ever regret the choice we made that day?"
+
+Ava set her warm teacup onto the wooden table and smiled softly: "The past is just like the rain outside... fierce when it starts, yet the sky always clears in the end."
+
+Andrew turned toward her, his voice noticeably lighter: "You're right... hearing you say that makes everything feel much clearer now."`;
+      }
       runAutoParseAndPreview(true);
     });
   }
@@ -1669,6 +1749,7 @@ Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương h
 
             separatedDownloadItems.push({ url: voiceOnlyUrl, filename: voiceOnlyFilename });
 
+            const isVi = isViStudio();
             const trackCard = document.createElement('div');
             trackCard.className = `p-3.5 rounded-xl bg-slate-950/90 border ${th.border} flex flex-col gap-2.5 shadow-md`;
             trackCard.innerHTML = `
@@ -1678,18 +1759,18 @@ Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương h
                     <i class="fa-solid fa-microphone-lines"></i> ${escapeHtmlSafe(roleTitle)}
                   </div>
                   <div class="text-[11px] text-slate-400 mt-0.5">
-                    Giọng: <b class="text-slate-200">${escapeHtmlSafe(voiceTitle)}</b> • Đã tách <b>${lineCount}</b> đoạn
+                    ${isVi ? 'Giọng:' : 'Voice:'} <b class="text-slate-200">${escapeHtmlSafe(voiceTitle)}</b> • ${isVi ? `Đã tách <b>${lineCount}</b> đoạn` : `<b>${lineCount}</b> segments`}
                   </div>
                 </div>
-                <span class="text-[10px] px-2 py-0.5 rounded-full border font-mono ${th.badge}">Vai ${spkKey}</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full border font-mono ${th.badge}">${isVi ? `Vai ${spkKey}` : `Role ${spkKey}`}</span>
               </div>
               <audio controls src="${voiceOnlyUrl}" class="w-full h-9 outline-none"></audio>
               <div class="flex flex-wrap items-center gap-2 pt-1">
                 <a href="${voiceOnlyUrl}" download="${voiceOnlyFilename}" class="flex-1 text-center px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] transition flex items-center justify-center gap-1">
-                  <i class="fa-solid fa-download"></i> Tải Giọng Riêng (.${voiceOnlyMp3.ext.toUpperCase()})
+                  <i class="fa-solid fa-download"></i> ${isVi ? `Tải Giọng Riêng (.${voiceOnlyMp3.ext.toUpperCase()})` : `Voice Only (.${voiceOnlyMp3.ext.toUpperCase()})`}
                 </a>
-                <a href="${timelineSyncUrl}" download="${timelineSyncFilename}" class="flex-1 text-center px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 font-semibold text-[11px] transition flex items-center justify-center gap-1" title="Giữ đúng khoảng im lặng khi người khác nói để kéo vào CapCut khớp 100% timeline">
-                  <i class="fa-solid fa-film"></i> Track Khớp CapCut
+                <a href="${timelineSyncUrl}" download="${timelineSyncFilename}" class="flex-1 text-center px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 font-semibold text-[11px] transition flex items-center justify-center gap-1" title="${isVi ? 'Giữ đúng khoảng im lặng khi người khác nói để kéo vào CapCut khớp 100% timeline' : 'Preserves exact silence offsets to match CapCut timeline 100%'}">
+                  <i class="fa-solid fa-film"></i> ${isVi ? 'Track Khớp CapCut' : 'CapCut Synced Stem'}
                 </a>
               </div>
             `;
@@ -1726,5 +1807,6 @@ Ngoài hiên, gió đêm khẽ thổi qua tán bàng già... mang theo hương h
     });
   }
 
-  console.log('VoiceViet Studio Pro v3.0 initialized.');
+  syncDefaultSpeakerCardTitlesForLang();
+  console.log('Voxly Studio Pro v9.0 initialized.');
 })();

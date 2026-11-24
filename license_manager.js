@@ -18,8 +18,8 @@ import { execSync } from 'node:child_process';
 const PLAN_CONFIGS = {
   free: {
     id: 'free',
-    nameVi: 'Gói Miễn Phí',
-    nameEn: 'Free Trial',
+    nameVi: 'Gói Khởi Đầu',
+    nameEn: 'Starter Plan',
     maxChars: 100000,
     unlimited: false,
     priceVnd: 0,
@@ -583,11 +583,15 @@ export function createLicenseManager(baseDir) {
     // Strip multi-line comments & encode payload into self-executing base64 UTF-8 loader
     // Prevents casual customers from opening JS files in Notepad and editing UI/Quota variables!
     const b64 = Buffer.from(jsCode, 'utf8').toString('base64');
-    return `/* VoiceViet Protected Client Runtime v7.0 - Unauthorized modification prohibited */\n(function(){const b=atob("${b64}");const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);(0,eval)(new TextDecoder("utf-8").decode(u));})();\n`;
+    return `/* Voxly Protected Client Runtime v9.0 - Unauthorized modification prohibited */\n(function(){const b=atob("${b64}");const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);(0,eval)(new TextDecoder("utf-8").decode(u));})();\n`;
   }
 
   function buildCustomerPackage({ licenseServerUrl = 'http://YOUR_SERVER_IP:3000' }) {
-    const outDir = path.join(baseDir, 'dist_customer_package', 'VoiceViet_Client_Pro');
+    const legacyDir = path.join(baseDir, 'dist_customer_package', 'VoiceViet_Client_Pro');
+    if (fs.existsSync(legacyDir)) {
+      fs.rmSync(legacyDir, { recursive: true, force: true });
+    }
+    const outDir = path.join(baseDir, 'dist_customer_package', 'Voxly_Client_Pro');
     if (fs.existsSync(outDir)) {
       fs.rmSync(outDir, { recursive: true, force: true });
     }
@@ -598,14 +602,17 @@ export function createLicenseManager(baseDir) {
     // 1. Copy safe runtime files ONLY (NEVER copy private_voices, license_db, private_vault enrollment data, or .git!)
     const plainCopyFiles = [
       'package.json',
+      'requirements.txt',
       'server.js',
       'license_manager.js',
       'engine_free.py',
-      'engine_pro.py',
+      'media_dubber.py',
       'global_voices_catalog.py',
       'private_vault.py',
       'style.css',
       'index.html',
+      'logo-voxly.png',
+      'favicon.png',
       'mammoth.browser.min.js'
     ];
 
@@ -634,6 +641,7 @@ export function createLicenseManager(baseDir) {
       'quota_and_i18n.js',
       'app.js',
       'studio_pro.js',
+      'dubbing_studio.js',
       'license_client_ui.js'
     ];
 
@@ -650,16 +658,16 @@ export function createLicenseManager(baseDir) {
       isCustomerClient: true,
       licenseServerUrl: cleanUrl,
       builtAt: new Date().toISOString(),
-      note: 'Protected Customer Client — Every synthesis verifies License Key + Hardware ID against Master Server.'
+      note: 'Voxly Protected Customer Client — Every synthesis verifies License Key + Hardware ID against Master Server.'
     };
     fs.writeFileSync(path.join(outDir, 'client_config.json'), JSON.stringify(clientCfg, null, 2), 'utf8');
 
     // 4. Create 1-Click Launchers for Windows (.bat) & macOS (.command) + Customer Readme
     const winBat = `@echo off
 chcp 65001 >nul
-title VoiceViet Studio Pro - Ban Cai Dat Khach Hang
+title Voxly AI Studio - Ban Cai Dat Khach Hang
 echo ==========================================================
-echo   VOICEVIET STUDIO PRO - KHOI DONG PHONG THU AI 48KHZ
+echo   VOXLY AI STUDIO - KHOI DONG PHONG THU AI 48KHZ
 echo ==========================================================
 if not exist node_modules (
   echo [1/2] Dang cai dat thu vien lan dau...
@@ -670,12 +678,12 @@ start "" "http://localhost:3000"
 node server.js
 pause
 `;
-    fs.writeFileSync(path.join(outDir, '1_Chay_VoiceViet_Windows.bat'), winBat, 'utf8');
+    fs.writeFileSync(path.join(outDir, '1_Chay_Voxly_Windows.bat'), winBat, 'utf8');
 
     const macCmd = `#!/bin/bash
 cd "$(dirname "$0")"
 echo "=========================================================="
-echo "  VOICEVIET STUDIO PRO - KHỞI ĐỘNG PHÒNG THU AI 48KHZ"
+echo "  VOXLY AI STUDIO - KHỞI ĐỘNG PHÒNG THU AI 48KHZ"
 echo "=========================================================="
 if [ ! -d "node_modules" ]; then
   echo "[1/2] Đang cài đặt thư viện lần đầu..."
@@ -684,20 +692,20 @@ fi
 (sleep 2 && open "http://localhost:3000") &
 node server.js
 `;
-    const macCmdPath = path.join(outDir, '1_Chay_VoiceViet_MacOS.command');
+    const macCmdPath = path.join(outDir, '1_Chay_Voxly_MacOS.command');
     fs.writeFileSync(macCmdPath, macCmd, { encoding: 'utf8', mode: 0o755 });
 
     const readmeTxt = `====================================================================
-HƯỚNG DẪN CÀI ĐẶT & KÍCH HOẠT VOICEVIET STUDIO PRO (BẢN MÁY KHÁCH)
+HƯỚNG DẪN CÀI ĐẶT & KÍCH HOẠT VOXLY AI STUDIO (BẢN MÁY KHÁCH)
 ====================================================================
 
-1. YÊU CẦU: Máy tính có kết nối Internet (để xác thực Mã Bản Quyền), đã cài Node.js & Python 3.
+1. YÊU CẦU: Máy tính có kết nối Internet (để xác thực Mã Bản Quyền), đã cài Node.js & Python 3 (cùng ffmpeg).
 2. CÁCH MỞ PHẦN MỀM:
-   - Trên Windows: Nhấp đúp vào file "1_Chay_VoiceViet_Windows.bat"
-   - Trên MacBook: Nhấp đúp vào file "1_Chay_VoiceViet_MacOS.command"
+   - Trên Windows: Nhấp đúp vào file "1_Chay_Voxly_Windows.bat"
+   - Trên MacBook: Nhấp đúp vào file "1_Chay_Voxly_MacOS.command"
 3. KÍCH HOẠT MÃ BẢN QUYỀN (LICENSE KEY):
-   - Khi trình duyệt mở http://localhost:3000, bấm nút "🔑 Nhập Key Bản Quyền" góc trên bên phải.
-   - Dán mã Key (VV...-XXXX-XXXX-XXXX) do Chủ Phần Mềm cấp vào và bấm Kích Hoạt!
+   - Khi trình duyệt mở http://localhost:3000, bấm nút "🔑 Nhập Key" góc trên bên phải.
+   - Dán mã Key do Chủ Phần Mềm cấp vào và bấm Kích Hoạt!
    - Lưu ý: Mỗi Mã Key tự động khóa cứng với 01 máy tính duy nhất (HWID Lock).
      Nếu đổi máy tính mới, vui lòng liên hệ Quản trị viên để được hỗ trợ gỡ mã máy cũ.
 ====================================================================
@@ -735,7 +743,7 @@ HƯỚNG DẪN CÀI ĐẶT & KÍCH HOẠT VOICEVIET STUDIO PRO (BẢN MÁY KHÁC
   function buildVietQrUrl(amountVnd, orderCode) {
     const bankId = (db.paymentConfig?.bankId || 'MB').trim() || 'MB';
     const accNo = (db.paymentConfig?.accountNo || '').replace(/\s+/g, '');
-    const accName = (db.paymentConfig?.accountName || 'VOICEVIET PRO').trim();
+    const accName = (db.paymentConfig?.accountName || 'VOXLY STUDIO').trim();
     const effectiveAcc = accNo || '0000000000';
     return {
       bankConfigured: Boolean(accNo),
