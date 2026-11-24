@@ -96,9 +96,10 @@
     }
 
     if (tgtSel) {
-      const prev = tgtSel.value || 'en';
+      const defaultTgt = isVi ? 'vi' : 'en';
+      const prev = tgtSel.value || defaultTgt;
       tgtSel.innerHTML = TARGET_LANG_OPTIONS.map(o => `<option value="${o.value}">${esc(isVi ? o.vi : o.en)}</option>`).join('');
-      tgtSel.value = [...tgtSel.options].some(x => x.value === prev) ? prev : 'en';
+      tgtSel.value = [...tgtSel.options].some(x => x.value === prev) ? prev : defaultTgt;
     }
 
     if (bgSel) {
@@ -239,6 +240,12 @@
     selectedMediaFile = file;
     selectedIsVideo = isVideoFilename(file.name, file.type);
     currentMediaSessionId = '';
+    const srcBox = document.getElementById('dubSourceTranscript');
+    const trBox = document.getElementById('dubTranslatedScript');
+    if (srcBox) srcBox.value = '';
+    if (trBox) trBox.value = '';
+    document.getElementById('dubScriptsEditorCard')?.classList.add('hidden');
+    document.getElementById('dubOutputCard')?.classList.add('hidden');
 
     const isVi = isViLang();
     const fileLabel = document.getElementById('dubSelectedFileLabel');
@@ -293,24 +300,32 @@
     const srcLang = document.getElementById('dubSourceLang')?.value || 'auto';
     const tgtLang = document.getElementById('dubTargetLang')?.value || 'en';
 
-    setDubProgress(
-      true,
-      isVi
-        ? '🎙️ Bước 1/2: AI đang nghe nhận diện lời nói & dịch sang ngôn ngữ đích...'
-        : '🎙️ Step 1/2: Transcribing speech & translating into target language...',
-      35
-    );
+    const baseStep1Msg = isVi
+      ? '🎙️ Bước 1/2: AI đang nghe nhận diện lời nói & dịch sang ngôn ngữ đích...'
+      : '🎙️ Step 1/2: Transcribing speech & translating into target language...';
+    setDubProgress(true, baseStep1Msg, 25);
+    const t0 = Date.now();
+    const step1Timer = setInterval(() => {
+      const sec = Math.floor((Date.now() - t0) / 1000);
+      const p = Math.min(52, 25 + Math.floor(sec * 0.6));
+      setDubProgress(true, `${baseStep1Msg} (${sec}s)`, p);
+    }, 1000);
 
-    const res = await fetch('/api/dubbing/transcribe-translate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'X-File-Name': encodeURIComponent(selectedMediaFile.name),
-        'X-Source-Lang': srcLang,
-        'X-Target-Lang': tgtLang
-      },
-      body: selectedMediaFile
-    });
+    let res;
+    try {
+      res = await fetch('/api/dubbing/transcribe-translate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-File-Name': encodeURIComponent(selectedMediaFile.name),
+          'X-Source-Lang': srcLang,
+          'X-Target-Lang': tgtLang
+        },
+        body: selectedMediaFile
+      });
+    } finally {
+      clearInterval(step1Timer);
+    }
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
@@ -374,31 +389,39 @@
     const bgMixMode = document.getElementById('dubBgMixSelect')?.value || 'mute';
     const autoFitTiming = document.getElementById('dubAutoFitChk') ? document.getElementById('dubAutoFitChk').checked : true;
 
-    setDubProgress(
-      true,
-      selectedIsVideo
-        ? (isVi ? '🎬 Bước 2/2: Đang tạo giọng AI 48kHz & ghép thẳng vào Video .MP4...' : '🎬 Step 2/2: Rendering 48kHz AI voice & muxing into .MP4 video...')
-        : (isVi ? '🎧 Bước 2/2: Đang tổng hợp giọng đọc AI 48kHz cho bản dịch...' : '🎧 Step 2/2: Rendering 48kHz AI voiceover...'),
-      78
-    );
+    const baseStep2Msg = selectedIsVideo
+      ? (isVi ? '🎬 Bước 2/2: Đang tạo giọng AI 48kHz & ghép thẳng vào Video .MP4...' : '🎬 Step 2/2: Rendering 48kHz AI voice & muxing into .MP4 video...')
+      : (isVi ? '🎧 Bước 2/2: Đang tổng hợp giọng đọc AI 48kHz cho bản dịch...' : '🎧 Step 2/2: Rendering 48kHz AI voiceover...');
+    setDubProgress(true, baseStep2Msg, 65);
+    const tRender0 = Date.now();
+    const step2Timer = setInterval(() => {
+      const sec = Math.floor((Date.now() - tRender0) / 1000);
+      const p = Math.min(96, 65 + Math.floor(sec * 0.7));
+      setDubProgress(true, `${baseStep2Msg} (${sec}s)`, p);
+    }, 1000);
 
     const headers = { 'Content-Type': 'application/json' };
     const tok = typeof window.getOwnerToken === 'function' ? window.getOwnerToken() : '';
     if (tok) headers['X-Owner-Token'] = tok;
 
-    const res = await fetch('/api/dubbing/render', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        text,
-        voice: voiceId,
-        rate,
-        pause,
-        bgMixMode,
-        autoFitTiming,
-        mediaSessionId: currentMediaSessionId
-      })
-    });
+    let res;
+    try {
+      res = await fetch('/api/dubbing/render', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          text,
+          voice: voiceId,
+          rate,
+          pause,
+          bgMixMode,
+          autoFitTiming,
+          mediaSessionId: currentMediaSessionId
+        })
+      });
+    } finally {
+      clearInterval(step2Timer);
+    }
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
@@ -566,9 +589,32 @@
         btnFullAuto.disabled = true;
         if (btnTranscribeOnly) btnTranscribeOnly.disabled = true;
         try {
-          const trData = await runTranscribeAndTranslate();
-          if (trData) {
+          const existingSrc = (document.getElementById('dubSourceTranscript')?.value || '').trim();
+          if (currentMediaSessionId && existingSrc) {
+            const tgtVal = document.getElementById('dubTargetLang')?.value || 'vi';
+            setDubProgress(
+              true,
+              isViLang() ? '🌐 Đang dịch sang ngôn ngữ mới...' : '🌐 Translating into selected language...',
+              40
+            );
+            if (tgtVal === 'same') {
+              document.getElementById('dubTranslatedScript').value = existingSrc;
+            } else {
+              const r = await fetch('/api/dubbing/retranslate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: existingSrc, sourceLang: lastDetectedLang || 'auto', targetLang: tgtVal })
+              });
+              const d = await r.json().catch(() => ({}));
+              if (!r.ok || !d.success) throw new Error(d.error || `HTTP ${r.status}`);
+              document.getElementById('dubTranslatedScript').value = d.translatedText || '';
+            }
             await runRenderDubbing();
+          } else {
+            const trData = await runTranscribeAndTranslate();
+            if (trData) {
+              await runRenderDubbing();
+            }
           }
         } catch (err) {
           setDubProgress(false);
