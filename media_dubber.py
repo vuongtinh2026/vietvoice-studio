@@ -707,7 +707,7 @@ def _fuse_ocr_and_whisper_segments(ocr_segs: list[dict], whisper_segs: list[dict
 def _compute_media_fast_fingerprint(media_path: str, source_lang: str) -> str:
     st = os.stat(media_path)
     h = hashlib.sha256()
-    h.update(f"v6_cinema:{st.st_size}:{source_lang}:".encode("utf-8"))
+    h.update(f"v7_cinema:{st.st_size}:{source_lang}:".encode("utf-8"))
     with open(media_path, "rb") as f:
         h.update(f.read(65536))
         if st.st_size > 131072:
@@ -726,7 +726,7 @@ def transcribe_and_translate_media(
     cache_dir = os.path.join("/tmp", "voxly_dub_sessions")
     os.makedirs(cache_dir, exist_ok=True)
     fp_key = _compute_media_fast_fingerprint(media_path, source_lang or "auto")
-    stt_cache_path = os.path.join(cache_dir, f"stt_v6_cinema_{fp_key}.json")
+    stt_cache_path = os.path.join(cache_dir, f"stt_v7_cinema_{fp_key}.json")
 
     cached_stt = None
     if os.path.exists(stt_cache_path):
@@ -1575,7 +1575,7 @@ def _download_douyin_media(
 
         raw_mp4_path = f"{cache_prefix}_raw.mp4"
         downloaded_ok = False
-        max_bytes = 1500 * 1024 * 1024
+        max_bytes = 3000 * 1024 * 1024
 
         for stream_u in candidate_streams:
             try:
@@ -1715,8 +1715,8 @@ def download_online_video_url(
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
-        "max_filesize": 1500 * 1024 * 1024,
-        "socket_timeout": 20,
+        "max_filesize": 3000 * 1024 * 1024,
+        "socket_timeout": 30,
         "outtmpl": f"{cache_prefix}.%(ext)s",
     }
     if ffmpeg_dir and os.path.isdir(ffmpeg_dir):

@@ -413,6 +413,72 @@
     }
   }
 
+  function formatElapsedTimer(sec) {
+    const s = Math.max(0, Math.floor(sec));
+    const hrs = Math.floor(s / 3600);
+    const mins = Math.floor((s % 3600) / 60);
+    const rem = s % 60;
+    if (hrs > 0) return `${hrs}:${String(mins).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
+    if (mins > 0) return `${mins}:${String(rem).padStart(2, '0')}`;
+    return `${rem}s`;
+  }
+
+  /**
+   * Polls an async server background job (`/api/dubbing/job/:jobId`) every 1.5s so even
+   * 2–5+ hour feature films NEVER hit Chromium/Safari idle HTTP fetch timeouts!
+   */
+  async function waitForDubAsyncJob(jobId, opts = {}) {
+    const isVi = isViLang();
+    const minPct = opts.minPct ?? 18;
+    const maxPct = opts.maxPct ?? 65;
+    let liveMsg = opts.baseMsg || '';
+    let livePct = minPct;
+    const t0 = Date.now();
+    let consecutiveNetErrs = 0;
+
+    while (true) {
+      await new Promise(r => setTimeout(r, 1500));
+      const sec = Math.floor((Date.now() - t0) / 1000);
+      try {
+        const pr = await fetch(`/api/dubbing/job/${encodeURIComponent(jobId)}`);
+        const jd = await pr.json().catch(() => ({}));
+        consecutiveNetErrs = 0;
+
+        if (!pr.ok && jd.status === 'not_found') {
+          throw new Error(jd.error || 'Tác vụ nền không còn tồn tại.');
+        }
+        if (jd.status === 'error') {
+          throw new Error(jd.error || 'Lỗi xử lý nền!');
+        }
+        if (jd.status === 'done') {
+          if (window.VoiceVietQuota && typeof window.VoiceVietQuota.syncFromHeaders === 'function') {
+            try { window.VoiceVietQuota.syncFromHeaders(pr.headers); } catch {}
+          }
+          return jd.data || {};
+        }
+
+        const pd = jd.progress || {};
+        if (pd && pd.active) {
+          const msgCandidate = isVi ? pd.vi : pd.en;
+          if (msgCandidate) liveMsg = msgCandidate;
+          if (typeof pd.pct === 'number' && pd.pct >= minPct && pd.pct <= maxPct) {
+            livePct = Math.max(livePct, pd.pct);
+          }
+        }
+        const fallbackPct = Math.min(maxPct, Math.max(livePct, minPct + Math.floor(sec * 0.25)));
+        setDubProgress(true, `${liveMsg} (${formatElapsedTimer(sec)})`, fallbackPct);
+      } catch (err) {
+        if (err && /Lỗi|Tác vụ|Không tìm thấy|vượt quá|hết hạn|HTTP 403/i.test(String(err.message || ''))) {
+          throw err;
+        }
+        consecutiveNetErrs += 1;
+        if (consecutiveNetErrs >= 25) {
+          throw new Error('Mất kết nối tới máy chủ cục bộ trong lúc xử lý video dài!');
+        }
+      }
+    }
+  }
+
   async function runTranscribeAndTranslate() {
     const isVi = isViLang();
     const ytInput = document.getElementById('dubYoutubeUrlInput');
@@ -447,63 +513,46 @@
               ? `🎬 Step 1/2: Downloading ${platName} video, transcribing speech & translating...`
               : `🎵 Step 1/2: Extracting ${platName} audio, transcribing speech & translating...`))
       : (isVi
-          ? '🎙️ Bước 1/2: AI đang nghe nhận diện lời nói & dịch sang ngôn ngữ đích...'
-          : '🎙️ Step 1/2: Transcribing speech & translating into target language...');
+          ? '🎙️ Bước 1/2: AI đang tải tệp, nhận diện phụ đề/lời thoại & biên dịch kịch bản...'
+          : '🎙️ Step 1/2: Uploading media, extracting subtitles/speech & translating...');
 
-    setDubProgress(true, baseStep1Msg, 18);
-    const t0 = Date.now();
-    let liveMsg1 = baseStep1Msg;
-    let livePct1 = 18;
-    const step1Timer = setInterval(async () => {
-      const sec = Math.floor((Date.now() - t0) / 1000);
-      try {
-        const pr = await fetch('/api/dubbing/progress');
-        if (pr.ok) {
-          const pd = await pr.json();
-          if (pd && pd.active && (Date.now() / 1000 - (pd.updatedAt || 0)) < 120) {
-            const msgCandidate = isVi ? pd.vi : pd.en;
-            if (msgCandidate) liveMsg1 = msgCandidate;
-            if (pd.pct >= 18 && pd.pct <= 66) livePct1 = pd.pct;
-          }
-        }
-      } catch {}
-      const fallbackPct = Math.min(64, Math.max(livePct1, 18 + Math.floor(sec * 0.35)));
-      setDubProgress(true, `${liveMsg1} (${sec}s)`, fallbackPct);
-    }, 1500);
+    setDubProgress(true, baseStep1Msg, 14);
 
     let res;
-    try {
-      if (useYoutube) {
-        if (ytInput && ytInput.value.trim() !== ytUrl) ytInput.value = ytUrl;
-        res = await fetch('/api/dubbing/youtube', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: ytUrl,
-            downloadMode: ytMode,
-            sourceLang: srcLang,
-            targetLang: tgtLang
-          })
-        });
-      } else {
-        res = await fetch('/api/dubbing/transcribe-translate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'X-File-Name': encodeURIComponent(selectedMediaFile.name),
-            'X-Source-Lang': srcLang,
-            'X-Target-Lang': tgtLang
-          },
-          body: selectedMediaFile
-        });
-      }
-    } finally {
-      clearInterval(step1Timer);
+    if (useYoutube) {
+      if (ytInput && ytInput.value.trim() !== ytUrl) ytInput.value = ytUrl;
+      res = await fetch('/api/dubbing/youtube?async=1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: ytUrl,
+          downloadMode: ytMode,
+          sourceLang: srcLang,
+          targetLang: tgtLang
+        })
+      });
+    } else {
+      res = await fetch('/api/dubbing/transcribe-translate?async=1', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-File-Name': encodeURIComponent(selectedMediaFile.name),
+          'X-Source-Lang': srcLang,
+          'X-Target-Lang': tgtLang
+        },
+        body: selectedMediaFile
+      });
     }
 
-    const data = await res.json().catch(() => ({}));
+    let data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
       throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    if (data.async && data.jobId) {
+      data = await waitForDubAsyncJob(data.jobId, { baseMsg: baseStep1Msg, minPct: 16, maxPct: 66 });
+    }
+    if (!data || !data.success) {
+      throw new Error((data && data.error) || 'Không nhận được kết quả nhận diện lời thoại.');
     }
 
     currentMediaSessionId = data.mediaSessionId || '';
@@ -677,54 +726,36 @@
           ? '🎧 Bước 2/2: Đang tổng hợp giọng AI 48kHz theo mốc thoại & trộn âm nền...'
           : '🎧 Step 2/2: Synthesizing synced 48kHz voiceover & mixing original audio...');
     setDubProgress(true, baseStep2Msg, 68);
-    const tRender0 = Date.now();
-    let liveMsg2 = baseStep2Msg;
-    let livePct2 = 68;
-    const step2Timer = setInterval(async () => {
-      const sec = Math.floor((Date.now() - tRender0) / 1000);
-      try {
-        const pr = await fetch('/api/dubbing/progress');
-        if (pr.ok) {
-          const pd = await pr.json();
-          if (pd && pd.active && pd.pct >= 68) {
-            const msgCandidate = isVi ? pd.vi : pd.en;
-            if (msgCandidate) liveMsg2 = msgCandidate;
-            livePct2 = Math.min(97, pd.pct);
-          }
-        }
-      } catch {}
-      const fallbackPct = Math.min(97, Math.max(livePct2, 68 + Math.floor(sec * 0.5)));
-      setDubProgress(true, `${liveMsg2} (${sec}s)`, fallbackPct);
-    }, 1500);
 
     const headers = { 'Content-Type': 'application/json' };
     const tok = typeof window.getOwnerToken === 'function' ? window.getOwnerToken() : '';
     if (tok) headers['X-Owner-Token'] = tok;
 
-    let res;
-    try {
-      res = await fetch('/api/dubbing/render', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          text,
-          voice: voiceId,
-          rate,
-          pause,
-          origVolumePct,
-          smartDucking,
-          syncTimeline,
-          autoFitTiming,
-          mediaSessionId: currentMediaSessionId
-        })
-      });
-    } finally {
-      clearInterval(step2Timer);
-    }
+    const res = await fetch('/api/dubbing/render?async=1', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        text,
+        voice: voiceId,
+        rate,
+        pause,
+        origVolumePct,
+        smartDucking,
+        syncTimeline,
+        autoFitTiming,
+        mediaSessionId: currentMediaSessionId
+      })
+    });
 
-    const data = await res.json().catch(() => ({}));
+    let data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
       throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    if (data.async && data.jobId) {
+      data = await waitForDubAsyncJob(data.jobId, { baseMsg: baseStep2Msg, minPct: 68, maxPct: 98 });
+    }
+    if (!data || !data.success) {
+      throw new Error((data && data.error) || 'Lỗi xuất file lồng tiếng.');
     }
 
     if (data.mediaSessionId) currentMediaSessionId = data.mediaSessionId;

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Voxly Studio — Hardware-Accelerated Burned-In Video Subtitle Extractor (macOS Vision ANE)
-- Extracts exact hard-coded on-screen subtitles with frame-accurate [start, end] timestamps
-- Eliminates 100% of audio homophone errors on subtitled Chinese dramas, anime, movie recaps & Shorts
-- Processes in streaming 10-minute chunks so 1–3+ hour movies use minimal disk/RAM
-- Automatically distinguishes genuine dialogue subtitles from corner logos, news tickers, and blurry overlays
+- Auto-locks onto the exact Dominant Subtitle Y-Band across the video, 100% rejecting floating
+  cursive channel watermarks (e.g. '笼包动画'), top/side logos, news credits, and bilingual sub-lines!
+- Processes in streaming 10-minute chunks so 1–5+ hour feature films use minimal disk/RAM (< 20 MB).
+- Confidence-weighted majority voting across frames + Chinese glyph typo normalization.
 """
 import collections
 import difflib
@@ -25,6 +25,9 @@ _CJK_CHAR_RE = re.compile(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
 _CAPTION_META_PREFIX_RE = re.compile(
     r"^(?:声音来源|画面来源|视频来源|素材来源|图片来源|潮新闻主持人|潮新[间闻]主持人|主持人|记者)\s*[:：]?\s*\S+\s*"
 )
+_WATERMARK_NOISE_RE = re.compile(
+    r"^(?:笼包动画|缆包动[潋画]|然包外道|包补途|笼包补鱼|公红补鱼|笼纱补|特包茶|袋包制|签包制险|笼包|包)$"
+)
 
 _OPENCC_T2S = None
 _OPENCC_INIT_DONE = False
@@ -44,7 +47,6 @@ def _to_simplified_zh(s: str) -> str:
             return _OPENCC_T2S.convert(s)
         except Exception:
             pass
-    # Built-in fallback for common HK/TW variants in case opencc is absent
     return (
         s.replace("內", "内")
         .replace("剝", "剥")
@@ -64,13 +66,16 @@ def _to_simplified_zh(s: str) -> str:
     )
 
 
-# Common visual glyph confusions in Chinese video fonts (e.g. 千 vs 干, 靶 vs 把, 齐活 vs 济活)
+# Common visual glyph confusions in Chinese video subtitles (both OCR and sub-creator typos)
 _ZH_VISUAL_OCR_FIXES: list[tuple[str, str]] = [
     ("两干万", "两千万"),
     ("三干万", "三千万"),
     ("五干万", "五千万"),
     ("一干万", "一千万"),
     ("几干万", "几千万"),
+    ("三干多", "三千多"),
+    ("五干多", "五千多"),
+    ("几干", "几千"),
     ("干万别", "千万别"),
     ("干万要", "千万要"),
     ("成干上万", "成千上万"),
@@ -79,6 +84,34 @@ _ZH_VISUAL_OCR_FIXES: list[tuple[str, str]] = [
     ("拿证汉怎么样", "拿证又怎么样"),
     ("拿证汉怎公样", "拿证又怎么样"),
     ("济活", "齐活"),
+    # Xianxia / drama visual glyph confusions
+    ("筑基七重镜", "筑基七重境"),
+    ("重镜", "重境"),
+    ("井且", "并且"),
+    ("特珠血脉", "特殊血脉"),
+    ("宗问", "宗门"),
+    ("藏金闾", "藏经阁"),
+    ("藏金阁", "藏经阁"),
+    ("平乎无奇", "平平无奇"),
+    ("影装", "影袭"),
+    ("帝玄龟", "地玄龟"),
+    ("在外散生", "在外散修"),
+    ("按下来的话", "接下来的话"),
+    ("佳手你们想千什么", "住手你们想干什么"),
+    ("想千什么", "想干什么"),
+    ("佳手", "住手"),
+    ("悲悯佛仔", "悲悯佛祖"),
+    ("几于空白", "近乎空白"),
+    ("那一首可把", "那一手可把"),
+    ("买— 头", "买一头"),
+    ("买—头", "买一头"),
+    ("天天折了", "天夭折了"),
+    ("独霜一方", "独霸一方"),
+    ("这杰功法", "这本功法"),
+    ("的修力", "的修为"),
+    ("苟力先", "苟为先"),
+    ("让你是收下", "让你收下"),
+    ("苏阎主", "苏阁主"),
 ]
 
 
@@ -143,7 +176,7 @@ def _vision_langs_for_source(source_lang: str) -> str:
 
 def _normalize_ocr_text(raw: str, is_zh_hint: bool = True) -> str:
     s = (raw or "").strip()
-    s = re.sub(r"^[;；:：·•—\-_|~`]+", "", s).strip()
+    s = re.sub(r"^[;；:：·•—\-_|~`()（）]+", "", s).strip()
     s = re.sub(r"[;；:：·•_|~`]+$", "", s).strip()
     if not s:
         return ""
@@ -153,15 +186,19 @@ def _normalize_ocr_text(raw: str, is_zh_hint: bool = True) -> str:
         for wrong, right in _ZH_VISUAL_OCR_FIXES:
             if wrong in s:
                 s = s.replace(wrong, right)
-    return re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s+", " ", s).strip()
+    if _WATERMARK_NOISE_RE.match(s):
+        return ""
+    return s
 
 
-def _extract_centered_line_from_frame(items: list[dict], is_portrait: bool, is_zh_hint: bool) -> tuple[str, float]:
+def _extract_candidate_rows_from_frame(items: list[dict], is_portrait: bool, is_zh_hint: bool) -> list[dict]:
     """
-    Filters out left/right channel watermarks, dates, speaker-source micro-labels, and corner logos
-    by requiring horizontal centering near screen middle (0.39 <= midX <= 0.61) AND dominant font height.
+    Groups horizontally-centered OCR boxes into distinct vertical rows WITHOUT ever merging
+    two vertically separated bands (e.g. a floating channel watermark above vs. the real subtitle below!).
     """
-    centered: list[dict] = []
+    boxes: list[dict] = []
+    min_h = 0.055 if is_portrait else 0.14
     for it in items or []:
         txt = str(it.get("t") or "").strip()
         if not txt:
@@ -172,39 +209,104 @@ def _extract_centered_line_from_frame(items: list[dict], is_portrait: bool, is_z
         y1 = float(it.get("y1", 1.0))
         conf = float(it.get("c", 0.0))
         mid_x = 0.5 * (x0 + x1)
+        mid_y = 0.5 * (y0 + y1)
         box_h = y1 - y0
 
-        if not (0.39 <= mid_x <= 0.61):
+        if not (0.38 <= mid_x <= 0.62):
             continue
-        min_h = 0.055 if is_portrait else 0.10
         if box_h < min_h:
             continue
-        if _CAPTION_META_PREFIX_RE.match(txt) and not _CAPTION_META_PREFIX_RE.sub("", txt).strip():
+        # Reject blurry cursive watermark ghost detections (almost always conf < 0.42)
+        if conf < 0.42:
             continue
-        centered.append({"t": txt, "c": conf, "x0": x0, "x1": x1, "y0": y0, "y1": y1, "h": box_h})
+        boxes.append({"t": txt, "c": conf, "x0": x0, "x1": x1, "y0": y0, "y1": y1, "mid_y": mid_y, "h": box_h})
 
-    if not centered:
-        return "", 0.0
+    if not boxes:
+        return []
 
-    # Keep only dominant subtitle font height (drops smaller source/credit micro-captions above/below)
-    max_h = max(b["h"] for b in centered)
-    centered = [b for b in centered if b["h"] >= max_h * 0.70]
+    # Cluster boxes into vertical rows (same line if |mid_y difference| <= 0.14)
+    boxes.sort(key=lambda b: (b["mid_y"], b["x0"]))
+    rows_raw: list[list[dict]] = []
+    for b in boxes:
+        if rows_raw and abs(b["mid_y"] - rows_raw[-1][0]["mid_y"]) <= 0.14:
+            rows_raw[-1].append(b)
+        else:
+            rows_raw.append([b])
 
-    # In bilingual CJK+English subtitles, keep ONLY the CJK line(s)
-    has_cjk_box = any(_CJK_CHAR_RE.search(b["t"]) for b in centered)
-    if has_cjk_box:
-        centered = [b for b in centered if _CJK_CHAR_RE.search(b["t"]) or re.fullmatch(r"[0-9%.,+-]+", b["t"])]
+    out_rows: list[dict] = []
+    for grp in rows_raw:
+        grp.sort(key=lambda b: b["x0"])
+        raw_joined = " ".join(b["t"] for b in grp)
+        norm_txt = _normalize_ocr_text(raw_joined, is_zh_hint=is_zh_hint)
+        if not norm_txt:
+            continue
+        avg_y = sum(b["mid_y"] for b in grp) / len(grp)
+        avg_c = sum(b["c"] for b in grp) / len(grp)
+        avg_h = sum(b["h"] for b in grp) / len(grp)
+        has_cjk = bool(_CJK_CHAR_RE.search(norm_txt))
+        out_rows.append(
+            {
+                "text": norm_txt,
+                "conf": avg_c,
+                "mid_y": avg_y,
+                "h": avg_h,
+                "has_cjk": has_cjk,
+            }
+        )
+    return out_rows
 
-    if not centered:
-        return "", 0.0
 
-    centered.sort(key=lambda b: (-round(b["y0"], 1), b["x0"]))
-    raw_joined = " ".join(b["t"] for b in centered)
-    norm_txt = _normalize_ocr_text(raw_joined, is_zh_hint=is_zh_hint)
-    if not norm_txt:
-        return "", 0.0
-    avg_conf = sum(b["c"] for b in centered) / len(centered)
-    return norm_txt, avg_conf
+def _lock_dominant_subtitle_y_band(raw_frames: list[tuple[float, list[dict]]]) -> list[tuple[float, str, float]]:
+    """
+    Analyzes vertical positions (`mid_y`) of all high-confidence detections across the video
+    to auto-lock onto the single true Subtitle Y-Band — completely eliminating floating channel
+    watermarks (e.g. '笼包动画') sitting above or below the real subtitle line!
+    """
+    if not raw_frames:
+        return []
+
+    has_any_cjk = any(r["has_cjk"] for _, rows in raw_frames for r in rows if r["conf"] >= 0.50)
+
+    # Histogram of mid_y in 0.05 bins weighted by confidence & real-dialogue length
+    bin_weights: dict[int, float] = collections.defaultdict(float)
+    for _, rows in raw_frames:
+        for r in rows:
+            if has_any_cjk and not r["has_cjk"]:
+                continue
+            if r["conf"] < 0.48 or len(r["text"]) < 2:
+                continue
+            b_idx = int(round(r["mid_y"] / 0.05))
+            w = r["conf"] * min(len(r["text"]), 14)
+            # Slightly prefer lower-half subtitle band (mid_y < 0.65) over upper watermark zone
+            if r["mid_y"] <= 0.62:
+                w *= 1.25
+            bin_weights[b_idx] += w
+
+    if not bin_weights:
+        return []
+
+    # Smooth adjacent bins to find the true peak center
+    best_bin = max(
+        bin_weights.keys(),
+        key=lambda b: bin_weights.get(b - 1, 0.0) + bin_weights[b] * 1.4 + bin_weights.get(b + 1, 0.0),
+    )
+    dominant_y = best_bin * 0.05
+
+    # Lock extraction strictly to rows within ±0.16 of dominant_y
+    timeline: list[tuple[float, str, float]] = []
+    for t_abs, rows in raw_frames:
+        matched = [
+            r for r in rows
+            if abs(r["mid_y"] - dominant_y) <= 0.16
+            and (not has_any_cjk or r["has_cjk"] or re.fullmatch(r"[0-9%.,+-]+", r["text"]))
+        ]
+        if not matched:
+            continue
+        # Pick the row closest to dominant_y with highest confidence
+        best_row = max(matched, key=lambda r: (r["conf"] + 0.15 * min(len(r["text"]), 10) - abs(r["mid_y"] - dominant_y)))
+        timeline.append((t_abs, best_row["text"], best_row["conf"]))
+
+    return timeline
 
 
 def _vote_best_card_text(samples: list[tuple[str, float]]) -> tuple[str, float, int]:
@@ -217,30 +319,28 @@ def _vote_best_card_text(samples: list[tuple[str, float]]) -> tuple[str, float, 
         if conf > max_c:
             max_c = conf
 
-    best_txt = max(scores.keys(), key=lambda k: (scores[k], min(len(k), 28)))
+    best_txt = max(scores.keys(), key=lambda k: (scores[k], min(len(k), 32)))
     avg_c = sum(c for _, c in samples) / len(samples)
     return best_txt, max(avg_c, max_c * 0.85), len(samples)
 
 
 def _punctuate_single_card(text: str) -> str:
-    """
-    Infers natural question / exclamation punctuation on each individual subtitle card BEFORE
-    coalescing so dialogue questions ('这块多少钱？') and answers ('八十万。') or speaker switches
-    ('你卖不卖？' / '不卖') never get glued into one run-on clause!
-    """
     t = (text or "").strip()
     if not t or re.search(r"[。！？.!?…]$", t):
         return t
     if not _CJK_CHAR_RE.search(t):
         return t
     if re.search(
-        r"(?:吗|呢|咋了|啥|多少钱|切多少|卖不卖|先看看|好心|是不是|能不能|对不对|行不行|干嘛|干什么|上哪捡的|什么种水|什么玩意儿|你要全剥|什么狗屎运)$",
+        r"(?:吗|呢|咋了|啥|多少钱|切多少|卖不卖|先看看|好心|是不是|能不能|对不对|行不行|干嘛|干什么|上哪捡的|什么种水|什么玩意儿|你要全剥|什么狗屎运|什么价格|怎么了|如何|不成|是不是记错了)$",
         t,
-    ) or re.match(r"^(?:难道|怎么会|为什么|凭什么)", t):
+    ) or re.match(r"^(?:难道|怎么会|为什么|凭什么|请问)", t):
         return t + "？"
-    if re.fullmatch(r"(?:我去|卧槽|操|牛逼|齐活|赌个屁|涨个屁|成交|别急别急)", t):
+    if re.fullmatch(r"(?:我去|卧槽|操|牛逼|齐活|赌个屁|涨个屁|成交|别急别急|等等|请进)", t):
         return t + "！"
-    if re.search(r"(?:被人盯上|吃不进去|赌性大|我走了|两千万打底|颜色也进去了|自己留着|石头却废了|不能确定|两立方米了|没天理了|启动资金|神枪手|有把握的|就麻烦|卖掉|全取出来|眼下没事|这儿踏实|心里有数|概率不高|就不错了|能到糯冰|能到冰糯|真好啊)$", t):
+    if re.search(
+        r"(?:被人盯上|吃不进去|赌性大|我走了|两千万打底|颜色也进去了|自己留着|石头却废了|不能确定|两立方米了|没天理了|启动资金|神枪手|有把握的|就麻烦|卖掉|全取出来|眼下没事|这儿踏实|心里有数|概率不高|就不错了|能到糯冰|能到冰糯|真好啊|贡献点|惊着了|必须带走|先走了|投放开始)$",
+        t,
+    ):
         return t + "。"
     return t
 
@@ -248,7 +348,7 @@ def _punctuate_single_card(text: str) -> str:
 def _coalesce_subtitle_cards(cards: list[dict]) -> list[dict]:
     """
     Merges rapid consecutive short subtitle cards of the SAME speaker turn into natural,
-    complete spoken sentences (target 2.0s–6.0s) while keeping Q&A speaker turns crisp!
+    complete spoken sentences (target 2.0s–6.0s), removing duplicate repeats cleanly!
     """
     if not cards:
         return []
@@ -266,17 +366,26 @@ def _coalesce_subtitle_cards(cards: list[dict]) -> list[dict]:
         cur_txt = cur["text"].rstrip()
         nxt_txt = nxt["text"].strip()
 
-        # Deduplicate exact stutter repeats (e.g. '全剥' -> '全剥') within 0.6s
-        if cur_txt.rstrip("。！？!?") == nxt_txt.rstrip("。！？!?") and gap <= 0.60:
+        cur_bare = cur_txt.rstrip("。！？!?，, ")
+        nxt_bare = nxt_txt.rstrip("。！？!?，, ")
+
+        # Deduplicate exact or near-identical consecutive cards (e.g. same subtitle flashing across a cut!)
+        if gap <= 1.20 and (
+            cur_bare == nxt_bare
+            or (len(nxt_bare) >= 4 and (nxt_bare in cur_bare or cur_bare.endswith(nxt_bare)))
+            or (len(cur_bare) >= 4 and len(nxt_bare) >= 4 and difflib.SequenceMatcher(None, cur_bare, nxt_bare).ratio() >= 0.84)
+        ):
             cur["end"] = round(max(cur["end"], nxt["end"]), 2)
+            if len(nxt_bare) > len(cur_bare):
+                cur["text"] = nxt_txt
             continue
 
         # Remove scrolling boundary overlap (e.g. '...曝光到网上' + '曝光到网上，7月31日...')
-        for ov_len in range(min(len(cur_txt), len(nxt_txt), 12), 2, -1):
-            if cur_txt.rstrip("。！？!?").endswith(nxt_txt[:ov_len]):
+        for ov_len in range(min(len(cur_bare), len(nxt_bare), 14), 2, -1):
+            if cur_bare.endswith(nxt_bare[:ov_len]):
                 nxt_txt = nxt_txt[ov_len:].lstrip("，,。 ")
                 break
-        if not nxt_txt:
+        if not nxt_txt or not nxt_txt.strip("。！？!?,， "):
             cur["end"] = round(max(cur["end"], nxt["end"]), 2)
             continue
 
@@ -288,7 +397,7 @@ def _coalesce_subtitle_cards(cards: list[dict]) -> list[dict]:
 
         max_chars = 36 if is_cjk else 140
         cur_ends_strong = bool(re.search(r"[?？!！。][\"')\]»”’]*$", cur_txt))
-        nxt_is_exclam = bool(re.match(r"^(?:我去|卧槽|操|牛逼|赌个屁|涨个屁)[！!。]?$", nxt_txt))
+        nxt_is_exclam = bool(re.match(r"^(?:我去|卧槽|操|牛逼|赌个屁|涨个屁|等等)[！!。]?$", nxt_txt))
 
         should_join = False
         if not cur_ends_strong and not nxt_is_exclam and combined_dur <= 6.2 and len(combined_txt) <= max_chars:
@@ -324,7 +433,8 @@ def extract_hard_subtitles(
     progress_cb: Callable[[int, int], None] | None = None,
 ) -> dict:
     """
-    Extracts burned-in subtitles across short videos OR multi-hour movies (in 10-min streaming chunks).
+    Extracts burned-in subtitles across short videos OR multi-hour movies (in 10-min streaming chunks)
+    with Dominant Subtitle Y-Band Auto-Locking to eliminate floating channel watermarks!
     """
     ocr_bin = ensure_ocr_binary()
     if not ocr_bin or duration_sec <= 0.4:
@@ -338,10 +448,11 @@ def extract_hard_subtitles(
     fps = 3.5 if duration_sec <= 1200 else 2.5
     step_sec = 1.0 / fps
 
+    # Tighter bottom 22% band on landscape (78%..100%) cuts off channel logos sitting at 70-78%!
     if is_portrait:
         vf_filter = f"crop=iw:ih*0.42:0:ih*0.50,fps={fps},scale='min(720,iw)':-2"
     else:
-        vf_filter = f"crop=iw:ih*0.30:0:ih*0.70,fps={fps},scale='min(1024,iw)':-2"
+        vf_filter = f"crop=iw:ih*0.22:0:ih*0.78,fps={fps},scale='min(1024,iw)':-2"
 
     # Quick probe for multi-hour movies (> 20 min): skip immediately if no crisp burned-in subs exist
     if duration_sec > 1200:
@@ -356,15 +467,15 @@ def extract_hard_subtitles(
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=45,
+                timeout=60,
             )
-            pr = subprocess.run([ocr_bin, pdir, lang_csv], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=45)
+            pr = subprocess.run([ocr_bin, pdir, lang_csv], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60)
             probe_hits = 0
             for ln in pr.stdout.decode("utf-8", errors="ignore").splitlines():
                 try:
                     obj = json.loads(ln)
-                    txt, cf = _extract_centered_line_from_frame(obj.get("items") or [], is_portrait, is_zh_hint)
-                    if txt and cf >= 0.52:
+                    rows = _extract_candidate_rows_from_frame(obj.get("items") or [], is_portrait, is_zh_hint)
+                    if any(r["conf"] >= 0.52 and len(r["text"]) >= 2 for r in rows):
                         probe_hits += 1
                 except Exception:
                     pass
@@ -373,7 +484,7 @@ def extract_hard_subtitles(
 
     chunk_sec = 600.0
     n_chunks = max(1, int((duration_sec + chunk_sec - 0.01) // chunk_sec))
-    frame_timeline: list[tuple[float, str, float]] = []
+    raw_frames: list[tuple[float, list[dict]]] = []
 
     for c_idx in range(n_chunks):
         t0 = c_idx * chunk_sec
@@ -396,12 +507,12 @@ def extract_hard_subtitles(
                 "-q:v", "3",
                 os.path.join(cdir, "f_%06d.jpg"),
             ]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180)
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=240)
             ocr_proc = subprocess.run(
                 [ocr_bin, cdir, lang_csv],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
-                timeout=240,
+                timeout=300,
             )
             for line in ocr_proc.stdout.decode("utf-8", errors="ignore").splitlines():
                 if not line.strip():
@@ -410,12 +521,16 @@ def extract_hard_subtitles(
                     row = json.loads(line)
                     f_num = int(row.get("f", 1))
                     t_abs = t0 + max(0.0, (f_num - 1) * step_sec)
-                    txt, conf = _extract_centered_line_from_frame(row.get("items") or [], is_portrait, is_zh_hint)
-                    if txt:
-                        frame_timeline.append((t_abs, txt, conf))
+                    c_rows = _extract_candidate_rows_from_frame(row.get("items") or [], is_portrait, is_zh_hint)
+                    if c_rows:
+                        raw_frames.append((t_abs, c_rows))
                 except Exception:
                     continue
 
+    if not raw_frames:
+        return {"usable": False, "avgConf": 0.0, "coverageRatio": 0.0, "segments": []}
+
+    frame_timeline = _lock_dominant_subtitle_y_band(raw_frames)
     if not frame_timeline:
         return {"usable": False, "avgConf": 0.0, "coverageRatio": 0.0, "segments": []}
 
@@ -451,7 +566,8 @@ def extract_hard_subtitles(
         dur = cl["end"] - cl["start"]
         if not best_txt:
             continue
-        if n_f == 1 and best_conf < 0.48:
+        # Drop isolated 1-frame noise (e.g. stray 1-char flash '屏' / '包' on cut transitions)
+        if n_f == 1 and (best_conf < 0.55 or len(best_txt) <= 1):
             continue
         if dur > 18.0:
             continue

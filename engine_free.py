@@ -83,6 +83,7 @@ import numpy as np
 from global_voices_catalog import GLOBAL_INTL_VOICES
 import media_dubber
 from private_vault import PrivateVoiceVault
+import vn_number_normalizer
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OPEN_MODELS_DIR = os.path.join(BASE_DIR, "open_models")
@@ -381,7 +382,7 @@ def split_dramatic_blocks(text: str, base_pause: float = 0.40) -> list[tuple[str
         rem = cur.strip(" ,;:-")
         if rem:
             if len(rem) > 95:
-                sents = re.split(r"(?<=[.?!。？！])\s*", rem)
+                sents = re.split(r"(?<=[.?!。？！])(?:\s+|$)", rem)
                 buf_s = ""
                 for s in sents:
                     s = s.strip()
@@ -431,7 +432,11 @@ def apply_rate_ffmpeg(wav_bytes: bytes, rate: float) -> bytes:
 
 
 def polish_bilingual_for_vieneu(text: str) -> str:
-    """Ensure English media extensions & shortcuts map to smooth English IPA in VieNeu v3 Turbo."""
+    """
+    Normalizes Vietnamese numbers (>= 1.000, decimals, dates, percentages) into spoken Vietnamese
+    words so VieNeu-TTS NEVER reads '3.000' or '800.000' as 'ba không không không',
+    and maps media extensions to natural English pronunciation.
+    """
     t = text
     # File formats that sea_g2p would otherwise read letter-by-letter in Vietnamese ("mờ phê ba", "vê kép a vê")
     t = re.sub(r"(?:(?<=[\s(\"'«“])|^)\.?mp3\b", "em pee three", t, flags=re.IGNORECASE)
@@ -439,6 +444,7 @@ def polish_bilingual_for_vieneu(text: str) -> str:
     t = re.sub(r"(?:(?<=[\s(\"'«“])|^)\.?wav\b", "wave", t, flags=re.IGNORECASE)
     t = re.sub(r"(?:(?<=[\s(\"'«“])|^)\.docx\b", "file Word", t, flags=re.IGNORECASE)
     t = re.sub(r"\bctrl\s*\+\s*enter\b", "Ctrl Enter", t, flags=re.IGNORECASE)
+    t = vn_number_normalizer.normalize_vietnamese_numbers_for_tts(t)
     return t
 
 
@@ -535,6 +541,7 @@ def segment_piper_prosody(text: str, base_pause: float = 0.40) -> list[tuple[str
 def synthesize_piper_mastered_48k(text: str, onnx_filename: str, rate: float = 1.0, pause_sec: float = 0.40) -> bytes:
     from piper import SynthesisConfig
 
+    text = vn_number_normalizer.normalize_vietnamese_numbers_for_tts(text)
     voice = get_piper_voice(onnx_filename)
     safe_rate = max(0.5, min(2.0, rate))
     syn_conf = SynthesisConfig(length_scale=1.04 / safe_rate, noise_scale=0.60, noise_w_scale=0.45)
@@ -625,6 +632,8 @@ def split_for_google_tts(text: str, max_len: int = 175) -> list[str]:
 
 
 def synthesize_google_48k(text: str, lang: str = "vi", rate: float = 1.0, pause_sec: float = 0.40) -> bytes:
+    if (lang or "").lower().startswith("vi"):
+        text = vn_number_normalizer.normalize_vietnamese_numbers_for_tts(text)
     blocks = split_dramatic_blocks(text, base_pause=pause_sec)
     pieces: list[np.ndarray] = []
 
@@ -775,6 +784,8 @@ async def synthesize_edge_48k(
     rate: float = 1.0,
     pause_sec: float = 0.40,
 ) -> bytes:
+    if (lang_code or "").lower().startswith("vi"):
+        text = vn_number_normalizer.normalize_vietnamese_numbers_for_tts(text)
     blocks = split_dramatic_blocks(text, base_pause=pause_sec)
     valid = []
     for phrase, after_pause in blocks:
