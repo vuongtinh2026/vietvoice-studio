@@ -24,6 +24,8 @@ import wave
 
 import numpy as np
 
+import cinema_translator
+
 _WHISPER_LOCK = threading.Lock()
 _WHISPER_MODEL = None
 
@@ -48,30 +50,45 @@ def get_whisper_model():
     with _WHISPER_LOCK:
         if _WHISPER_MODEL is None:
             from faster_whisper import WhisperModel
-            model_size = os.environ.get("VOXLY_WHISPER_MODEL", "base")
-            whisper_cache = os.path.expanduser(
-                f"~/.cache/huggingface/hub/models--Systran--faster-whisper-{model_size}/snapshots"
-            )
-            has_local = os.path.isdir(whisper_cache) and bool(os.listdir(whisper_cache))
-            prev_offline = os.environ.get("HF_HUB_OFFLINE")
-            if not has_local:
-                os.environ["HF_HUB_OFFLINE"] = "0"
+
+            preferred = os.environ.get("VOXLY_WHISPER_MODEL", "turbo")
+            candidates = [preferred] + [m for m in ("turbo", "small", "base") if m != preferred]
+            cpu_threads = min(8, max(4, os.cpu_count() or 4))
+
+            for model_size in candidates:
+                cache_dirs = [
+                    os.path.expanduser(
+                        "~/.cache/huggingface/hub/models--mobiuslabsgmbh--faster-whisper-large-v3-turbo/snapshots"
+                    )
+                    if model_size in ("turbo", "large-v3-turbo")
+                    else os.path.expanduser(
+                        f"~/.cache/huggingface/hub/models--Systran--faster-whisper-{model_size}/snapshots"
+                    )
+                ]
+                has_local = any(os.path.isdir(d) and bool(os.listdir(d)) for d in cache_dirs)
+                prev_offline = os.environ.get("HF_HUB_OFFLINE")
+                if not has_local:
+                    os.environ["HF_HUB_OFFLINE"] = "0"
+                    try:
+                        import huggingface_hub.constants as hf_const
+                        hf_const.HF_HUB_OFFLINE = False
+                    except Exception:
+                        pass
                 try:
-                    import huggingface_hub.constants as hf_const
-                    hf_const.HF_HUB_OFFLINE = False
-                except Exception:
-                    pass
-            try:
-                _WHISPER_MODEL = WhisperModel(
-                    model_size,
-                    device="cpu",
-                    compute_type="int8",
-                    cpu_threads=4,
-                    local_files_only=has_local,
-                )
-            finally:
-                if not has_local and prev_offline is not None:
-                    os.environ["HF_HUB_OFFLINE"] = prev_offline
+                    _WHISPER_MODEL = WhisperModel(
+                        model_size,
+                        device="cpu",
+                        compute_type="int8",
+                        cpu_threads=cpu_threads,
+                        local_files_only=has_local,
+                    )
+                    break
+                except Exception as load_err:
+                    if model_size == candidates[-1]:
+                        raise load_err
+                finally:
+                    if not has_local and prev_offline is not None:
+                        os.environ["HF_HUB_OFFLINE"] = prev_offline
     return _WHISPER_MODEL
 
 
@@ -374,7 +391,10 @@ def translate_segments_multilingual(
     source_lang: str = "auto",
     target_lang: str = "vi",
 ) -> tuple[list[dict], str]:
-    """Translates utterance segments 1-to-1 while preserving exact [start, end] timestamps."""
+    """
+    Translates movie dialogue turns 1-to-1 with full rolling scene context via CinemaTranslator
+    (Qwen3-8B Metal GPU screenplay engine + strict zero-foreign-leak verification).
+    """
     if not segments:
         return [], source_lang or "auto"
 
@@ -388,56 +408,26 @@ def translate_segments_multilingual(
         out = [{**s, "translatedText": s.get("text", "")} for s in segments]
         return out, sl_norm
 
-    # Group into safe <=700-char line batches for fast 1-to-1 newline-preserved POST translation
-    batches: list[list[int]] = []
-    cur_batch: list[int] = []
-    cur_len = 0
-    for idx, seg in enumerate(segments):
-        t = re.sub(r"\s+", " ", str(seg.get("text", ""))).strip()
-        if cur_batch and (len(cur_batch) >= 8 or cur_len + len(t) + 2 > 700):
-            batches.append(cur_batch)
-            cur_batch = []
-            cur_len = 0
-        cur_batch.append(idx)
-        cur_len += len(t) + 2
-    if cur_batch:
-        batches.append(cur_batch)
-
-    translated_map: dict[int, str] = {}
-    detected_holder = [sl_norm]
-
-    def _run_batch(idxs: list[int]) -> None:
-        src_lines = [re.sub(r"\s+", " ", str(segments[i].get("text", ""))).strip() for i in idxs]
-        joined = "\n".join(src_lines)
-        tr_joined, det = _translate_single_chunk_gtx(joined, sl_norm, tl_norm)
-        if det and det != "auto":
-            detected_holder[0] = det
-        out_lines = [ln.strip() for ln in (tr_joined or "").split("\n") if ln.strip()]
-        if len(out_lines) == len(idxs):
-            for k, seg_idx in enumerate(idxs):
-                translated_map[seg_idx] = out_lines[k]
-        else:
-            # Strict per-segment fallback guarantees 100% 1-to-1 timestamp alignment!
-            for k, seg_idx in enumerate(idxs):
-                tr_one, det_one = _translate_single_chunk_gtx(src_lines[k], sl_norm, tl_norm)
-                if det_one and det_one != "auto":
-                    detected_holder[0] = det_one
-                translated_map[seg_idx] = (tr_one or src_lines[k]).strip()
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, max(1, len(batches)))) as pool:
-        list(pool.map(_run_batch, batches))
+    src_lines = [re.sub(r"\s+", " ", str(seg.get("text", ""))).strip() for seg in segments]
+    translated_lines = cinema_translator.translate_cinema_lines(
+        lines=src_lines,
+        source_lang=sl_norm,
+        target_lang=tl_norm,
+        nmt_fallback_fn=_translate_single_chunk_gtx,
+    )
 
     enriched = []
     for i, seg in enumerate(segments):
+        tr_txt = translated_lines[i] if i < len(translated_lines) else seg["text"]
         enriched.append(
             {
                 "start": seg["start"],
                 "end": seg["end"],
                 "text": seg["text"],
-                "translatedText": translated_map.get(i, seg["text"]),
+                "translatedText": (tr_txt or seg["text"]).strip(),
             }
         )
-    return enriched, detected_holder[0]
+    return enriched, sl_norm
 
 
 def translate_script_preserving_timestamps(
@@ -449,102 +439,153 @@ def translate_script_preserving_timestamps(
     if has_ts and segs:
         tr_segs, det = translate_segments_multilingual(segs, source_lang=source_lang, target_lang=target_lang)
         return format_timestamped_script(tr_segs, text_key="translatedText"), det
-    return translate_text_multilingual(plain, source_lang=source_lang, target_lang=target_lang)
+    if not plain:
+        return "", source_lang or "auto"
+    tr_list = cinema_translator.translate_cinema_lines(
+        lines=[plain],
+        source_lang=source_lang,
+        target_lang=target_lang,
+        nmt_fallback_fn=_translate_single_chunk_gtx,
+    )
+    return (tr_list[0] if tr_list else plain), (source_lang or "auto")
 
 
-def _extract_utterance_segments(segments_iter) -> list[dict]:
+_WHISPER_HALLUCINATION_RE = re.compile(
+    r"^(?:subtitles?\s+by|amara\.org|thank\s+you\s+for\s+watching|thanks\s+for\s+watching|"
+    r"please\s+subscribe|字幕由|请不吝点赞|感谢观看|谢谢观看|优优独播剧场).*$",
+    re.IGNORECASE,
+)
+
+
+def _count_linguistic_units(txt: str) -> int:
+    cjk = len(re.findall(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]", txt))
+    latin_words = len(re.findall(r"[A-Za-zÀ-ỹ0-9']+", txt))
+    return cjk + latin_words
+
+
+def _extract_utterance_segments(segments_iter, source_lang_hint: str = "auto") -> list[dict]:
     """
-    Uses word-level timestamps (with segment fallback) to capture exact speech start/end
-    and split naturally across pauses >= 0.55s so intro music, laughter & scene pauses stay clean!
+    Reconstructs complete, natural movie dialogue turns from Whisper Large-v3-Turbo output:
+    1. Filters out music/choir/credit hallucinations.
+    2. Snaps timestamps to exact spoken words and splits internal silences >= 1.55s.
+    3. Coalesces incomplete comma-ending clauses and rapid same-speaker sentences into
+       complete, flowing dramatic turns so translation & voiceover never sound choppy!
     """
-    words_flat: list[dict] = []
-    fallback_segs: list[dict] = []
+    atomic_segs: list[dict] = []
 
     for seg in segments_iter:
-        t = (seg.text or "").strip()
-        if t:
-            fallback_segs.append(
-                {
-                    "start": round(float(seg.start), 2),
-                    "end": round(max(float(seg.end), float(seg.start) + 0.25), 2),
-                    "text": t,
-                }
-            )
-        seg_words = getattr(seg, "words", None)
-        if seg_words:
-            for w in seg_words:
-                wt = (getattr(w, "word", "") or "")
-                if wt.strip():
-                    words_flat.append(
-                        {
-                            "start": float(w.start),
-                            "end": max(float(w.end), float(w.start) + 0.06),
-                            "word": wt,
-                        }
-                    )
-
-    if not words_flat:
-        return fallback_segs
-
-    utterances: list[dict] = []
-    cur_words: list[str] = []
-    cur_start = 0.0
-    cur_end = 0.0
-
-    def _flush():
-        nonlocal cur_words, cur_start, cur_end
-        if not cur_words:
-            return
-        txt = re.sub(r"\s+", " ", "".join(cur_words)).strip()
-        if txt:
-            utterances.append(
-                {
-                    "start": round(max(0.0, cur_start), 2),
-                    "end": round(max(cur_start + 0.25, cur_end), 2),
-                    "text": txt,
-                }
-            )
-        cur_words = []
-
-    for item in words_flat:
-        ws, we, wd = item["start"], item["end"], item["word"]
-        if not cur_words:
-            cur_start = ws
-            cur_end = we
-            cur_words = [wd]
+        raw_t = (seg.text or "").strip()
+        if not raw_t:
+            continue
+        if getattr(seg, "no_speech_prob", 0.0) > 0.75 and _count_linguistic_units(raw_t) <= 3:
+            continue
+        if _WHISPER_HALLUCINATION_RE.match(raw_t):
             continue
 
-        gap = ws - cur_end
-        dur = cur_end - cur_start
-        prev_txt = "".join(cur_words).rstrip()
-        ends_sent = bool(re.search(r"[.!?。？！…][\"')\]»”’]*$", prev_txt))
-        ends_clause = bool(re.search(r"[,;:，；：—\-]$", prev_txt))
-        char_len = len(prev_txt)
+        seg_words = [w for w in (getattr(seg, "words", None) or []) if (getattr(w, "word", "") or "").strip()]
+        if not seg_words:
+            clean_t = cinema_translator.preclean_source_dialogue_line(raw_t, source_lang=source_lang_hint)
+            if clean_t:
+                st0 = max(0.0, float(seg.start))
+                en0 = max(st0 + 0.30, float(seg.end))
+                atomic_segs.append({"start": round(st0, 2), "end": round(en0, 2), "text": clean_t})
+            continue
 
-        should_split = (
-            gap >= 0.55
-            or (ends_sent and (gap >= 0.18 or dur >= 2.0 or char_len >= 45))
-            or (dur >= 7.5 and (ends_clause or gap >= 0.22))
-            or dur >= 12.0
-            or char_len >= 190
-        )
-        if should_split:
-            _flush()
-            cur_start = ws
-            cur_end = we
-            cur_words = [wd]
+        # Split inside a single Whisper segment ONLY if there is a real silence gap >= 1.55s
+        # (or sentence terminal punctuation + silence gap >= 0.90s)
+        sub_words: list[str] = []
+        sub_st = max(0.0, float(seg_words[0].start))
+        sub_en = max(sub_st + 0.08, float(seg_words[0].end))
+
+        def _flush_sub():
+            nonlocal sub_words, sub_st, sub_en
+            if not sub_words:
+                return
+            joined_t = cinema_translator.preclean_source_dialogue_line(
+                "".join(sub_words), source_lang=source_lang_hint
+            )
+            if joined_t and not _WHISPER_HALLUCINATION_RE.match(joined_t):
+                atomic_segs.append(
+                    {
+                        "start": round(sub_st, 2),
+                        "end": round(max(sub_st + 0.28, sub_en), 2),
+                        "text": joined_t,
+                    }
+                )
+            sub_words = []
+
+        for w in seg_words:
+            ws = max(0.0, float(w.start))
+            we = max(ws + 0.06, float(w.end))
+            wt = getattr(w, "word", "")
+            if not sub_words:
+                sub_st, sub_en, sub_words = ws, we, [wt]
+                continue
+            gap = ws - sub_en
+            prev_str = "".join(sub_words).rstrip()
+            ends_terminal = bool(re.search(r"[.!?。？！…][\"')\]»”’]*$", prev_str))
+            if gap >= 1.55 or (ends_terminal and gap >= 0.90):
+                _flush_sub()
+                sub_st, sub_en, sub_words = ws, we, [wt]
+            else:
+                sub_en = max(sub_en, we)
+                sub_words.append(wt)
+        _flush_sub()
+
+    if not atomic_segs:
+        return []
+
+    # Pass 2: Coalesce broken clauses & short fragments into smooth, complete movie dialogue turns!
+    coalesced: list[dict] = [dict(atomic_segs[0])]
+    for nxt in atomic_segs[1:]:
+        cur = coalesced[-1]
+        gap = nxt["start"] - cur["end"]
+        cur_txt = cur["text"].rstrip()
+        nxt_txt = nxt["text"].strip()
+        combined_dur = nxt["end"] - cur["start"]
+        is_cjk = bool(re.search(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]", cur_txt + nxt_txt))
+        joiner = "，" if (is_cjk and not re.search(r"[，。？！、；：,.?!]$", cur_txt)) else ("" if is_cjk else " ")
+        combined_txt = f"{cur_txt}{joiner}{nxt_txt}".strip()
+
+        cur_ends_terminal = bool(re.search(r"[.!?。？！…][\"')\]»”’]*$", cur_txt))
+        cur_ends_question = bool(re.search(r"[?？][\"')\]»”’]*$", cur_txt))
+        cur_units = _count_linguistic_units(cur_txt)
+        nxt_units = _count_linguistic_units(nxt_txt)
+
+        max_chars = 95 if is_cjk else 220
+        should_merge = False
+
+        # Rule 1: Incomplete grammatical clause (no terminal period/question/exclamation) -> keep sentence whole!
+        if not cur_ends_terminal and gap <= 2.10 and combined_dur <= 14.5 and len(combined_txt) <= max_chars:
+            should_merge = True
+        # Rule 2: Tiny orphan stub (1-2 words) right next to its neighbour
+        elif cur_units <= 2 and not cur_ends_question and gap <= 1.50 and combined_dur <= 12.0:
+            should_merge = True
+        elif nxt_units <= 2 and not cur_ends_question and gap <= 0.95 and combined_dur <= 11.5:
+            should_merge = True
+        # Rule 3: Smooth consecutive sentences in the same speech turn (excluding Q&A speaker switches)
+        elif not cur_ends_question and gap <= 0.72 and combined_dur <= 10.5 and len(combined_txt) <= int(max_chars * 0.85):
+            should_merge = True
+
+        if should_merge:
+            cur["end"] = round(max(cur["end"], nxt["end"]), 2)
+            cur["text"] = re.sub(r"\s+", " ", combined_txt).strip()
         else:
-            cur_end = max(cur_end, we)
-            cur_words.append(wd)
+            # Re-attach trailing dangling conjunctions (e.g. "...beauty. And" + [pause] + "again?")
+            m_dangle = re.match(r"^(.*[.!?])\s+([A-Za-z']{1,4})$", cur["text"])
+            if m_dangle and not re.match(r"^[A-Z]", nxt["text"]):
+                cur["text"] = m_dangle.group(1).strip()
+                nxt = dict(nxt)
+                nxt["text"] = f"{m_dangle.group(2)} {nxt['text']}".strip()
+            coalesced.append(dict(nxt))
 
-    _flush()
-    return utterances if utterances else fallback_segs
+    return coalesced
 
 
 def _compute_media_fast_fingerprint(media_path: str, source_lang: str) -> str:
     st = os.stat(media_path)
     h = hashlib.sha256()
-    h.update(f"v2:{st.st_size}:{source_lang}:".encode("utf-8"))
+    h.update(f"v3_turbo:{st.st_size}:{source_lang}:".encode("utf-8"))
     with open(media_path, "rb") as f:
         h.update(f.read(65536))
         if st.st_size > 131072:
@@ -563,7 +604,7 @@ def transcribe_and_translate_media(
     cache_dir = os.path.join("/tmp", "voxly_dub_sessions")
     os.makedirs(cache_dir, exist_ok=True)
     fp_key = _compute_media_fast_fingerprint(media_path, source_lang or "auto")
-    stt_cache_path = os.path.join(cache_dir, f"stt_v2_{fp_key}.json")
+    stt_cache_path = os.path.join(cache_dir, f"stt_v3_turbo_{fp_key}.json")
 
     cached_stt = None
     if os.path.exists(stt_cache_path):
@@ -587,18 +628,30 @@ def transcribe_and_translate_media(
             audio_f32 = np.frombuffer(raw_pcm, dtype=np.int16).astype(np.float32) / 32768.0
             model = get_whisper_model()
             w_lang = normalize_whisper_lang_code(source_lang)
+
+            if w_lang == "zh":
+                init_prompt = "以下是影视剧与动漫普通话对白，请使用规范简体中文并准确添加标点符号。"
+            elif w_lang == "en":
+                init_prompt = "Movie dialogue transcript with accurate spelling and punctuation."
+            else:
+                init_prompt = "Accurate movie dialogue transcript with proper punctuation."
+
             segments_iter, info = model.transcribe(
                 audio_f32,
                 language=w_lang,
-                beam_size=2,
+                beam_size=4,
                 word_timestamps=True,
-                condition_on_previous_text=False,
+                condition_on_previous_text=True,
+                compression_ratio_threshold=2.2,
+                no_speech_threshold=0.58,
+                hallucination_silence_threshold=1.5,
+                initial_prompt=init_prompt,
                 vad_filter=True,
-                vad_parameters={"min_silence_duration_ms": 280, "speech_pad_ms": 120},
+                vad_parameters={"min_silence_duration_ms": 420, "speech_pad_ms": 180},
             )
-            segs = _extract_utterance_segments(segments_iter)
-            plain_source = re.sub(r"\s+", " ", " ".join(s["text"] for s in segs)).strip()
             detected_lang = getattr(info, "language", None) or (w_lang or "vi")
+            segs = _extract_utterance_segments(segments_iter, source_lang_hint=detected_lang)
+            plain_source = re.sub(r"\s+", " ", " ".join(s["text"] for s in segs)).strip()
             duration_sec = meta["durationSec"] or float(getattr(info, "duration", 0.0) or 0.0)
 
             if not plain_source or not segs:
@@ -697,28 +750,34 @@ def _f32_48k_to_wav_bytes(samples: np.ndarray, sr: int = 48000) -> bytes:
     return buf.getvalue()
 
 
-def trim_tts_silence_48k(samples: np.ndarray, sr: int = 48000, thresh: float = 0.0045, pad_ms: int = 26) -> np.ndarray:
+def trim_tts_silence_48k(samples: np.ndarray, sr: int = 48000, thresh: float = 0.0012, pad_ms: int = 85) -> np.ndarray:
+    """
+    Gently trims leading/trailing digital silence while preserving 100% of soft Vietnamese
+    ending consonants (-n, -m, -ng, -nh) and natural trailing breath so words NEVER feel cut off!
+    """
     if samples.size == 0:
         return samples
     active = np.flatnonzero(np.abs(samples) > thresh)
     if active.size == 0:
-        return samples[: int(sr * 0.1)]
-    pad = int(sr * (pad_ms / 1000.0))
-    i0 = max(0, int(active[0]) - pad)
-    i1 = min(samples.size, int(active[-1]) + pad)
+        return samples[: int(sr * 0.12)]
+    pad_lead = int(sr * 0.030)
+    pad_tail = int(sr * (pad_ms / 1000.0))
+    i0 = max(0, int(active[0]) - pad_lead)
+    i1 = min(samples.size, int(active[-1]) + pad_tail)
     trimmed = samples[i0:i1].copy()
-    fade = min(int(sr * 0.010), trimmed.size // 4)
-    if fade > 4:
-        ramp = np.linspace(0.0, 1.0, fade, dtype=np.float32)
-        trimmed[:fade] *= ramp
-        trimmed[-fade:] *= ramp[::-1]
+    fade_in = min(int(sr * 0.012), trimmed.size // 6)
+    fade_out = min(int(sr * 0.032), trimmed.size // 5)
+    if fade_in > 4:
+        trimmed[:fade_in] *= np.linspace(0.0, 1.0, fade_in, dtype=np.float32)
+    if fade_out > 4:
+        trimmed[-fade_out:] *= np.linspace(1.0, 0.0, fade_out, dtype=np.float32)
     return trimmed
 
 
 def time_stretch_samples_48k(samples: np.ndarray, ratio: float, ffmpeg_bin: str = "ffmpeg") -> np.ndarray:
-    if samples.size < 480 or abs(ratio - 1.0) < 0.035:
+    if samples.size < 480 or abs(ratio - 1.0) < 0.04:
         return samples
-    r = max(0.65, min(1.65, float(ratio)))
+    r = max(0.75, min(1.32, float(ratio)))
     in_wav = _f32_48k_to_wav_bytes(samples, sr=48000)
     proc = subprocess.run(
         [
@@ -734,7 +793,7 @@ def time_stretch_samples_48k(samples: np.ndarray, ratio: float, ffmpeg_bin: str 
     if proc.returncode != 0 or not proc.stdout:
         return samples
     out = np.frombuffer(proc.stdout, dtype=np.int16).astype(np.float32) / 32768.0
-    return trim_tts_silence_48k(out, sr=48000, pad_ms=16)
+    return trim_tts_silence_48k(out, sr=48000, pad_ms=65)
 
 
 def assemble_synced_voice_track(
@@ -744,9 +803,10 @@ def assemble_synced_voice_track(
     ffmpeg_bin: str = "ffmpeg",
 ) -> tuple[np.ndarray, list[list[float]]]:
     """
-    Places each synthesized segment at its exact [start, end] cue on a 48kHz timeline!
-    Automatically adjusts per-segment pace (up to 1.55x) so lines fit their dialogue windows
-    without overlapping or leaving the rest of the video silent.
+    Cinema-grade timeline placer:
+    - Uses available post-utterance silence FIRST so sentences speak at calm, natural 1.0x pace!
+    - Only applies gentle WSOLA pace adjustment (max 1.28x) when another dialogue cue follows closely,
+      so lines NEVER get rushed into robotic fast-forward and NEVER get cut off mid-sentence!
     """
     sr = 48000
     if not rendered_segments:
@@ -764,37 +824,36 @@ def assemble_synced_voice_track(
             continue
 
         seg_start = max(0.0, float(item.get("start", 0.0)))
-        seg_end = max(seg_start + 0.30, float(item.get("end", seg_start + 1.5)))
-        orig_win = max(0.35, seg_end - seg_start)
+        seg_end = max(seg_start + 0.40, float(item.get("end", seg_start + 1.8)))
+        orig_win = max(0.40, seg_end - seg_start)
 
         placed_start = max(cursor_sec, seg_start)
-
-        if idx + 1 < n_segs:
-            next_cue = max(placed_start + 0.35, float(rendered_segments[idx + 1].get("start", seg_end)))
-            hard_slot = max(0.35, next_cue - placed_start - 0.05)
-        elif target_duration_sec > placed_start + 0.35:
-            hard_slot = max(0.35, target_duration_sec - placed_start - 0.04)
-        else:
-            hard_slot = max(orig_win * 1.4, raw_samples.size / sr)
-
-        soft_slot = min(hard_slot, max(orig_win * 1.22, orig_win + 0.55))
         cur_dur = raw_samples.size / sr
 
-        if auto_fit_timing and cur_dur > soft_slot + 0.06:
-            desired_slot = min(hard_slot, max(orig_win * 1.08, soft_slot * 0.96))
-            ratio = min(1.55, cur_dur / max(0.30, desired_slot))
-            samples = time_stretch_samples_48k(raw_samples, ratio, ffmpeg_bin=ffmpeg_bin)
-        elif cur_dur > hard_slot + 0.08:
-            ratio = min(1.50, cur_dur / max(0.30, hard_slot))
+        if idx + 1 < n_segs:
+            next_cue = max(placed_start + 0.40, float(rendered_segments[idx + 1].get("start", seg_end)))
+            # Allow using natural pause before next cue (plus tiny 0.25s elastic slack) before speeding up!
+            available_before_next = max(0.45, (next_cue - placed_start) - 0.08)
+        elif target_duration_sec > placed_start + 0.50:
+            available_before_next = max(0.50, (target_duration_sec - placed_start) - 0.05)
+        else:
+            available_before_next = max(orig_win * 1.6, cur_dur + 0.2)
+
+        if cur_dur <= available_before_next:
+            # Plenty of room before next line -> keep 100% natural 1.0x human voice prosody!
+            samples = raw_samples
+        elif auto_fit_timing:
+            ratio = min(1.28, cur_dur / max(0.40, available_before_next))
             samples = time_stretch_samples_48k(raw_samples, ratio, ffmpeg_bin=ffmpeg_bin)
         else:
-            samples = raw_samples
+            ratio = min(1.20, cur_dur / max(0.40, available_before_next + 0.25))
+            samples = time_stretch_samples_48k(raw_samples, ratio, ffmpeg_bin=ffmpeg_bin)
 
         final_dur = samples.size / sr
         placed_end = placed_start + final_dur
         placements.append((placed_start, samples))
         speech_intervals.append([round(placed_start, 3), round(placed_end, 3)])
-        cursor_sec = placed_end + 0.04
+        cursor_sec = placed_end + 0.08
 
     total_sec = max(float(target_duration_sec or 0.0), cursor_sec + 0.15, 0.5)
     total_samples = int(round(total_sec * sr))
@@ -873,10 +932,9 @@ def mix_and_export_dubbed_outputs(
     orig_meta = probe_media_info(orig_media_path, ffmpeg_bin=ffmpeg_bin) if has_orig else {"hasAudio": False, "durationSec": 0.0}
     vid_dur = float(orig_meta.get("durationSec") or 0.0)
 
+    # Never cut off the final dubbed sentence even if it finishes slightly past vid_dur!
     target_frames = voice_mono.size
-    if is_video and vid_dur > 0.5:
-        target_frames = max(int(round(vid_dur * sr)), 1)
-    elif has_orig and vid_dur > 0.5:
+    if has_orig and vid_dur > 0.5:
         target_frames = max(int(round(vid_dur * sr)), voice_mono.size)
 
     if voice_mono.size < target_frames:
@@ -896,22 +954,31 @@ def mix_and_export_dubbed_outputs(
         else:
             orig_aligned = orig_stereo[:target_frames]
 
-        # Build 100Hz control envelope for smooth fader automation
+        # Build 100Hz control envelope with anti-pumping dialogue bridge (< 1.85s gap stays smoothly ducked!)
         ctrl_hz = 100
         n_ctrl = max(4, int(np.ceil((target_frames / sr) * ctrl_hz)) + 1)
         env_ctrl = np.full(n_ctrl, orig_vol, dtype=np.float32)
 
         if smart_ducking and speech_intervals:
-            duck_level = orig_vol * 0.24
-            for iv in speech_intervals:
-                if len(iv) >= 2:
-                    c0 = max(0, int(np.floor((float(iv[0]) - 0.12) * ctrl_hz)))
-                    c1 = min(n_ctrl, int(np.ceil((float(iv[1]) + 0.16) * ctrl_hz)))
-                    if c1 > c0:
-                        env_ctrl[c0:c1] = duck_level
+            merged_ivs: list[list[float]] = []
+            for iv in sorted(speech_intervals, key=lambda x: float(x[0])):
+                if len(iv) < 2:
+                    continue
+                s0, e0 = float(iv[0]), float(iv[1])
+                if merged_ivs and (s0 - merged_ivs[-1][1]) < 1.85:
+                    merged_ivs[-1][1] = max(merged_ivs[-1][1], e0)
+                else:
+                    merged_ivs.append([s0, e0])
 
-            # Smooth with 260ms Hann fader window so transitions sound natural & musical
-            win_len = 27
+            duck_level = orig_vol * 0.18
+            for s0, e0 in merged_ivs:
+                c0 = max(0, int(np.floor((s0 - 0.18) * ctrl_hz)))
+                c1 = min(n_ctrl, int(np.ceil((e0 + 0.24) * ctrl_hz)))
+                if c1 > c0:
+                    env_ctrl[c0:c1] = duck_level
+
+            # Smooth with 410ms Hann cinema fader window so scene swells sound musical, never abrupt
+            win_len = 41
             if n_ctrl > win_len:
                 kernel = np.hanning(win_len).astype(np.float32)
                 kernel /= kernel.sum()
@@ -922,7 +989,7 @@ def mix_and_export_dubbed_outputs(
         x_full = np.linspace(0.0, 1.0, target_frames, dtype=np.float32)
         gain_full = np.interp(x_full, x_ctrl, env_ctrl).astype(np.float32)
 
-        mixed_stereo = orig_aligned * gain_full[:, None] + (voice_aligned * 1.06)[:, None]
+        mixed_stereo = orig_aligned * gain_full[:, None] + (voice_aligned * 1.08)[:, None]
         # Smooth broadcast peak limiter (zero harsh clipping even at 100% slider!)
         peak = float(np.max(np.abs(mixed_stereo))) if mixed_stereo.size else 0.0
         if peak > 0.96:
@@ -943,21 +1010,39 @@ def mix_and_export_dubbed_outputs(
     dubbed_mp4_ready = False
     if is_video and has_orig and out_mp4_path:
         ext = os.path.splitext(orig_media_path)[1].lower()
-        can_copy = ext in (".mp4", ".mov", ".m4v")
-        v_codec = ["-c:v", "copy"] if can_copy else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22"]
-        dur_args = ["-t", f"{vid_dur:.2f}"] if vid_dur > 0.5 else ["-shortest"]
-        mp4_cmd = [
-            ffmpeg_bin, "-nostdin", "-y",
-            "-i", orig_media_path,
-            "-i", out_wav_path,
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            *v_codec,
-            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-            *dur_args,
-            "-movflags", "+faststart",
-            out_mp4_path,
-        ]
+        audio_dur_sec = target_frames / sr
+        tail_overhang = audio_dur_sec - vid_dur
+        if tail_overhang > 0.20 and vid_dur > 0.5:
+            # Clone the final video frame briefly so the last spoken word is NEVER cut off!
+            mp4_cmd = [
+                ffmpeg_bin, "-nostdin", "-y",
+                "-i", orig_media_path,
+                "-i", out_wav_path,
+                "-filter_complex", f"[0:v:0]tpad=stop_mode=clone:stop_duration={tail_overhang + 0.15:.2f}[vpad]",
+                "-map", "[vpad]",
+                "-map", "1:a:0",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+                "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+                "-t", f"{audio_dur_sec:.2f}",
+                "-movflags", "+faststart",
+                out_mp4_path,
+            ]
+        else:
+            can_copy = ext in (".mp4", ".mov", ".m4v")
+            v_codec = ["-c:v", "copy"] if can_copy else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22"]
+            dur_args = ["-t", f"{max(vid_dur, audio_dur_sec):.2f}"] if vid_dur > 0.5 else ["-shortest"]
+            mp4_cmd = [
+                ffmpeg_bin, "-nostdin", "-y",
+                "-i", orig_media_path,
+                "-i", out_wav_path,
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                *v_codec,
+                "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+                *dur_args,
+                "-movflags", "+faststart",
+                out_mp4_path,
+            ]
         proc = subprocess.run(mp4_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=240)
         if proc.returncode != 0 or not os.path.exists(out_mp4_path) or os.path.getsize(out_mp4_path) < 1000:
             err_txt = proc.stderr.decode("utf-8", errors="ignore")[-350:]
