@@ -65,6 +65,19 @@
   let lastDetectedLang = 'auto';
   let dubVoicesCatalog = [];
   let previewObjUrl = null;
+  let activeDubSource = 'none'; // 'none' | 'file' | 'youtube'
+  let lastYoutubeKey = '';
+  let lastYoutubeTitle = '';
+
+  function normalizeOnlineUrl(raw) {
+    const trimmed = String(raw || '').trim();
+    if (!trimmed) return '';
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (/^(www\.|m\.|youtube\.com\/|youtu\.be\/|tiktok\.com\/|vt\.tiktok\.com\/|fb\.watch\/)/i.test(trimmed)) {
+      return `https://${trimmed}`;
+    }
+    return trimmed;
+  }
 
   function isViLang() {
     return !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
@@ -110,6 +123,24 @@
         : `<option value="mute">🔇 Mute Original 100% — Clean Voice Replacement</option>
            <option value="duck15">🔉 Keep 15% Original Ambience (Voice-Over Mix)</option>`;
       bgSel.value = prevBg;
+    }
+
+    const ytInput = document.getElementById('dubYoutubeUrlInput');
+    if (ytInput) {
+      ytInput.placeholder = isVi
+        ? 'Dán link YouTube, YouTube Shorts vào đây (VD: https://www.youtube.com/watch?v=...)'
+        : 'Paste YouTube or YouTube Shorts link here (e.g. https://www.youtube.com/watch?v=...)';
+    }
+
+    const ytModeSel = document.getElementById('dubYoutubeModeSelect');
+    if (ytModeSel) {
+      const prevMode = ytModeSel.value || 'video';
+      ytModeSel.innerHTML = isVi
+        ? `<option value="video">🎬 Tải Video .MP4 + Lồng tiếng (720p HD)</option>
+           <option value="audio">🎵 Chỉ lấy Âm thanh .MP3 (Siêu tốc)</option>`
+        : `<option value="video">🎬 Video .MP4 + AI Dubbing (720p HD)</option>
+           <option value="audio">🎵 Audio Only .MP3 (Fast)</option>`;
+      ytModeSel.value = prevMode === 'audio' ? 'audio' : 'video';
     }
   }
 
@@ -235,11 +266,61 @@
     if (pctEl) pctEl.textContent = `${Math.round(pct)}%`;
   }
 
+  function syncYoutubeInputState() {
+    const ytInput = document.getElementById('dubYoutubeUrlInput');
+    const ytModeSel = document.getElementById('dubYoutubeModeSelect');
+    const btnClear = document.getElementById('btnClearYoutubeUrl');
+    const ytBar = document.getElementById('dubYoutubeBar');
+    const ytBadge = document.getElementById('dubYoutubeStatusBadge');
+    const videoOpts = document.getElementById('dubVideoOptionsRow');
+
+    const rawUrl = normalizeOnlineUrl(ytInput ? ytInput.value : '');
+    const ytMode = ytModeSel?.value === 'audio' ? 'audio' : 'video';
+
+    if (btnClear) btnClear.classList.toggle('hidden', !rawUrl);
+
+    if (!rawUrl) {
+      if (ytBar) ytBar.classList.remove('ring-1', 'ring-rose-400/60');
+      if (ytBadge) ytBadge.classList.add('hidden');
+      if (activeDubSource === 'youtube') {
+        activeDubSource = selectedMediaFile ? 'file' : 'none';
+        currentMediaSessionId = '';
+        lastYoutubeKey = '';
+        lastYoutubeTitle = '';
+      }
+      return;
+    }
+
+    activeDubSource = 'youtube';
+    selectedIsVideo = ytMode === 'video';
+    if (ytBar) ytBar.classList.add('ring-1', 'ring-rose-400/60');
+    if (videoOpts) videoOpts.classList.toggle('hidden', !selectedIsVideo);
+
+    const nextKey = `${rawUrl}|${ytMode}`;
+    if (nextKey !== lastYoutubeKey) {
+      currentMediaSessionId = '';
+      lastYoutubeTitle = '';
+      const srcBox = document.getElementById('dubSourceTranscript');
+      const trBox = document.getElementById('dubTranslatedScript');
+      if (srcBox) srcBox.value = '';
+      if (trBox) trBox.value = '';
+      document.getElementById('dubScriptsEditorCard')?.classList.add('hidden');
+      document.getElementById('dubOutputCard')?.classList.add('hidden');
+      document.getElementById('dubOriginalPreviewWrap')?.classList.add('hidden');
+      if (ytBadge) ytBadge.classList.add('hidden');
+    }
+  }
+
   function handleSelectMediaFile(file) {
     if (!file) return;
     selectedMediaFile = file;
+    activeDubSource = 'file';
+    lastYoutubeKey = '';
+    lastYoutubeTitle = '';
     selectedIsVideo = isVideoFilename(file.name, file.type);
     currentMediaSessionId = '';
+    document.getElementById('dubYoutubeBar')?.classList.remove('ring-1', 'ring-rose-400/60');
+    document.getElementById('dubYoutubeStatusBadge')?.classList.add('hidden');
     const srcBox = document.getElementById('dubSourceTranscript');
     const trBox = document.getElementById('dubTranslatedScript');
     if (srcBox) srcBox.value = '';
@@ -287,42 +368,73 @@
 
   async function runTranscribeAndTranslate() {
     const isVi = isViLang();
-    if (!selectedMediaFile) {
+    const ytInput = document.getElementById('dubYoutubeUrlInput');
+    const ytUrl = normalizeOnlineUrl(ytInput ? ytInput.value : '');
+    const ytMode = document.getElementById('dubYoutubeModeSelect')?.value === 'audio' ? 'audio' : 'video';
+    const useYoutube = (activeDubSource === 'youtube' && Boolean(ytUrl)) || (!selectedMediaFile && Boolean(ytUrl));
+
+    if (!useYoutube && !selectedMediaFile) {
       if (typeof window.showToast === 'function') {
         window.showToast(
-          isVi ? 'Vui lòng chọn file âm thanh (.mp3, .wav) hoặc video (.mp4) trước!' : 'Please choose an audio (.mp3, .wav) or video (.mp4) file first!',
+          isVi
+            ? 'Vui lòng dán link YouTube hoặc chọn file âm thanh (.mp3, .wav) / video (.mp4) trước!'
+            : 'Please paste a YouTube URL or choose an audio (.mp3, .wav) / video (.mp4) file first!',
           'warning'
         );
       }
+      ytInput?.focus();
       return null;
     }
 
     const srcLang = document.getElementById('dubSourceLang')?.value || 'auto';
     const tgtLang = document.getElementById('dubTargetLang')?.value || 'en';
 
-    const baseStep1Msg = isVi
-      ? '🎙️ Bước 1/2: AI đang nghe nhận diện lời nói & dịch sang ngôn ngữ đích...'
-      : '🎙️ Step 1/2: Transcribing speech & translating into target language...';
-    setDubProgress(true, baseStep1Msg, 25);
+    const baseStep1Msg = useYoutube
+      ? (isVi
+          ? (ytMode === 'video'
+              ? '🎬 Bước 1/2: Đang tải Video từ YouTube, bóc lời nói & dịch đa ngôn ngữ...'
+              : '🎵 Bước 1/2: Đang trích xuất Âm thanh từ YouTube, bóc lời & dịch...')
+          : (ytMode === 'video'
+              ? '🎬 Step 1/2: Downloading YouTube video, transcribing speech & translating...'
+              : '🎵 Step 1/2: Extracting YouTube audio, transcribing speech & translating...'))
+      : (isVi
+          ? '🎙️ Bước 1/2: AI đang nghe nhận diện lời nói & dịch sang ngôn ngữ đích...'
+          : '🎙️ Step 1/2: Transcribing speech & translating into target language...');
+
+    setDubProgress(true, baseStep1Msg, 22);
     const t0 = Date.now();
     const step1Timer = setInterval(() => {
       const sec = Math.floor((Date.now() - t0) / 1000);
-      const p = Math.min(52, 25 + Math.floor(sec * 0.6));
+      const p = Math.min(54, 22 + Math.floor(sec * 0.65));
       setDubProgress(true, `${baseStep1Msg} (${sec}s)`, p);
     }, 1000);
 
     let res;
     try {
-      res = await fetch('/api/dubbing/transcribe-translate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-File-Name': encodeURIComponent(selectedMediaFile.name),
-          'X-Source-Lang': srcLang,
-          'X-Target-Lang': tgtLang
-        },
-        body: selectedMediaFile
-      });
+      if (useYoutube) {
+        if (ytInput && ytInput.value.trim() !== ytUrl) ytInput.value = ytUrl;
+        res = await fetch('/api/dubbing/youtube', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: ytUrl,
+            downloadMode: ytMode,
+            sourceLang: srcLang,
+            targetLang: tgtLang
+          })
+        });
+      } else {
+        res = await fetch('/api/dubbing/transcribe-translate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-File-Name': encodeURIComponent(selectedMediaFile.name),
+            'X-Source-Lang': srcLang,
+            'X-Target-Lang': tgtLang
+          },
+          body: selectedMediaFile
+        });
+      }
     } finally {
       clearInterval(step1Timer);
     }
@@ -335,6 +447,38 @@
     currentMediaSessionId = data.mediaSessionId || '';
     lastDetectedLang = data.detectedLang || 'vi';
     selectedIsVideo = Boolean(data.isVideo);
+
+    if (useYoutube) {
+      activeDubSource = 'youtube';
+      lastYoutubeKey = `${ytUrl}|${ytMode}`;
+      lastYoutubeTitle = data.title || 'youtube_video';
+
+      const ytBadge = document.getElementById('dubYoutubeStatusBadge');
+      if (ytBadge) {
+        ytBadge.textContent = `✅ ${data.title || 'YouTube'} • ${data.durationSec || 0}s`;
+        ytBadge.classList.remove('hidden');
+      }
+
+      if (data.origPreviewUrl) {
+        const origWrap = document.getElementById('dubOriginalPreviewWrap');
+        const origVid = document.getElementById('dubOrigVideoPreview');
+        const origAud = document.getElementById('dubOrigAudioPreview');
+        if (origWrap && origVid && origAud) {
+          origWrap.classList.remove('hidden');
+          if (selectedIsVideo) {
+            origAud.pause();
+            origAud.classList.add('hidden');
+            origVid.src = data.origPreviewUrl;
+            origVid.classList.remove('hidden');
+          } else {
+            origVid.pause();
+            origVid.classList.add('hidden');
+            origAud.src = data.origPreviewUrl;
+            origAud.classList.remove('hidden');
+          }
+        }
+      }
+    }
 
     const videoOpts = document.getElementById('dubVideoOptionsRow');
     if (videoOpts) videoOpts.classList.toggle('hidden', !selectedIsVideo);
@@ -442,9 +586,16 @@
 
     if (outCard) outCard.classList.remove('hidden');
 
-    const baseSlug = selectedMediaFile
-      ? selectedMediaFile.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]+/g, '_')
-      : 'voxly_dubbed';
+    const rawTitleSource = (activeDubSource === 'youtube' && lastYoutubeTitle)
+      ? lastYoutubeTitle
+      : (selectedMediaFile ? selectedMediaFile.name.replace(/\.[^/.]+$/, '') : 'voxly_dubbed');
+    const baseSlug = rawTitleSource
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/gi, 'd')
+      .replace(/[^a-zA-Z0-9_-]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 48) || 'voxly_dubbed';
     const tgtCode = document.getElementById('dubTargetLang')?.value || 'dub';
 
     if (dlMp3 && data.audioMp3Url) {
@@ -501,6 +652,10 @@
     const fileIn = document.getElementById('dubMediaFileInput');
     const btnPick = document.getElementById('btnPickDubMedia');
     const dropZone = document.getElementById('dubDropZone');
+    const ytInput = document.getElementById('dubYoutubeUrlInput');
+    const ytModeSel = document.getElementById('dubYoutubeModeSelect');
+    const btnPasteYt = document.getElementById('btnPasteYoutubeUrl');
+    const btnClearYt = document.getElementById('btnClearYoutubeUrl');
     const tgtSel = document.getElementById('dubTargetLang');
     const showAllChk = document.getElementById('dubShowAllVoicesChk');
     const btnPreviewVoice = document.getElementById('btnDubPreviewVoice');
@@ -508,6 +663,53 @@
     const btnTranscribeOnly = document.getElementById('btnDubTranscribeOnly');
     const btnRetranslate = document.getElementById('btnDubRetranslate');
     const btnRegenerate = document.getElementById('btnDubRegenerate');
+
+    if (ytInput) {
+      ytInput.addEventListener('input', () => syncYoutubeInputState());
+      ytInput.addEventListener('change', () => syncYoutubeInputState());
+      ytInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          syncYoutubeInputState();
+          if (btnFullAuto && !btnFullAuto.disabled) btnFullAuto.click();
+        }
+      });
+    }
+
+    if (ytModeSel) {
+      ytModeSel.addEventListener('change', () => syncYoutubeInputState());
+    }
+
+    if (btnPasteYt && ytInput) {
+      btnPasteYt.addEventListener('click', async () => {
+        try {
+          if (navigator.clipboard && navigator.clipboard.readText) {
+            const clip = (await navigator.clipboard.readText()).trim();
+            if (clip) {
+              ytInput.value = clip;
+              syncYoutubeInputState();
+              return;
+            }
+          }
+        } catch {}
+        ytInput.focus();
+        ytInput.select();
+        if (typeof window.showToast === 'function') {
+          window.showToast(
+            isViLang() ? 'Nhấn Cmd+V / Ctrl+V để dán link YouTube vào ô!' : 'Press Cmd+V / Ctrl+V to paste the YouTube URL!',
+            'info'
+          );
+        }
+      });
+    }
+
+    if (btnClearYt && ytInput) {
+      btnClearYt.addEventListener('click', () => {
+        ytInput.value = '';
+        syncYoutubeInputState();
+        ytInput.focus();
+      });
+    }
 
     if (btnPick && fileIn) {
       btnPick.addEventListener('click', () => fileIn.click());

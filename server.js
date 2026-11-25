@@ -463,7 +463,10 @@ const MIME_TYPES = {
   '.wasm': 'application/wasm',
   '.wav': 'audio/wav',
   '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.ogg': 'audio/ogg',
   '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
   '.webm': 'video/webm',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -1190,8 +1193,70 @@ const server = http.createServer(async (req, res) => {
   }
 
   // =========================================================================
-  // 2.5 API: MULTILINGUAL AUDIO & VIDEO AI DUBBING STUDIO (.MP3 / .MP4 / .WAV)
+  // 2.5 API: MULTILINGUAL AUDIO & VIDEO AI DUBBING STUDIO (.MP3 / .MP4 / YOUTUBE URL)
   // =========================================================================
+  if (pathname === '/api/dubbing/youtube' && req.method === 'POST') {
+    const dubDir = path.join('/tmp', 'voxly_dub_sessions');
+    fs.mkdirSync(dubDir, { recursive: true });
+    try {
+      const payload = await readJsonBody(req);
+      const ytUrl = String(payload.url || '').trim();
+      const downloadMode = payload.downloadMode === 'audio' ? 'audio' : 'video';
+      const sourceLang = String(payload.sourceLang || 'auto').trim() || 'auto';
+      const targetLang = String(payload.targetLang || 'vi').trim() || 'vi';
+
+      if (!ytUrl) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: 'Vui lòng dán đường link YouTube cần dịch!' }));
+        return;
+      }
+
+      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/youtube-transcribe-translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: ytUrl,
+          downloadMode,
+          outDir: dubDir,
+          sourceLang,
+          targetLang
+        })
+      });
+      const data = await dRes.json().catch(() => ({}));
+      if (!dRes.ok || !data.success) {
+        throw new Error(data.error || `Lỗi tải & nhận diện link YouTube (HTTP ${dRes.status})`);
+      }
+
+      const sessionId = `ytdub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const downloadedBasename = path.basename(data.mediaPath || '');
+      fs.writeFileSync(
+        path.join(dubDir, `${sessionId}_meta.json`),
+        JSON.stringify({
+          sessionId,
+          origPath: data.mediaPath,
+          origName: `${data.title || 'youtube_video'}${data.isVideo ? '.mp4' : '.m4a'}`,
+          isVideo: Boolean(data.isVideo),
+          durationSec: data.durationSec || 0,
+          createdAt: Date.now()
+        }),
+        'utf-8'
+      );
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        ...data,
+        mediaSessionId: sessionId,
+        origPreviewUrl: downloadedBasename ? `/api/dubbing/download/${downloadedBasename}` : null,
+        fileName: data.title || 'YouTube Video'
+      }));
+    } catch (err) {
+      console.error('[Voxly YouTube Dubbing Error]:', err.message);
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
   if (pathname === '/api/dubbing/transcribe-translate' && req.method === 'POST') {
     const dubDir = path.join('/tmp', 'voxly_dub_sessions');
     fs.mkdirSync(dubDir, { recursive: true });

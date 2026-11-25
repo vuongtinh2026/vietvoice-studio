@@ -1129,6 +1129,37 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 self.wfile.write(audio_bytes)
                 return
 
+            if self.path == "/dub/youtube-transcribe-translate":
+                data = self._read_json()
+                yt_url = str(data.get("url", "")).strip()
+                dl_mode = str(data.get("downloadMode", "video")).strip() or "video"
+                out_dir = str(data.get("outDir", "/tmp/voxly_dub_sessions")).strip() or "/tmp/voxly_dub_sessions"
+                source_lang = str(data.get("sourceLang", "auto")).strip() or "auto"
+                target_lang = str(data.get("targetLang", "vi")).strip() or "vi"
+
+                dl_info = media_dubber.download_online_video_url(
+                    raw_url=yt_url,
+                    out_dir=out_dir,
+                    download_mode=dl_mode,
+                    ffmpeg_bin=FFMPEG_BIN,
+                )
+                tr_info = media_dubber.transcribe_and_translate_media(
+                    media_path=dl_info["mediaPath"],
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    ffmpeg_bin=FFMPEG_BIN,
+                )
+                merged = {
+                    **tr_info,
+                    "mediaPath": dl_info["mediaPath"],
+                    "title": dl_info.get("title", "YouTube Video"),
+                    "uploader": dl_info.get("uploader", ""),
+                    "thumbnail": dl_info.get("thumbnail", ""),
+                    "isVideo": bool(dl_info.get("isVideo") and tr_info.get("isVideo")),
+                }
+                self._send_json(200, merged)
+                return
+
             if self.path == "/dub/transcribe-translate":
                 data = self._read_json()
                 media_path = str(data.get("mediaPath", "")).strip()

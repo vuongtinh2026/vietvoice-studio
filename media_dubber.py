@@ -6,12 +6,16 @@ Voxly Studio — Multilingual Audio & Video Dubbing Engine
 - Instant FFmpeg .MP4 / .MOV / .WEBM Video Stream Re-Muxing (-c:v copy + smart atempo sync + audio ducking)
 """
 import concurrent.futures
+import glob
 import hashlib
+import ipaddress
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
+import sys
 import threading
 import urllib.error
 import urllib.parse
@@ -497,3 +501,119 @@ def mux_dubbed_audio_into_video(
 
     out_meta = probe_media_info(out_mp4_path, ffmpeg_bin=ffmpeg_bin)
     return {"success": True, "durationSec": round(out_meta.get("durationSec") or vid_dur, 2)}
+
+
+def _validate_safe_public_video_url(raw_url: str) -> str:
+    url = (raw_url or "").strip()
+    if not url:
+        raise ValueError("Vui lòng dán đường link YouTube hoặc video cần dịch!")
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("Đường link không hợp lệ! Vui lòng dán link bắt đầu bằng https:// (VD: https://www.youtube.com/watch?v=...).")
+    host = parsed.hostname.strip().lower()
+    if host in ("localhost", "0.0.0.0") or host.endswith(".local"):
+        raise ValueError("Chỉ hỗ trợ đường link video công khai trên Internet (YouTube, Shorts, TikTok, Vimeo...).")
+    try:
+        infos = socket.getaddrinfo(host, None)
+        for item in infos:
+            ip_str = item[4][0]
+            ip_obj = ipaddress.ip_address(ip_str)
+            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_reserved:
+                raise ValueError("Không cho phép truy cập địa chỉ mạng nội bộ.")
+    except ValueError:
+        raise
+    except Exception:
+        pass
+    return url
+
+
+def download_online_video_url(
+    raw_url: str,
+    out_dir: str,
+    download_mode: str = "video",
+    ffmpeg_bin: str = "ffmpeg",
+) -> dict:
+    """
+    Downloads YouTube / Shorts / TikTok / public online video or audio via yt-dlp
+    with local URL-hash caching so re-translating the same URL is instantaneous!
+    """
+    clean_url = _validate_safe_public_video_url(raw_url)
+    os.makedirs(out_dir, exist_ok=True)
+    mode = "audio" if download_mode == "audio" else "video"
+    url_hash = hashlib.sha256(f"{clean_url}|{mode}".encode("utf-8")).hexdigest()[:16]
+    cache_prefix = os.path.join(out_dir, f"yt_cache_{url_hash}_{mode}")
+    meta_cache_path = f"{cache_prefix}.info_meta.json"
+
+    # Reuse cached download if already fetched recently!
+    if os.path.exists(meta_cache_path):
+        try:
+            cached = json.load(open(meta_cache_path, "r", encoding="utf-8"))
+            c_path = cached.get("mediaPath", "")
+            if c_path and os.path.exists(c_path) and os.path.getsize(c_path) > 1000:
+                return cached
+        except Exception:
+            pass
+
+    try:
+        import yt_dlp
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "yt-dlp>=2025.1.0"])
+        import yt_dlp
+
+    ffmpeg_dir = os.path.dirname(ffmpeg_bin) if os.path.isabs(ffmpeg_bin) else None
+    ydl_opts: dict = {
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "max_filesize": 260 * 1024 * 1024,
+        "socket_timeout": 20,
+        "outtmpl": f"{cache_prefix}.%(ext)s",
+    }
+    if ffmpeg_dir and os.path.isdir(ffmpeg_dir):
+        ydl_opts["ffmpeg_location"] = ffmpeg_dir
+
+    if mode == "audio":
+        ydl_opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
+    else:
+        ydl_opts["format"] = (
+            "bestvideo[height<=720][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
+            "best[height<=720][ext=mp4]/best[ext=mp4]/best"
+        )
+        ydl_opts["merge_output_format"] = "mp4"
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(clean_url, download=True)
+            prepared = ydl.prepare_filename(info)
+    except Exception as e:
+        raise RuntimeError(f"Không thể tải video từ đường link này: {str(e)[:220]}")
+
+    media_path = prepared
+    if not os.path.exists(media_path):
+        candidates = [
+            p for p in glob.glob(f"{cache_prefix}.*")
+            if not p.endswith(".json") and not p.endswith(".part") and not p.endswith(".ytdl")
+        ]
+        if candidates:
+            media_path = max(candidates, key=os.path.getsize)
+
+    if not media_path or not os.path.exists(media_path) or os.path.getsize(media_path) < 1000:
+        raise RuntimeError("Không lấy được dữ liệu âm thanh/video từ link đã dán!")
+
+    probed = probe_media_info(media_path, ffmpeg_bin=ffmpeg_bin)
+    res_meta = {
+        "mediaPath": media_path,
+        "title": str(info.get("title") or "YouTube Video").strip(),
+        "uploader": str(info.get("uploader") or info.get("channel") or "").strip(),
+        "thumbnail": str(info.get("thumbnail") or "").strip(),
+        "durationSec": round(float(probed.get("durationSec") or info.get("duration") or 0.0), 2),
+        "isVideo": bool(probed.get("hasVideo")) if mode == "video" else False,
+    }
+    try:
+        with open(meta_cache_path, "w", encoding="utf-8") as mf:
+            json.dump(res_meta, mf, ensure_ascii=False)
+    except Exception:
+        pass
+    return res_meta
