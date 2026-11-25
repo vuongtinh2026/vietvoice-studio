@@ -1236,7 +1236,9 @@ const server = http.createServer(async (req, res) => {
           origPath: data.mediaPath,
           origName: `${data.title || 'youtube_video'}${data.isVideo ? '.mp4' : '.m4a'}`,
           isVideo: Boolean(data.isVideo),
+          hasOrigAudio: data.hasOrigAudio !== false,
           durationSec: data.durationSec || 0,
+          segments: Array.isArray(data.segments) ? data.segments : [],
           createdAt: Date.now()
         }),
         'utf-8'
@@ -1313,7 +1315,9 @@ const server = http.createServer(async (req, res) => {
           origPath: mediaPath,
           origName: rawName,
           isVideo: Boolean(data.isVideo),
+          hasOrigAudio: data.hasOrigAudio !== false,
           durationSec: data.durationSec || 0,
+          segments: Array.isArray(data.segments) ? data.segments : [],
           createdAt: Date.now()
         }),
         'utf-8'
@@ -1323,6 +1327,7 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({
         ...data,
         mediaSessionId: sessionId,
+        origPreviewUrl: `/api/dubbing/download/${path.basename(mediaPath)}`,
         fileName: rawName
       }));
     } catch (err) {
@@ -1365,9 +1370,13 @@ const server = http.createServer(async (req, res) => {
       const rawText = String(payload.text || '').trim();
       const voice = String(payload.voice || 'free-vi-ngoc-huyen').trim();
       const rate = parseFloat(payload.rate) || 1.0;
-      const pause = parseFloat(payload.pause) || 0.35;
-      const bgMixMode = payload.bgMixMode === 'duck15' ? 'duck15' : 'mute';
+      const pause = parseFloat(payload.pause) || 0.25;
+      const syncTimeline = payload.syncTimeline !== false;
       const autoFitTiming = payload.autoFitTiming !== false;
+      const origVolumePct = payload.origVolumePct !== undefined && payload.origVolumePct !== null
+        ? Math.max(0, Math.min(100, Number(payload.origVolumePct)))
+        : (payload.bgMixMode === 'mute' ? 0 : 40);
+      const smartDucking = payload.smartDucking !== false;
       const mediaSessionId = String(payload.mediaSessionId || '').replace(/[^a-zA-Z0-9_]/g, '');
       const ownerToken = req.headers['x-owner-token'] || payload.ownerToken || '';
 
@@ -1377,7 +1386,44 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const charCost = rawText.length;
+      // Parse `[mm:ss.d - mm:ss.d] Spoken text` cues and strip timestamps before counting quota!
+      const tsRe = /^\s*\[(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\]\s*(.*)$/;
+      const parseTsSec = (s) => {
+        const p = String(s || '').split(':').map(Number);
+        if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+        if (p.length === 2) return p[0] * 60 + p[1];
+        return p[0] || 0;
+      };
+
+      const parsedSegs = [];
+      let hasTimestamps = false;
+      for (const line of rawText.split(/\r?\n/)) {
+        const m = tsRe.exec(line);
+        if (m) {
+          hasTimestamps = true;
+          const st = parseTsSec(m[1]);
+          const en = Math.max(st + 0.25, parseTsSec(m[2]));
+          const txt = (m[3] || '').trim();
+          if (txt) parsedSegs.push({ start: st, end: en, text: normalizeTextForVoice(txt, voice) });
+        } else if (hasTimestamps && parsedSegs.length > 0 && line.trim()) {
+          parsedSegs[parsedSegs.length - 1].text = normalizeTextForVoice(
+            `${parsedSegs[parsedSegs.length - 1].text} ${line.trim()}`,
+            voice
+          );
+        }
+      }
+
+      const spokenOnlyText = hasTimestamps && parsedSegs.length > 0
+        ? parsedSegs.map(s => s.text).join(' ').trim()
+        : normalizeTextForVoice(rawText, voice);
+
+      if (!spokenOnlyText) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: 'Nội dung thoại sau mốc thời gian đang trống!' }));
+        return;
+      }
+
+      const charCost = spokenOnlyText.length;
       const preCheck = await verifyAndConsumeLicenseQuota(req, payload, charCost, true);
       if (!preCheck.ok) {
         res.writeHead(preCheck.status || 403, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -1389,63 +1435,81 @@ const server = http.createServer(async (req, res) => {
         await getVoicesFree().catch(() => {});
       }
 
-      const cleanText = normalizeTextForVoice(rawText, voice);
-      const synthResult = await synthesizeFree(cleanText, voice, rate, pause, ownerToken);
-
       const dubDir = path.join('/tmp', 'voxly_dub_sessions');
       fs.mkdirSync(dubDir, { recursive: true });
-      const outId = `out_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const wavFile = `${outId}.wav`;
-      const mp3File = `${outId}.mp3`;
-      const wavPath = path.join(dubDir, wavFile);
-      const mp3Path = path.join(dubDir, mp3File);
-      fs.writeFileSync(wavPath, synthResult.audio);
+      const activeSessionId = mediaSessionId || `dub_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const metaPath = path.join(dubDir, `${activeSessionId}_meta.json`);
+      let meta = {};
+      if (fs.existsSync(metaPath)) {
+        try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')); } catch {}
+      }
 
-      const ffmpegBin = fs.existsSync('/opt/homebrew/bin/ffmpeg') ? '/opt/homebrew/bin/ffmpeg' : 'ffmpeg';
-      await new Promise((resolve, reject) => {
-        execFile(ffmpegBin, ['-y', '-i', wavPath, '-codec:a', 'libmp3lame', '-b:a', '96k', '-ac', '1', '-ar', '48000', mp3Path], (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-
-      let dubbedVideoUrl = null;
-      if (mediaSessionId) {
-        const metaPath = path.join(dubDir, `${mediaSessionId}_meta.json`);
-        if (fs.existsSync(metaPath)) {
-          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-          if (meta.isVideo && meta.origPath && fs.existsSync(meta.origPath)) {
-            const mp4File = `${outId}_dubbed.mp4`;
-            const mp4Path = path.join(dubDir, mp4File);
-            const muxRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/mux-video`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                origVideoPath: meta.origPath,
-                dubWavPath: wavPath,
-                outMp4Path: mp4Path,
-                bgMixMode,
-                autoFitTiming
-              })
-            });
-            const muxData = await muxRes.json().catch(() => ({}));
-            if (muxRes.ok && muxData.success && fs.existsSync(mp4Path)) {
-              dubbedVideoUrl = `/api/dubbing/download/${mp4File}`;
-            }
-          }
+      // If user edited lines without `[mm:ss]` brackets but line count matches stored Whisper segments, align them!
+      let finalSegments = syncTimeline ? parsedSegs : [];
+      if (syncTimeline && finalSegments.length === 0 && Array.isArray(meta.segments) && meta.segments.length > 0) {
+        const plainLines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (plainLines.length === meta.segments.length) {
+          finalSegments = meta.segments.map((s, idx) => ({
+            start: s.start,
+            end: s.end,
+            text: normalizeTextForVoice(plainLines[idx], voice)
+          }));
         }
       }
+
+      const outId = `out_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const renderHeaders = { 'Content-Type': 'application/json' };
+      if (ownerToken) renderHeaders['X-Owner-Token'] = ownerToken;
+
+      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/render-synced`, {
+        method: 'POST',
+        headers: renderHeaders,
+        body: JSON.stringify({
+          text: spokenOnlyText,
+          segments: finalSegments,
+          voice,
+          rate,
+          pause,
+          ownerToken: ownerToken || undefined,
+          origMediaPath: meta.origPath || '',
+          isVideo: Boolean(meta.isVideo),
+          durationSec: Number(meta.durationSec || 0),
+          syncTimeline,
+          autoFitTiming,
+          origVolume: origVolumePct / 100.0,
+          smartDucking,
+          outDir: dubDir,
+          outId
+        })
+      });
+      const rData = await dRes.json().catch(() => ({}));
+      if (!dRes.ok || !rData.success) {
+        const errObj = new Error(rData.error || `Lỗi tổng hợp lồng tiếng (HTTP ${dRes.status})`);
+        if (dRes.status === 403) errObj.status = 403;
+        throw errObj;
+      }
+
+      // Persist pure voice track + speech intervals so adjusting Original Audio Volume slider later takes 0.4s & 0 chars!
+      meta.sessionId = activeSessionId;
+      meta.lastPureVoiceWavPath = rData.pureVoiceWavPath;
+      meta.lastSpeechIntervals = rData.speechIntervals || [];
+      meta.lastVoiceName = rData.voiceName || voice;
+      fs.writeFileSync(metaPath, JSON.stringify(meta), 'utf-8');
 
       const committed = await verifyAndConsumeLicenseQuota(req, payload, charCost, false);
       const headers = attachQuotaHeaders({ 'Content-Type': 'application/json; charset=utf-8' }, committed);
       res.writeHead(200, headers);
       res.end(JSON.stringify({
         success: true,
-        audioWavUrl: `/api/dubbing/download/${wavFile}`,
-        audioMp3Url: `/api/dubbing/download/${mp3File}`,
-        dubbedVideoUrl,
-        audioSeconds: Number(synthResult.seconds.toFixed(1)),
-        voiceName: synthResult.voice.name || voice,
+        mediaSessionId: activeSessionId,
+        audioWavUrl: `/api/dubbing/download/${rData.outWavFile}`,
+        audioMp3Url: `/api/dubbing/download/${rData.outMp3File}`,
+        dubbedVideoUrl: rData.outMp4File ? `/api/dubbing/download/${rData.outMp4File}` : null,
+        audioSeconds: Number(Number(rData.audioSeconds || 0).toFixed(1)),
+        voiceName: rData.voiceName || voice,
+        syncedSegmentsCount: rData.syncedSegmentsCount || 0,
+        origVolumePct,
+        smartDucking,
         charsUsed: charCost,
         elapsedMs: Date.now() - tStart
       }));
@@ -1453,6 +1517,69 @@ const server = http.createServer(async (req, res) => {
       console.error('[Voxly Dubbing Render Error]:', err.message);
       res.writeHead(err.status || 500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ success: false, code: err.code || 'dub_failed', error: err.message }));
+    }
+    return;
+  }
+
+  if (pathname === '/api/dubbing/remix' && req.method === 'POST') {
+    try {
+      const tStart = Date.now();
+      const payload = await readJsonBody(req);
+      const mediaSessionId = String(payload.mediaSessionId || '').replace(/[^a-zA-Z0-9_]/g, '');
+      const origVolumePct = Math.max(0, Math.min(100, Number(payload.origVolumePct ?? 40)));
+      const smartDucking = payload.smartDucking !== false;
+
+      const dubDir = path.join('/tmp', 'voxly_dub_sessions');
+      const metaPath = path.join(dubDir, `${mediaSessionId}_meta.json`);
+      if (!mediaSessionId || !fs.existsSync(metaPath)) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: 'Vui lòng tạo bản lồng tiếng ít nhất 1 lần trước khi chỉnh nhanh âm lượng gốc!' }));
+        return;
+      }
+
+      const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+      if (!meta.lastPureVoiceWavPath || !fs.existsSync(meta.lastPureVoiceWavPath)) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: 'Không tìm thấy bản thu giọng để trộn lại, vui lòng bấm Tạo Lồng Tiếng lại!' }));
+        return;
+      }
+
+      const outId = `remix_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/remix-volume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pureVoiceWavPath: meta.lastPureVoiceWavPath,
+          speechIntervals: meta.lastSpeechIntervals || [],
+          origMediaPath: meta.origPath || '',
+          isVideo: Boolean(meta.isVideo),
+          origVolume: origVolumePct / 100.0,
+          smartDucking,
+          outDir: dubDir,
+          outId
+        })
+      });
+      const rData = await dRes.json().catch(() => ({}));
+      if (!dRes.ok || !rData.success) {
+        throw new Error(rData.error || `Lỗi trộn lại âm thanh gốc (HTTP ${dRes.status})`);
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: true,
+        audioWavUrl: `/api/dubbing/download/${rData.outWavFile}`,
+        audioMp3Url: `/api/dubbing/download/${rData.outMp3File}`,
+        dubbedVideoUrl: rData.outMp4File ? `/api/dubbing/download/${rData.outMp4File}` : null,
+        audioSeconds: Number(Number(rData.audioSeconds || 0).toFixed(1)),
+        voiceName: meta.lastVoiceName || 'AI 48kHz',
+        origVolumePct,
+        smartDucking,
+        elapsedMs: Date.now() - tStart
+      }));
+    } catch (err) {
+      console.error('[Voxly Dubbing Remix Error]:', err.message);
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
     }
     return;
   }

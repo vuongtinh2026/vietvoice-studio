@@ -304,10 +304,247 @@ def translate_text_multilingual(text: str, source_lang: str = "auto", target_lan
     return " ".join(translated_parts).strip(), detected_final
 
 
+def format_timestamp_sec(sec: float) -> str:
+    s = max(0.0, float(sec or 0.0))
+    hrs = int(s // 3600)
+    mins = int((s % 3600) // 60)
+    rem = s - (hrs * 3600 + mins * 60)
+    if hrs > 0:
+        return f"{hrs:02d}:{mins:02d}:{rem:04.1f}"
+    return f"{mins:02d}:{rem:04.1f}"
+
+
+def _parse_ts_str(ts_str: str) -> float:
+    parts = [p.strip() for p in (ts_str or "").split(":")]
+    if len(parts) == 3:
+        return float(parts[0]) * 3600.0 + float(parts[1]) * 60.0 + float(parts[2])
+    if len(parts) == 2:
+        return float(parts[0]) * 60.0 + float(parts[1])
+    return float(parts[0] or 0.0)
+
+
+_TS_LINE_RE = re.compile(r"^\s*\[(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\]\s*(.*)$")
+
+
+def format_timestamped_script(segments: list[dict], text_key: str = "text") -> str:
+    lines: list[str] = []
+    for seg in segments or []:
+        txt = re.sub(r"\s+", " ", str(seg.get(text_key) or seg.get("text") or "")).strip()
+        if not txt:
+            continue
+        st = format_timestamp_sec(seg.get("start", 0.0))
+        en = format_timestamp_sec(seg.get("end", 0.0))
+        lines.append(f"[{st} - {en}] {txt}")
+    return "\n".join(lines)
+
+
+def parse_timestamped_script(raw_script: str) -> tuple[list[dict], str, bool]:
+    """
+    Parses `[mm:ss.d - mm:ss.d] Spoken line` lines into structured segments.
+    Returns `(segments, plain_spoken_text, has_timestamps)`.
+    """
+    raw = (raw_script or "").strip()
+    if not raw:
+        return [], "", False
+
+    parsed: list[dict] = []
+    has_ts = False
+    for line in raw.splitlines():
+        m = _TS_LINE_RE.match(line)
+        if m:
+            has_ts = True
+            st = round(_parse_ts_str(m.group(1)), 2)
+            en = round(max(st + 0.25, _parse_ts_str(m.group(2))), 2)
+            txt = m.group(3).strip()
+            if txt:
+                parsed.append({"start": st, "end": en, "text": txt})
+        elif has_ts and parsed and line.strip():
+            parsed[-1]["text"] = f"{parsed[-1]['text']} {line.strip()}".strip()
+
+    if has_ts and parsed:
+        plain = " ".join(s["text"] for s in parsed).strip()
+        return parsed, plain, True
+
+    clean_plain = re.sub(r"\s+", " ", raw).strip()
+    return [], clean_plain, False
+
+
+def translate_segments_multilingual(
+    segments: list[dict],
+    source_lang: str = "auto",
+    target_lang: str = "vi",
+) -> tuple[list[dict], str]:
+    """Translates utterance segments 1-to-1 while preserving exact [start, end] timestamps."""
+    if not segments:
+        return [], source_lang or "auto"
+
+    if not target_lang or target_lang == "same":
+        out = [{**s, "translatedText": s.get("text", "")} for s in segments]
+        return out, source_lang or "auto"
+
+    sl_norm = normalize_translate_lang_code(source_lang) if source_lang and source_lang != "auto" else "auto"
+    tl_norm = normalize_translate_lang_code(target_lang)
+    if sl_norm != "auto" and sl_norm.lower() == tl_norm.lower():
+        out = [{**s, "translatedText": s.get("text", "")} for s in segments]
+        return out, sl_norm
+
+    # Group into safe <=700-char line batches for fast 1-to-1 newline-preserved POST translation
+    batches: list[list[int]] = []
+    cur_batch: list[int] = []
+    cur_len = 0
+    for idx, seg in enumerate(segments):
+        t = re.sub(r"\s+", " ", str(seg.get("text", ""))).strip()
+        if cur_batch and (len(cur_batch) >= 8 or cur_len + len(t) + 2 > 700):
+            batches.append(cur_batch)
+            cur_batch = []
+            cur_len = 0
+        cur_batch.append(idx)
+        cur_len += len(t) + 2
+    if cur_batch:
+        batches.append(cur_batch)
+
+    translated_map: dict[int, str] = {}
+    detected_holder = [sl_norm]
+
+    def _run_batch(idxs: list[int]) -> None:
+        src_lines = [re.sub(r"\s+", " ", str(segments[i].get("text", ""))).strip() for i in idxs]
+        joined = "\n".join(src_lines)
+        tr_joined, det = _translate_single_chunk_gtx(joined, sl_norm, tl_norm)
+        if det and det != "auto":
+            detected_holder[0] = det
+        out_lines = [ln.strip() for ln in (tr_joined or "").split("\n") if ln.strip()]
+        if len(out_lines) == len(idxs):
+            for k, seg_idx in enumerate(idxs):
+                translated_map[seg_idx] = out_lines[k]
+        else:
+            # Strict per-segment fallback guarantees 100% 1-to-1 timestamp alignment!
+            for k, seg_idx in enumerate(idxs):
+                tr_one, det_one = _translate_single_chunk_gtx(src_lines[k], sl_norm, tl_norm)
+                if det_one and det_one != "auto":
+                    detected_holder[0] = det_one
+                translated_map[seg_idx] = (tr_one or src_lines[k]).strip()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, max(1, len(batches)))) as pool:
+        list(pool.map(_run_batch, batches))
+
+    enriched = []
+    for i, seg in enumerate(segments):
+        enriched.append(
+            {
+                "start": seg["start"],
+                "end": seg["end"],
+                "text": seg["text"],
+                "translatedText": translated_map.get(i, seg["text"]),
+            }
+        )
+    return enriched, detected_holder[0]
+
+
+def translate_script_preserving_timestamps(
+    raw_text: str,
+    source_lang: str = "auto",
+    target_lang: str = "vi",
+) -> tuple[str, str]:
+    segs, plain, has_ts = parse_timestamped_script(raw_text)
+    if has_ts and segs:
+        tr_segs, det = translate_segments_multilingual(segs, source_lang=source_lang, target_lang=target_lang)
+        return format_timestamped_script(tr_segs, text_key="translatedText"), det
+    return translate_text_multilingual(plain, source_lang=source_lang, target_lang=target_lang)
+
+
+def _extract_utterance_segments(segments_iter) -> list[dict]:
+    """
+    Uses word-level timestamps (with segment fallback) to capture exact speech start/end
+    and split naturally across pauses >= 0.55s so intro music, laughter & scene pauses stay clean!
+    """
+    words_flat: list[dict] = []
+    fallback_segs: list[dict] = []
+
+    for seg in segments_iter:
+        t = (seg.text or "").strip()
+        if t:
+            fallback_segs.append(
+                {
+                    "start": round(float(seg.start), 2),
+                    "end": round(max(float(seg.end), float(seg.start) + 0.25), 2),
+                    "text": t,
+                }
+            )
+        seg_words = getattr(seg, "words", None)
+        if seg_words:
+            for w in seg_words:
+                wt = (getattr(w, "word", "") or "")
+                if wt.strip():
+                    words_flat.append(
+                        {
+                            "start": float(w.start),
+                            "end": max(float(w.end), float(w.start) + 0.06),
+                            "word": wt,
+                        }
+                    )
+
+    if not words_flat:
+        return fallback_segs
+
+    utterances: list[dict] = []
+    cur_words: list[str] = []
+    cur_start = 0.0
+    cur_end = 0.0
+
+    def _flush():
+        nonlocal cur_words, cur_start, cur_end
+        if not cur_words:
+            return
+        txt = re.sub(r"\s+", " ", "".join(cur_words)).strip()
+        if txt:
+            utterances.append(
+                {
+                    "start": round(max(0.0, cur_start), 2),
+                    "end": round(max(cur_start + 0.25, cur_end), 2),
+                    "text": txt,
+                }
+            )
+        cur_words = []
+
+    for item in words_flat:
+        ws, we, wd = item["start"], item["end"], item["word"]
+        if not cur_words:
+            cur_start = ws
+            cur_end = we
+            cur_words = [wd]
+            continue
+
+        gap = ws - cur_end
+        dur = cur_end - cur_start
+        prev_txt = "".join(cur_words).rstrip()
+        ends_sent = bool(re.search(r"[.!?。？！…][\"')\]»”’]*$", prev_txt))
+        ends_clause = bool(re.search(r"[,;:，；：—\-]$", prev_txt))
+        char_len = len(prev_txt)
+
+        should_split = (
+            gap >= 0.55
+            or (ends_sent and (gap >= 0.18 or dur >= 2.0 or char_len >= 45))
+            or (dur >= 7.5 and (ends_clause or gap >= 0.22))
+            or dur >= 12.0
+            or char_len >= 190
+        )
+        if should_split:
+            _flush()
+            cur_start = ws
+            cur_end = we
+            cur_words = [wd]
+        else:
+            cur_end = max(cur_end, we)
+            cur_words.append(wd)
+
+    _flush()
+    return utterances if utterances else fallback_segs
+
+
 def _compute_media_fast_fingerprint(media_path: str, source_lang: str) -> str:
     st = os.stat(media_path)
     h = hashlib.sha256()
-    h.update(f"{st.st_size}:{source_lang}:".encode("utf-8"))
+    h.update(f"v2:{st.st_size}:{source_lang}:".encode("utf-8"))
     with open(media_path, "rb") as f:
         h.update(f.read(65536))
         if st.st_size > 131072:
@@ -326,7 +563,7 @@ def transcribe_and_translate_media(
     cache_dir = os.path.join("/tmp", "voxly_dub_sessions")
     os.makedirs(cache_dir, exist_ok=True)
     fp_key = _compute_media_fast_fingerprint(media_path, source_lang or "auto")
-    stt_cache_path = os.path.join(cache_dir, f"stt_cache_{fp_key}.json")
+    stt_cache_path = os.path.join(cache_dir, f"stt_v2_{fp_key}.json")
 
     cached_stt = None
     if os.path.exists(stt_cache_path):
@@ -336,8 +573,8 @@ def transcribe_and_translate_media(
         except Exception:
             cached_stt = None
 
-    if cached_stt and cached_stt.get("sourceText"):
-        full_source = cached_stt["sourceText"]
+    if cached_stt and cached_stt.get("segments"):
+        plain_source = cached_stt["sourceText"]
         detected_lang = cached_stt.get("detectedLang", "vi")
         duration_sec = cached_stt.get("durationSec") or meta["durationSec"]
         segs = cached_stt.get("segments") or []
@@ -354,35 +591,24 @@ def transcribe_and_translate_media(
                 audio_f32,
                 language=w_lang,
                 beam_size=2,
+                word_timestamps=True,
+                condition_on_previous_text=False,
                 vad_filter=True,
-                vad_parameters={"min_silence_duration_ms": 350},
+                vad_parameters={"min_silence_duration_ms": 280, "speech_pad_ms": 120},
             )
-            segs = []
-            texts = []
-            for seg in segments_iter:
-                t = (seg.text or "").strip()
-                if t:
-                    segs.append(
-                        {
-                            "start": round(float(seg.start), 2),
-                            "end": round(float(seg.end), 2),
-                            "text": t,
-                        }
-                    )
-                    texts.append(t)
-
-            full_source = re.sub(r"\s+", " ", " ".join(texts)).strip()
+            segs = _extract_utterance_segments(segments_iter)
+            plain_source = re.sub(r"\s+", " ", " ".join(s["text"] for s in segs)).strip()
             detected_lang = getattr(info, "language", None) or (w_lang or "vi")
             duration_sec = meta["durationSec"] or float(getattr(info, "duration", 0.0) or 0.0)
 
-            if not full_source:
+            if not plain_source or not segs:
                 raise ValueError("Không nhận diện được giọng nói trong file này. Vui lòng kiểm tra lại âm lượng file!")
 
             try:
                 with open(stt_cache_path, "w", encoding="utf-8") as cf:
                     json.dump(
                         {
-                            "sourceText": full_source,
+                            "sourceText": plain_source,
                             "detectedLang": detected_lang,
                             "durationSec": round(duration_sec, 2),
                             "segments": segs,
@@ -399,27 +625,27 @@ def transcribe_and_translate_media(
                 except OSError:
                     pass
 
-    if not target_lang or target_lang == "same":
-        translated = full_source
-        effective_target = detected_lang
-    else:
-        translated, _ = translate_text_multilingual(
-            full_source,
-            source_lang=detected_lang,
-            target_lang=target_lang,
-        )
-        effective_target = target_lang
+    tr_segs, _ = translate_segments_multilingual(
+        segs,
+        source_lang=detected_lang,
+        target_lang=target_lang,
+    )
+    effective_target = detected_lang if (not target_lang or target_lang == "same") else target_lang
+    formatted_source = format_timestamped_script(tr_segs, text_key="text")
+    formatted_translated = format_timestamped_script(tr_segs, text_key="translatedText")
 
     return {
         "success": True,
         "isVideo": bool(meta["hasVideo"]),
+        "hasOrigAudio": bool(meta["hasAudio"]),
         "durationSec": round(duration_sec, 2),
         "detectedLang": detected_lang,
         "targetLang": effective_target,
-        "sourceText": full_source,
-        "translatedText": translated,
-        "segments": segs,
-        "segmentsCount": len(segs),
+        "sourceText": formatted_source,
+        "plainSourceText": plain_source,
+        "translatedText": formatted_translated,
+        "segments": tr_segs,
+        "segmentsCount": len(tr_segs),
     }
 
 
@@ -431,6 +657,320 @@ def _build_atempo_chain(ratio: float) -> str:
     return f"atempo={r:.4f}"
 
 
+def wav_bytes_to_f32_48k(wav_bytes: bytes, ffmpeg_bin: str = "ffmpeg") -> np.ndarray:
+    """Decodes WAV bytes into mono 48kHz float32 numpy array."""
+    import io
+
+    try:
+        with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
+            if wf.getnchannels() == 1 and wf.getsampwidth() == 2 and wf.getframerate() == 48000:
+                pcm = wf.readframes(wf.getnframes())
+                return np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+    except Exception:
+        pass
+
+    proc = subprocess.run(
+        [
+            ffmpeg_bin, "-nostdin", "-f", "wav", "-i", "pipe:0",
+            "-ac", "1", "-ar", "48000", "-f", "s16le", "pipe:1",
+        ],
+        input=wav_bytes,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=30,
+    )
+    if proc.returncode != 0 or not proc.stdout:
+        return np.zeros(0, dtype=np.float32)
+    return np.frombuffer(proc.stdout, dtype=np.int16).astype(np.float32) / 32768.0
+
+
+def _f32_48k_to_wav_bytes(samples: np.ndarray, sr: int = 48000) -> bytes:
+    import io
+
+    buf = io.BytesIO()
+    pcm16 = np.clip(samples * 32767.0, -32768.0, 32767.0).astype(np.int16)
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(pcm16.tobytes())
+    return buf.getvalue()
+
+
+def trim_tts_silence_48k(samples: np.ndarray, sr: int = 48000, thresh: float = 0.0045, pad_ms: int = 26) -> np.ndarray:
+    if samples.size == 0:
+        return samples
+    active = np.flatnonzero(np.abs(samples) > thresh)
+    if active.size == 0:
+        return samples[: int(sr * 0.1)]
+    pad = int(sr * (pad_ms / 1000.0))
+    i0 = max(0, int(active[0]) - pad)
+    i1 = min(samples.size, int(active[-1]) + pad)
+    trimmed = samples[i0:i1].copy()
+    fade = min(int(sr * 0.010), trimmed.size // 4)
+    if fade > 4:
+        ramp = np.linspace(0.0, 1.0, fade, dtype=np.float32)
+        trimmed[:fade] *= ramp
+        trimmed[-fade:] *= ramp[::-1]
+    return trimmed
+
+
+def time_stretch_samples_48k(samples: np.ndarray, ratio: float, ffmpeg_bin: str = "ffmpeg") -> np.ndarray:
+    if samples.size < 480 or abs(ratio - 1.0) < 0.035:
+        return samples
+    r = max(0.65, min(1.65, float(ratio)))
+    in_wav = _f32_48k_to_wav_bytes(samples, sr=48000)
+    proc = subprocess.run(
+        [
+            ffmpeg_bin, "-nostdin", "-f", "wav", "-i", "pipe:0",
+            "-af", f"atempo={r:.4f}",
+            "-ac", "1", "-ar", "48000", "-f", "s16le", "pipe:1",
+        ],
+        input=in_wav,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=30,
+    )
+    if proc.returncode != 0 or not proc.stdout:
+        return samples
+    out = np.frombuffer(proc.stdout, dtype=np.int16).astype(np.float32) / 32768.0
+    return trim_tts_silence_48k(out, sr=48000, pad_ms=16)
+
+
+def assemble_synced_voice_track(
+    rendered_segments: list[dict],
+    target_duration_sec: float = 0.0,
+    auto_fit_timing: bool = True,
+    ffmpeg_bin: str = "ffmpeg",
+) -> tuple[np.ndarray, list[list[float]]]:
+    """
+    Places each synthesized segment at its exact [start, end] cue on a 48kHz timeline!
+    Automatically adjusts per-segment pace (up to 1.55x) so lines fit their dialogue windows
+    without overlapping or leaving the rest of the video silent.
+    """
+    sr = 48000
+    if not rendered_segments:
+        n_empty = max(int(sr * max(0.5, target_duration_sec)), 4800)
+        return np.zeros(n_empty, dtype=np.float32), []
+
+    placements: list[tuple[float, np.ndarray]] = []
+    speech_intervals: list[list[float]] = []
+    cursor_sec = 0.0
+    n_segs = len(rendered_segments)
+
+    for idx, item in enumerate(rendered_segments):
+        raw_samples = trim_tts_silence_48k(item["samples"], sr=sr)
+        if raw_samples.size == 0:
+            continue
+
+        seg_start = max(0.0, float(item.get("start", 0.0)))
+        seg_end = max(seg_start + 0.30, float(item.get("end", seg_start + 1.5)))
+        orig_win = max(0.35, seg_end - seg_start)
+
+        placed_start = max(cursor_sec, seg_start)
+
+        if idx + 1 < n_segs:
+            next_cue = max(placed_start + 0.35, float(rendered_segments[idx + 1].get("start", seg_end)))
+            hard_slot = max(0.35, next_cue - placed_start - 0.05)
+        elif target_duration_sec > placed_start + 0.35:
+            hard_slot = max(0.35, target_duration_sec - placed_start - 0.04)
+        else:
+            hard_slot = max(orig_win * 1.4, raw_samples.size / sr)
+
+        soft_slot = min(hard_slot, max(orig_win * 1.22, orig_win + 0.55))
+        cur_dur = raw_samples.size / sr
+
+        if auto_fit_timing and cur_dur > soft_slot + 0.06:
+            desired_slot = min(hard_slot, max(orig_win * 1.08, soft_slot * 0.96))
+            ratio = min(1.55, cur_dur / max(0.30, desired_slot))
+            samples = time_stretch_samples_48k(raw_samples, ratio, ffmpeg_bin=ffmpeg_bin)
+        elif cur_dur > hard_slot + 0.08:
+            ratio = min(1.50, cur_dur / max(0.30, hard_slot))
+            samples = time_stretch_samples_48k(raw_samples, ratio, ffmpeg_bin=ffmpeg_bin)
+        else:
+            samples = raw_samples
+
+        final_dur = samples.size / sr
+        placed_end = placed_start + final_dur
+        placements.append((placed_start, samples))
+        speech_intervals.append([round(placed_start, 3), round(placed_end, 3)])
+        cursor_sec = placed_end + 0.04
+
+    total_sec = max(float(target_duration_sec or 0.0), cursor_sec + 0.15, 0.5)
+    total_samples = int(round(total_sec * sr))
+    master_voice = np.zeros(total_samples, dtype=np.float32)
+
+    for p_start, samps in placements:
+        i0 = int(round(p_start * sr))
+        if i0 >= total_samples:
+            extra = np.zeros((i0 + samps.size) - total_samples, dtype=np.float32)
+            master_voice = np.concatenate([master_voice, extra])
+            total_samples = master_voice.size
+        i1 = min(total_samples, i0 + samps.size)
+        chunk_len = i1 - i0
+        if chunk_len > 0:
+            master_voice[i0:i1] += samps[:chunk_len]
+
+    return np.clip(master_voice, -0.99, 0.99), speech_intervals
+
+
+def _decode_stereo_48k_pcm(media_path: str, ffmpeg_bin: str = "ffmpeg") -> np.ndarray:
+    proc = subprocess.run(
+        [
+            ffmpeg_bin, "-nostdin", "-i", media_path,
+            "-vn", "-ac", "2", "-ar", "48000", "-f", "s16le", "pipe:1",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=240,
+    )
+    if proc.returncode != 0 or not proc.stdout:
+        return np.zeros((0, 2), dtype=np.float32)
+    flat = np.frombuffer(proc.stdout, dtype=np.int16).astype(np.float32) / 32768.0
+    n_frames = flat.size // 2
+    return flat[: n_frames * 2].reshape((n_frames, 2))
+
+
+def _write_pcm_wav_48k(path_out: str, audio: np.ndarray, sr: int = 48000) -> None:
+    if audio.ndim == 1:
+        n_ch = 1
+        pcm16 = np.clip(audio * 32767.0, -32768.0, 32767.0).astype(np.int16)
+    else:
+        n_ch = audio.shape[1]
+        pcm16 = np.clip(audio * 32767.0, -32768.0, 32767.0).astype(np.int16)
+    with wave.open(path_out, "wb") as wf:
+        wf.setnchannels(n_ch)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(pcm16.tobytes())
+
+
+def mix_and_export_dubbed_outputs(
+    pure_voice_wav_path: str,
+    speech_intervals: list[list[float]],
+    out_wav_path: str,
+    out_mp3_path: str,
+    orig_media_path: str = "",
+    out_mp4_path: str = "",
+    is_video: bool = False,
+    orig_volume: float = 0.40,
+    smart_ducking: bool = True,
+    ffmpeg_bin: str = "ffmpeg",
+) -> dict:
+    """
+    Mixes the 48kHz synced AI voice track with the original media audio using:
+    - Adjustable Original Audio Volume (0.0 .. 1.0)
+    - Smart Dynamic Auto-Ducking: full `orig_volume` during music/SFX/laughter/non-speech scenes,
+      smoothly ducking to `orig_volume * 0.25` during dubbed speech with broadcast Hann fades!
+    Exports .WAV (48kHz), .MP3 (128kbps), and .MP4 (stream-copied video + 192kbps AAC).
+    """
+    sr = 48000
+    with open(pure_voice_wav_path, "rb") as vf:
+        voice_mono = wav_bytes_to_f32_48k(vf.read(), ffmpeg_bin=ffmpeg_bin)
+
+    orig_vol = float(max(0.0, min(1.0, orig_volume)))
+    has_orig = bool(orig_media_path and os.path.exists(orig_media_path))
+    orig_meta = probe_media_info(orig_media_path, ffmpeg_bin=ffmpeg_bin) if has_orig else {"hasAudio": False, "durationSec": 0.0}
+    vid_dur = float(orig_meta.get("durationSec") or 0.0)
+
+    target_frames = voice_mono.size
+    if is_video and vid_dur > 0.5:
+        target_frames = max(int(round(vid_dur * sr)), 1)
+    elif has_orig and vid_dur > 0.5:
+        target_frames = max(int(round(vid_dur * sr)), voice_mono.size)
+
+    if voice_mono.size < target_frames:
+        voice_aligned = np.pad(voice_mono, (0, target_frames - voice_mono.size))
+    else:
+        voice_aligned = voice_mono[:target_frames]
+
+    if has_orig and orig_meta.get("hasAudio") and orig_vol > 0.005:
+        orig_stereo = _decode_stereo_48k_pcm(orig_media_path, ffmpeg_bin=ffmpeg_bin)
+    else:
+        orig_stereo = np.zeros((0, 2), dtype=np.float32)
+
+    if orig_stereo.shape[0] > 0 and orig_vol > 0.005:
+        if orig_stereo.shape[0] < target_frames:
+            pad_len = target_frames - orig_stereo.shape[0]
+            orig_aligned = np.pad(orig_stereo, ((0, pad_len), (0, 0)))
+        else:
+            orig_aligned = orig_stereo[:target_frames]
+
+        # Build 100Hz control envelope for smooth fader automation
+        ctrl_hz = 100
+        n_ctrl = max(4, int(np.ceil((target_frames / sr) * ctrl_hz)) + 1)
+        env_ctrl = np.full(n_ctrl, orig_vol, dtype=np.float32)
+
+        if smart_ducking and speech_intervals:
+            duck_level = orig_vol * 0.24
+            for iv in speech_intervals:
+                if len(iv) >= 2:
+                    c0 = max(0, int(np.floor((float(iv[0]) - 0.12) * ctrl_hz)))
+                    c1 = min(n_ctrl, int(np.ceil((float(iv[1]) + 0.16) * ctrl_hz)))
+                    if c1 > c0:
+                        env_ctrl[c0:c1] = duck_level
+
+            # Smooth with 260ms Hann fader window so transitions sound natural & musical
+            win_len = 27
+            if n_ctrl > win_len:
+                kernel = np.hanning(win_len).astype(np.float32)
+                kernel /= kernel.sum()
+                padded = np.pad(env_ctrl, (win_len // 2, win_len // 2), mode="edge")
+                env_ctrl = np.convolve(padded, kernel, mode="valid")[:n_ctrl]
+
+        x_ctrl = np.linspace(0.0, 1.0, n_ctrl, dtype=np.float32)
+        x_full = np.linspace(0.0, 1.0, target_frames, dtype=np.float32)
+        gain_full = np.interp(x_full, x_ctrl, env_ctrl).astype(np.float32)
+
+        mixed_stereo = orig_aligned * gain_full[:, None] + (voice_aligned * 1.06)[:, None]
+        # Smooth broadcast peak limiter (zero harsh clipping even at 100% slider!)
+        peak = float(np.max(np.abs(mixed_stereo))) if mixed_stereo.size else 0.0
+        if peak > 0.96:
+            mixed_stereo = np.tanh(mixed_stereo * 0.95) / np.tanh(0.95) * 0.96
+        _write_pcm_wav_48k(out_wav_path, mixed_stereo, sr=sr)
+    else:
+        _write_pcm_wav_48k(out_wav_path, voice_aligned, sr=sr)
+
+    # Export MP3 (48kHz, 128kbps)
+    mp3_cmd = [
+        ffmpeg_bin, "-nostdin", "-y",
+        "-i", out_wav_path,
+        "-codec:a", "libmp3lame", "-b:a", "128k", "-ar", "48000",
+        out_mp3_path,
+    ]
+    subprocess.run(mp3_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=180, check=True)
+
+    dubbed_mp4_ready = False
+    if is_video and has_orig and out_mp4_path:
+        ext = os.path.splitext(orig_media_path)[1].lower()
+        can_copy = ext in (".mp4", ".mov", ".m4v")
+        v_codec = ["-c:v", "copy"] if can_copy else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22"]
+        dur_args = ["-t", f"{vid_dur:.2f}"] if vid_dur > 0.5 else ["-shortest"]
+        mp4_cmd = [
+            ffmpeg_bin, "-nostdin", "-y",
+            "-i", orig_media_path,
+            "-i", out_wav_path,
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            *v_codec,
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+            *dur_args,
+            "-movflags", "+faststart",
+            out_mp4_path,
+        ]
+        proc = subprocess.run(mp4_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=240)
+        if proc.returncode != 0 or not os.path.exists(out_mp4_path) or os.path.getsize(out_mp4_path) < 1000:
+            err_txt = proc.stderr.decode("utf-8", errors="ignore")[-350:]
+            raise RuntimeError(f"Lỗi ghép lồng tiếng vào video MP4: {err_txt.strip()}")
+        dubbed_mp4_ready = True
+
+    return {
+        "success": True,
+        "audioSeconds": round(target_frames / sr, 2),
+        "dubbedVideoReady": dubbed_mp4_ready,
+    }
+
+
 def mux_dubbed_audio_into_video(
     orig_video_path: str,
     dub_wav_path: str,
@@ -439,68 +979,30 @@ def mux_dubbed_audio_into_video(
     auto_fit_timing: bool = True,
     ffmpeg_bin: str = "ffmpeg",
 ) -> dict:
-    v_meta = probe_media_info(orig_video_path, ffmpeg_bin=ffmpeg_bin)
-    a_meta = probe_media_info(dub_wav_path, ffmpeg_bin=ffmpeg_bin)
-    vid_dur = v_meta.get("durationSec") or 0.0
-    dub_dur = a_meta.get("durationSec") or 0.0
-
-    # Gently match speech pace if dubbed audio is slightly longer/shorter than original video (0.78x..1.38x)
-    atempo_filter = "anull"
-    if auto_fit_timing and vid_dur > 1.0 and dub_dur > 1.0:
-        ratio = dub_dur / vid_dur
-        if 0.78 <= ratio <= 1.38 and abs(ratio - 1.0) >= 0.04:
-            atempo_filter = _build_atempo_chain(ratio)
-        elif ratio > 1.38:
-            atempo_filter = _build_atempo_chain(1.38)
-
-    ext = os.path.splitext(orig_video_path)[1].lower()
-    can_stream_copy_video = ext in (".mp4", ".mov", ".m4v")
-    v_codec_args = ["-c:v", "copy"] if can_stream_copy_video else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "22"]
-
-    if bg_mix_mode == "duck15" and v_meta.get("hasAudio"):
-        # Keep 15% original ambient sound mixed with 100% crisp 48kHz dubbed voice!
-        fc = (
-            f"[0:a]aresample=48000,volume=0.15[bg];"
-            f"[1:a]aresample=48000,{atempo_filter},apad,volume=1.05[dub];"
-            f"[bg][dub]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+    orig_vol = 0.20 if bg_mix_mode == "duck15" else 0.0
+    tmp_wav = f"{out_mp4_path}.mix.wav"
+    tmp_mp3 = f"{out_mp4_path}.mix.mp3"
+    try:
+        res = mix_and_export_dubbed_outputs(
+            pure_voice_wav_path=dub_wav_path,
+            speech_intervals=[],
+            out_wav_path=tmp_wav,
+            out_mp3_path=tmp_mp3,
+            orig_media_path=orig_video_path,
+            out_mp4_path=out_mp4_path,
+            is_video=True,
+            orig_volume=orig_vol,
+            smart_ducking=False,
+            ffmpeg_bin=ffmpeg_bin,
         )
-        cmd = [
-            ffmpeg_bin, "-nostdin", "-y",
-            "-i", orig_video_path,
-            "-i", dub_wav_path,
-            "-filter_complex", fc,
-            "-map", "0:v:0",
-            "-map", "[aout]",
-            *v_codec_args,
-            "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
-            "-movflags", "+faststart",
-            out_mp4_path,
-        ]
-    else:
-        # 100% clean voice replacement, padded with silence or trimmed neatly to video end
-        af = f"aresample=48000,{atempo_filter},apad"
-        dur_args = ["-t", f"{vid_dur:.2f}"] if vid_dur > 0.5 else ["-shortest"]
-        cmd = [
-            ffmpeg_bin, "-nostdin", "-y",
-            "-i", orig_video_path,
-            "-i", dub_wav_path,
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            *v_codec_args,
-            "-af", af,
-            "-c:a", "aac", "-b:a", "160k", "-ar", "48000",
-            *dur_args,
-            "-movflags", "+faststart",
-            out_mp4_path,
-        ]
-
-    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=240)
-    if proc.returncode != 0 or not os.path.exists(out_mp4_path) or os.path.getsize(out_mp4_path) < 1000:
-        err_txt = proc.stderr.decode("utf-8", errors="ignore")[-350:]
-        raise RuntimeError(f"Lỗi ghép lồng tiếng vào video MP4: {err_txt.strip()}")
-
-    out_meta = probe_media_info(out_mp4_path, ffmpeg_bin=ffmpeg_bin)
-    return {"success": True, "durationSec": round(out_meta.get("durationSec") or vid_dur, 2)}
+        return {"success": True, "durationSec": res["audioSeconds"]}
+    finally:
+        for p in (tmp_wav, tmp_mp3):
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
 
 
 def _validate_safe_public_video_url(raw_url: str) -> str:

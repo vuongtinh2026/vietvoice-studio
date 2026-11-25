@@ -79,6 +79,49 @@
     return trimmed;
   }
 
+  function stripTimestampsForQuota(raw) {
+    return String(raw || '')
+      .split(/\r?\n/)
+      .map(line => line.replace(/^\s*\[\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\s*-\s*\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\]\s*/, '').trim())
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+  }
+
+  function getOrigVolumePct() {
+    const r = document.getElementById('dubOrigVolRange');
+    return r ? Math.max(0, Math.min(100, parseInt(r.value, 10) || 0)) : 45;
+  }
+
+  function setOrigVolumePct(pctVal) {
+    const v = Math.max(0, Math.min(100, Math.round(Number(pctVal) || 0)));
+    const r1 = document.getElementById('dubOrigVolRange');
+    const r2 = document.getElementById('dubOutOrigVolRange');
+    const b1 = document.getElementById('dubOrigVolBadge');
+    const b2 = document.getElementById('dubOutOrigVolBadge');
+    if (r1 && Number(r1.value) !== v) r1.value = String(v);
+    if (r2 && Number(r2.value) !== v) r2.value = String(v);
+
+    const isVi = isViLang();
+    const label = v === 0 ? (isVi ? '0% (Tắt)' : '0% (Mute)') : `${v}%`;
+    [b1, b2].forEach(b => {
+      if (!b) return;
+      b.textContent = label;
+      b.classList.toggle('text-slate-400', v === 0);
+      b.classList.toggle('text-cyan-200', v > 0);
+    });
+
+    document.querySelectorAll('.dub-vol-preset').forEach(btn => {
+      const p = parseInt(btn.getAttribute('data-orig-vol') || '-1', 10);
+      const active = p === v;
+      btn.classList.toggle('bg-cyan-500/20', active);
+      btn.classList.toggle('border-cyan-400/40', active);
+      btn.classList.toggle('text-cyan-200', active);
+      btn.classList.toggle('bg-white/5', !active);
+      btn.classList.toggle('border-white/10', !active);
+    });
+  }
+
   function isViLang() {
     return !window.VoiceVietQuota || window.VoiceVietQuota.getLang() === 'vi';
   }
@@ -294,7 +337,6 @@
     activeDubSource = 'youtube';
     selectedIsVideo = ytMode === 'video';
     if (ytBar) ytBar.classList.add('ring-1', 'ring-rose-400/60');
-    if (videoOpts) videoOpts.classList.toggle('hidden', !selectedIsVideo);
 
     const nextKey = `${rawUrl}|${ytMode}`;
     if (nextKey !== lastYoutubeKey) {
@@ -307,6 +349,7 @@
       document.getElementById('dubScriptsEditorCard')?.classList.add('hidden');
       document.getElementById('dubOutputCard')?.classList.add('hidden');
       document.getElementById('dubOriginalPreviewWrap')?.classList.add('hidden');
+      document.getElementById('btnDubQuickRemix')?.classList.add('hidden');
       if (ytBadge) ytBadge.classList.add('hidden');
     }
   }
@@ -321,6 +364,7 @@
     currentMediaSessionId = '';
     document.getElementById('dubYoutubeBar')?.classList.remove('ring-1', 'ring-rose-400/60');
     document.getElementById('dubYoutubeStatusBadge')?.classList.add('hidden');
+    document.getElementById('btnDubQuickRemix')?.classList.add('hidden');
     const srcBox = document.getElementById('dubSourceTranscript');
     const trBox = document.getElementById('dubTranslatedScript');
     if (srcBox) srcBox.value = '';
@@ -330,7 +374,6 @@
 
     const isVi = isViLang();
     const fileLabel = document.getElementById('dubSelectedFileLabel');
-    const videoOpts = document.getElementById('dubVideoOptionsRow');
     const origWrap = document.getElementById('dubOriginalPreviewWrap');
     const origVid = document.getElementById('dubOrigVideoPreview');
     const origAud = document.getElementById('dubOrigAudioPreview');
@@ -341,10 +384,6 @@
         ? (isVi ? '🎬 VIDEO MP4/MOV' : '🎬 VIDEO')
         : (isVi ? '🎵 ÂM THANH MP3/WAV' : '🎵 AUDIO');
       fileLabel.innerHTML = `<span class="text-emerald-300 font-bold"><i class="fa-solid fa-circle-check mr-1"></i>[${kindBadge}] ${esc(file.name)} (${sizeMB} MB)</span>`;
-    }
-
-    if (videoOpts) {
-      videoOpts.classList.toggle('hidden', !selectedIsVideo);
     }
 
     if (previewObjUrl) URL.revokeObjectURL(previewObjUrl);
@@ -480,9 +519,6 @@
       }
     }
 
-    const videoOpts = document.getElementById('dubVideoOptionsRow');
-    if (videoOpts) videoOpts.classList.toggle('hidden', !selectedIsVideo);
-
     const srcBox = document.getElementById('dubSourceTranscript');
     const trBox = document.getElementById('dubTranslatedScript');
     const detBadge = document.getElementById('dubDetectedLangBadge');
@@ -491,9 +527,10 @@
     if (srcBox) srcBox.value = data.sourceText || '';
     if (trBox) trBox.value = data.translatedText || '';
     if (detBadge) {
+      const segCnt = data.segmentsCount || 0;
       detBadge.textContent = isVi
-        ? `Ngôn ngữ gốc: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s`
-        : `Detected: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s`;
+        ? `Ngôn ngữ gốc: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} câu thoại`
+        : `Detected: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} cues`;
     }
     if (scriptsCard) scriptsCard.classList.remove('hidden');
 
@@ -504,11 +541,85 @@
     return data;
   }
 
+  function computeOutputBaseSlug() {
+    const rawTitleSource = (activeDubSource === 'youtube' && lastYoutubeTitle)
+      ? lastYoutubeTitle
+      : (selectedMediaFile ? selectedMediaFile.name.replace(/\.[^/.]+$/, '') : 'voxly_dubbed');
+    return rawTitleSource
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/gi, 'd')
+      .replace(/[^a-zA-Z0-9_-]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 48) || 'voxly_dubbed';
+  }
+
+  function applyRenderedMediaToPlayer(data, preserveSeekSec = null) {
+    const outCard = document.getElementById('dubOutputCard');
+    const outVidWrap = document.getElementById('dubOutVideoWrap');
+    const outVid = document.getElementById('dubResultVideoPlayer');
+    const outAudWrap = document.getElementById('dubOutAudioWrap');
+    const outAud = document.getElementById('dubResultAudioPlayer');
+    const dlMp4 = document.getElementById('btnDubDownloadMp4');
+    const dlMp3 = document.getElementById('btnDubDownloadMp3');
+    const dlWav = document.getElementById('btnDubDownloadWav');
+
+    if (outCard) outCard.classList.remove('hidden');
+    document.getElementById('btnDubQuickRemix')?.classList.remove('hidden');
+
+    const baseSlug = computeOutputBaseSlug();
+    const tgtCode = document.getElementById('dubTargetLang')?.value || 'dub';
+
+    if (dlMp3 && data.audioMp3Url) {
+      dlMp3.href = data.audioMp3Url;
+      dlMp3.download = `${baseSlug}_${tgtCode}_voxly.mp3`;
+    }
+    if (dlWav && data.audioWavUrl) {
+      dlWav.href = data.audioWavUrl;
+      dlWav.download = `${baseSlug}_${tgtCode}_48khz.wav`;
+    }
+
+    if (data.dubbedVideoUrl && outVidWrap && outVid) {
+      outVidWrap.classList.remove('hidden');
+      outAudWrap?.classList.add('hidden');
+      outVid.src = data.dubbedVideoUrl;
+      if (preserveSeekSec !== null && preserveSeekSec > 0) {
+        outVid.addEventListener('loadedmetadata', () => {
+          outVid.currentTime = Math.min(preserveSeekSec, Math.max(0, (outVid.duration || preserveSeekSec) - 0.1));
+          outVid.play().catch(() => {});
+        }, { once: true });
+      } else {
+        outVid.play().catch(() => {});
+      }
+      if (dlMp4) {
+        dlMp4.classList.remove('hidden');
+        dlMp4.href = data.dubbedVideoUrl;
+        dlMp4.download = `${baseSlug}_${tgtCode}_voxly.mp4`;
+      }
+    } else {
+      outVidWrap?.classList.add('hidden');
+      if (dlMp4) dlMp4.classList.add('hidden');
+      if (outAudWrap && outAud && data.audioMp3Url) {
+        outAudWrap.classList.remove('hidden');
+        outAud.src = data.audioMp3Url;
+        if (preserveSeekSec !== null && preserveSeekSec > 0) {
+          outAud.addEventListener('loadedmetadata', () => {
+            outAud.currentTime = Math.min(preserveSeekSec, Math.max(0, (outAud.duration || preserveSeekSec) - 0.1));
+            outAud.play().catch(() => {});
+          }, { once: true });
+        } else {
+          outAud.play().catch(() => {});
+        }
+      }
+    }
+  }
+
   async function runRenderDubbing() {
     const isVi = isViLang();
     const trBox = document.getElementById('dubTranslatedScript');
     const text = (trBox ? trBox.value : '').trim();
-    if (!text) {
+    const spokenForQuota = stripTimestampsForQuota(text);
+    if (!spokenForQuota) {
       if (typeof window.showToast === 'function') {
         window.showToast(
           isVi ? 'Chưa có nội dung bản dịch để lồng tiếng!' : 'Translated script is empty!',
@@ -518,7 +629,7 @@
       return;
     }
 
-    if (window.VoiceVietQuota && !window.VoiceVietQuota.checkCanGenerate(text.length)) {
+    if (window.VoiceVietQuota && !window.VoiceVietQuota.checkCanGenerate(spokenForQuota.length)) {
       return;
     }
 
@@ -529,13 +640,19 @@
     }
 
     const rate = parseFloat(document.getElementById('rateRange')?.value) || 1.0;
-    const pause = parseFloat(document.getElementById('pauseDurationRange')?.value) || 0.35;
-    const bgMixMode = document.getElementById('dubBgMixSelect')?.value || 'mute';
+    const pause = parseFloat(document.getElementById('pauseDurationRange')?.value) || 0.25;
+    const origVolumePct = getOrigVolumePct();
+    const smartDucking = document.getElementById('dubSmartDuckChk') ? document.getElementById('dubSmartDuckChk').checked : true;
+    const syncTimeline = document.getElementById('dubSyncTimelineChk') ? document.getElementById('dubSyncTimelineChk').checked : true;
     const autoFitTiming = document.getElementById('dubAutoFitChk') ? document.getElementById('dubAutoFitChk').checked : true;
 
     const baseStep2Msg = selectedIsVideo
-      ? (isVi ? '🎬 Bước 2/2: Đang tạo giọng AI 48kHz & ghép thẳng vào Video .MP4...' : '🎬 Step 2/2: Rendering 48kHz AI voice & muxing into .MP4 video...')
-      : (isVi ? '🎧 Bước 2/2: Đang tổng hợp giọng đọc AI 48kHz cho bản dịch...' : '🎧 Step 2/2: Rendering 48kHz AI voiceover...');
+      ? (isVi
+          ? '🎬 Bước 2/2: Đang lồng tiếng khớp từng mốc thoại & trộn âm thanh gốc vào Video .MP4...'
+          : '🎬 Step 2/2: Synthesizing timestamp-synced 48kHz dub & mixing original audio into .MP4...')
+      : (isVi
+          ? '🎧 Bước 2/2: Đang tổng hợp giọng AI 48kHz theo mốc thoại & trộn âm nền...'
+          : '🎧 Step 2/2: Synthesizing synced 48kHz voiceover & mixing original audio...');
     setDubProgress(true, baseStep2Msg, 65);
     const tRender0 = Date.now();
     const step2Timer = setInterval(() => {
@@ -558,7 +675,9 @@
           voice: voiceId,
           rate,
           pause,
-          bgMixMode,
+          origVolumePct,
+          smartDucking,
+          syncTimeline,
           autoFitTiming,
           mediaSessionId: currentMediaSessionId
         })
@@ -572,82 +691,97 @@
       throw new Error(data.error || `HTTP ${res.status}`);
     }
 
-    setDubProgress(true, isVi ? '✅ Hoàn tất dịch & lồng tiếng!' : '✅ Dubbing complete!', 100);
+    if (data.mediaSessionId) currentMediaSessionId = data.mediaSessionId;
+    setDubProgress(true, isVi ? '✅ Hoàn tất dịch & lồng tiếng khớp mốc thời gian!' : '✅ Timestamp-synced dubbing complete!', 100);
 
-    const outCard = document.getElementById('dubOutputCard');
-    const outVidWrap = document.getElementById('dubOutVideoWrap');
-    const outVid = document.getElementById('dubResultVideoPlayer');
-    const outAudWrap = document.getElementById('dubOutAudioWrap');
-    const outAud = document.getElementById('dubResultAudioPlayer');
-    const dlMp4 = document.getElementById('btnDubDownloadMp4');
-    const dlMp3 = document.getElementById('btnDubDownloadMp3');
-    const dlWav = document.getElementById('btnDubDownloadWav');
+    applyRenderedMediaToPlayer(data, null);
+
     const metaInfo = document.getElementById('dubOutputMetaText');
-
-    if (outCard) outCard.classList.remove('hidden');
-
-    const rawTitleSource = (activeDubSource === 'youtube' && lastYoutubeTitle)
-      ? lastYoutubeTitle
-      : (selectedMediaFile ? selectedMediaFile.name.replace(/\.[^/.]+$/, '') : 'voxly_dubbed');
-    const baseSlug = rawTitleSource
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/đ/gi, 'd')
-      .replace(/[^a-zA-Z0-9_-]+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .slice(0, 48) || 'voxly_dubbed';
-    const tgtCode = document.getElementById('dubTargetLang')?.value || 'dub';
-
-    if (dlMp3 && data.audioMp3Url) {
-      dlMp3.href = data.audioMp3Url;
-      dlMp3.download = `${baseSlug}_${tgtCode}_voxly.mp3`;
-    }
-    if (dlWav && data.audioWavUrl) {
-      dlWav.href = data.audioWavUrl;
-      dlWav.download = `${baseSlug}_${tgtCode}_48khz.wav`;
-    }
-
-    if (data.dubbedVideoUrl && outVidWrap && outVid) {
-      outVidWrap.classList.remove('hidden');
-      outAudWrap?.classList.add('hidden');
-      outVid.src = data.dubbedVideoUrl;
-      outVid.play().catch(() => {});
-      if (dlMp4) {
-        dlMp4.classList.remove('hidden');
-        dlMp4.href = data.dubbedVideoUrl;
-        dlMp4.download = `${baseSlug}_${tgtCode}_voxly.mp4`;
-      }
-    } else {
-      outVidWrap?.classList.add('hidden');
-      if (dlMp4) dlMp4.classList.add('hidden');
-      if (outAudWrap && outAud && data.audioMp3Url) {
-        outAudWrap.classList.remove('hidden');
-        outAud.src = data.audioMp3Url;
-        outAud.play().catch(() => {});
-      }
-    }
-
     const secStr = `${(data.elapsedMs / 1000).toFixed(2)}s`;
+    const cuesInfo = data.syncedSegmentsCount
+      ? (isVi ? ` • Khớp ${data.syncedSegmentsCount} câu thoại` : ` • Synced ${data.syncedSegmentsCount} cues`)
+      : '';
+    const volInfo = isVi ? ` • Âm gốc: ${origVolumePct}%` : ` • Orig Audio: ${origVolumePct}%`;
     if (metaInfo) {
       metaInfo.textContent = isVi
-        ? `⚡ Hoàn tất trong ${secStr} • Giọng: ${data.voiceName} • Thời lượng: ${data.audioSeconds}s • Đã trừ ${(data.charsUsed || 0).toLocaleString('vi-VN')} ký tự`
-        : `⚡ Rendered in ${secStr} • Voice: ${data.voiceName} • Duration: ${data.audioSeconds}s • Used ${(data.charsUsed || 0).toLocaleString('en-US')} chars`;
+        ? `⚡ Hoàn tất trong ${secStr}${cuesInfo}${volInfo} • Giọng: ${data.voiceName} • Thời lượng: ${data.audioSeconds}s • Đã trừ ${(data.charsUsed || 0).toLocaleString('vi-VN')} ký tự`
+        : `⚡ Rendered in ${secStr}${cuesInfo}${volInfo} • Voice: ${data.voiceName} • Duration: ${data.audioSeconds}s • Used ${(data.charsUsed || 0).toLocaleString('en-US')} chars`;
     }
 
-    outCard?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('dubOutputCard')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     if (typeof window.showToast === 'function') {
       window.showToast(
         isVi
-          ? `🎉 Đã dịch & lồng tiếng thành công trong ${secStr}!`
-          : `🎉 Dubbed & rendered successfully in ${secStr}!`,
+          ? `🎉 Đã lồng tiếng khớp lời thoại thành công trong ${secStr}!`
+          : `🎉 Synced dubbing rendered in ${secStr}!`,
         'success'
       );
+    }
+  }
+
+  async function runQuickVolumeRemix() {
+    const isVi = isViLang();
+    if (!currentMediaSessionId) return;
+    const origVolumePct = getOrigVolumePct();
+    const smartDucking = document.getElementById('dubSmartDuckChk') ? document.getElementById('dubSmartDuckChk').checked : true;
+
+    const btnTop = document.getElementById('btnDubQuickRemix');
+    const btnOut = document.getElementById('btnDubOutApplyRemix');
+    if (btnTop) btnTop.disabled = true;
+    if (btnOut) btnOut.disabled = true;
+
+    const outVid = document.getElementById('dubResultVideoPlayer');
+    const outAud = document.getElementById('dubResultAudioPlayer');
+    const prevSeek = (outVid && !outVid.parentElement.classList.contains('hidden'))
+      ? outVid.currentTime
+      : (outAud ? outAud.currentTime : 0);
+
+    try {
+      const res = await fetch('/api/dubbing/remix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mediaSessionId: currentMediaSessionId,
+          origVolumePct,
+          smartDucking
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+
+      applyRenderedMediaToPlayer(data, prevSeek);
+
+      const metaInfo = document.getElementById('dubOutputMetaText');
+      const secStr = `${(data.elapsedMs / 1000).toFixed(2)}s`;
+      if (metaInfo) {
+        metaInfo.textContent = isVi
+          ? `🎚️ Đã cập nhật Âm lượng gốc: ${origVolumePct}% (${smartDucking ? 'Tự động dìm/nổi thông minh' : 'Giữ đều'}) trong ${secStr} • Thời lượng: ${data.audioSeconds}s • 0 ký tự`
+          : `🎚️ Updated Original Audio Mix: ${origVolumePct}% (${smartDucking ? 'Smart Ducking' : 'Constant'}) in ${secStr} • Duration: ${data.audioSeconds}s • 0 chars`;
+      }
+      if (typeof window.showToast === 'function') {
+        window.showToast(
+          isVi
+            ? `🎚️ Đã cập nhật âm lượng gốc ${origVolumePct}% trong ${secStr} (Không tốn ký tự)!`
+            : `🎚️ Updated original audio mix to ${origVolumePct}% in ${secStr} (0 chars used)!`,
+          'success'
+        );
+      }
+    } catch (err) {
+      if (typeof window.showToast === 'function') {
+        window.showToast(err.message, 'error');
+      }
+    } finally {
+      if (btnTop) btnTop.disabled = false;
+      if (btnOut) btnOut.disabled = false;
     }
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     populateLanguageDropdowns();
     loadDubVoicesCatalog();
+    setOrigVolumePct(45);
 
     const fileIn = document.getElementById('dubMediaFileInput');
     const btnPick = document.getElementById('btnPickDubMedia');
@@ -656,6 +790,10 @@
     const ytModeSel = document.getElementById('dubYoutubeModeSelect');
     const btnPasteYt = document.getElementById('btnPasteYoutubeUrl');
     const btnClearYt = document.getElementById('btnClearYoutubeUrl');
+    const origVolRange = document.getElementById('dubOrigVolRange');
+    const outOrigVolRange = document.getElementById('dubOutOrigVolRange');
+    const btnQuickRemix = document.getElementById('btnDubQuickRemix');
+    const btnOutApplyRemix = document.getElementById('btnDubOutApplyRemix');
     const tgtSel = document.getElementById('dubTargetLang');
     const showAllChk = document.getElementById('dubShowAllVoicesChk');
     const btnPreviewVoice = document.getElementById('btnDubPreviewVoice');
@@ -663,6 +801,27 @@
     const btnTranscribeOnly = document.getElementById('btnDubTranscribeOnly');
     const btnRetranslate = document.getElementById('btnDubRetranslate');
     const btnRegenerate = document.getElementById('btnDubRegenerate');
+
+    if (origVolRange) {
+      origVolRange.addEventListener('input', () => setOrigVolumePct(origVolRange.value));
+    }
+    if (outOrigVolRange) {
+      outOrigVolRange.addEventListener('input', () => setOrigVolumePct(outOrigVolRange.value));
+    }
+    document.querySelectorAll('.dub-vol-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setOrigVolumePct(btn.getAttribute('data-orig-vol') || '45');
+        if (currentMediaSessionId && !document.getElementById('dubOutputCard')?.classList.contains('hidden')) {
+          runQuickVolumeRemix();
+        }
+      });
+    });
+    if (btnQuickRemix) {
+      btnQuickRemix.addEventListener('click', () => runQuickVolumeRemix());
+    }
+    if (btnOutApplyRemix) {
+      btnOutApplyRemix.addEventListener('click', () => runQuickVolumeRemix());
+    }
 
     if (ytInput) {
       ytInput.addEventListener('input', () => syncYoutubeInputState());
@@ -902,6 +1061,7 @@
     window.addEventListener('voiceviet:langchange', () => {
       populateLanguageDropdowns();
       populateDubVoiceDropdown(false);
+      setOrigVolumePct(getOrigVolumePct());
       if (selectedMediaFile) {
         const fileLabel = document.getElementById('dubSelectedFileLabel');
         const sizeMB = (selectedMediaFile.size / (1024 * 1024)).toFixed(2);

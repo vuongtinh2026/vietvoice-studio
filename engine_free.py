@@ -1181,12 +1181,161 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 raw_text = str(data.get("text", "")).strip()
                 source_lang = str(data.get("sourceLang", "auto")).strip() or "auto"
                 target_lang = str(data.get("targetLang", "vi")).strip() or "vi"
-                translated, detected = media_dubber.translate_text_multilingual(
+                translated, detected = media_dubber.translate_script_preserving_timestamps(
                     raw_text,
                     source_lang=source_lang,
                     target_lang=target_lang,
                 )
                 self._send_json(200, {"success": True, "translatedText": translated, "detectedLang": detected})
+                return
+
+            if self.path == "/dub/render-synced":
+                data = self._read_json()
+                raw_text = str(data.get("text", "")).strip()
+                in_segments = data.get("segments") or []
+                voice_id = str(data.get("voice", "free-vi-ngoc-huyen")).strip() or "free-vi-ngoc-huyen"
+                rate = float(data.get("rate", 1.0))
+                pause_sec = float(data.get("pause", 0.25))
+                owner_token = self.headers.get("X-Owner-Token") or data.get("ownerToken")
+                orig_media = str(data.get("origMediaPath", "")).strip()
+                is_video = bool(data.get("isVideo", False))
+                duration_sec = float(data.get("durationSec", 0.0) or 0.0)
+                sync_timeline = bool(data.get("syncTimeline", True))
+                auto_fit = bool(data.get("autoFitTiming", True))
+                orig_volume = float(data.get("origVolume", 0.40))
+                smart_ducking = bool(data.get("smartDucking", True))
+                out_dir = str(data.get("outDir", "/tmp/voxly_dub_sessions")).strip() or "/tmp/voxly_dub_sessions"
+                out_id = str(data.get("outId", f"out_{int(time.time() * 1000)}")).strip()
+                os.makedirs(out_dir, exist_ok=True)
+
+                parsed_segs = []
+                if sync_timeline and isinstance(in_segments, list) and len(in_segments) > 0:
+                    for s in in_segments:
+                        t_clean = str(s.get("text", "")).strip()
+                        if t_clean:
+                            parsed_segs.append(
+                                {
+                                    "start": float(s.get("start", 0.0)),
+                                    "end": float(s.get("end", 0.0)),
+                                    "text": t_clean,
+                                }
+                            )
+                elif sync_timeline and raw_text:
+                    ts_segs, _, has_ts = media_dubber.parse_timestamped_script(raw_text)
+                    if has_ts and ts_segs:
+                        parsed_segs = ts_segs
+
+                pure_voice_wav = os.path.join(out_dir, f"{out_id}_pure_voice.wav")
+                out_wav = os.path.join(out_dir, f"{out_id}.wav")
+                out_mp3 = os.path.join(out_dir, f"{out_id}.mp3")
+                out_mp4 = os.path.join(out_dir, f"{out_id}_dubbed.mp4") if is_video else ""
+
+                if parsed_segs:
+                    def _synth_one_seg(seg_obj: dict) -> dict:
+                        wb = dispatch_synthesize(
+                            seg_obj["text"],
+                            voice_id,
+                            rate=rate,
+                            pause_sec=min(pause_sec, 0.22),
+                            owner_token=owner_token,
+                        )
+                        arr = media_dubber.wav_bytes_to_f32_48k(wb, ffmpeg_bin=FFMPEG_BIN)
+                        return {"start": seg_obj["start"], "end": seg_obj["end"], "samples": arr}
+
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(parsed_segs))) as coord_pool:
+                        rendered_segs = list(coord_pool.map(_synth_one_seg, parsed_segs))
+
+                    master_voice, speech_intervals = media_dubber.assemble_synced_voice_track(
+                        rendered_segments=rendered_segs,
+                        target_duration_sec=duration_sec,
+                        auto_fit_timing=auto_fit,
+                        ffmpeg_bin=FFMPEG_BIN,
+                    )
+                    media_dubber._write_pcm_wav_48k(pure_voice_wav, master_voice, sr=TARGET_SR)
+                else:
+                    _, plain_txt, _ = media_dubber.parse_timestamped_script(raw_text)
+                    speak_txt = plain_txt or raw_text
+                    if not speak_txt:
+                        raise ValueError("Vui lòng nhập nội dung bản dịch để lồng tiếng.")
+                    wb = dispatch_synthesize(speak_txt, voice_id, rate=rate, pause_sec=pause_sec, owner_token=owner_token)
+                    arr = media_dubber.wav_bytes_to_f32_48k(wb, ffmpeg_bin=FFMPEG_BIN)
+                    media_dubber._write_pcm_wav_48k(pure_voice_wav, arr, sr=TARGET_SR)
+                    speech_intervals = [[0.0, round(arr.size / TARGET_SR, 3)]] if arr.size > 0 else []
+
+                mix_res = media_dubber.mix_and_export_dubbed_outputs(
+                    pure_voice_wav_path=pure_voice_wav,
+                    speech_intervals=speech_intervals,
+                    out_wav_path=out_wav,
+                    out_mp3_path=out_mp3,
+                    orig_media_path=orig_media,
+                    out_mp4_path=out_mp4,
+                    is_video=is_video,
+                    orig_volume=orig_volume,
+                    smart_ducking=smart_ducking,
+                    ffmpeg_bin=FFMPEG_BIN,
+                )
+
+                v_info = (
+                    {"name": "Giọng Nhân Bản Độc Quyền"}
+                    if voice_id.startswith("private-")
+                    else resolve_voice_entry(voice_id)
+                )
+                self._send_json(
+                    200,
+                    {
+                        "success": True,
+                        "pureVoiceWavPath": pure_voice_wav,
+                        "speechIntervals": speech_intervals,
+                        "outWavFile": os.path.basename(out_wav),
+                        "outMp3File": os.path.basename(out_mp3),
+                        "outMp4File": os.path.basename(out_mp4) if mix_res.get("dubbedVideoReady") else "",
+                        "audioSeconds": mix_res.get("audioSeconds", 0.0),
+                        "voiceName": v_info.get("name", voice_id),
+                        "syncedSegmentsCount": len(parsed_segs),
+                    },
+                )
+                return
+
+            if self.path == "/dub/remix-volume":
+                data = self._read_json()
+                pure_voice_wav = str(data.get("pureVoiceWavPath", "")).strip()
+                if not pure_voice_wav or not os.path.exists(pure_voice_wav):
+                    raise ValueError("Không tìm thấy bản giọng lồng tiếng gốc để trộn lại âm lượng!")
+                speech_intervals = data.get("speechIntervals") or []
+                orig_media = str(data.get("origMediaPath", "")).strip()
+                is_video = bool(data.get("isVideo", False))
+                orig_volume = float(data.get("origVolume", 0.40))
+                smart_ducking = bool(data.get("smartDucking", True))
+                out_dir = str(data.get("outDir", "/tmp/voxly_dub_sessions")).strip() or "/tmp/voxly_dub_sessions"
+                out_id = str(data.get("outId", f"remix_{int(time.time() * 1000)}")).strip()
+                os.makedirs(out_dir, exist_ok=True)
+
+                out_wav = os.path.join(out_dir, f"{out_id}.wav")
+                out_mp3 = os.path.join(out_dir, f"{out_id}.mp3")
+                out_mp4 = os.path.join(out_dir, f"{out_id}_dubbed.mp4") if is_video else ""
+
+                mix_res = media_dubber.mix_and_export_dubbed_outputs(
+                    pure_voice_wav_path=pure_voice_wav,
+                    speech_intervals=speech_intervals,
+                    out_wav_path=out_wav,
+                    out_mp3_path=out_mp3,
+                    orig_media_path=orig_media,
+                    out_mp4_path=out_mp4,
+                    is_video=is_video,
+                    orig_volume=orig_volume,
+                    smart_ducking=smart_ducking,
+                    ffmpeg_bin=FFMPEG_BIN,
+                )
+                self._send_json(
+                    200,
+                    {
+                        "success": True,
+                        "outWavFile": os.path.basename(out_wav),
+                        "outMp3File": os.path.basename(out_mp3),
+                        "outMp4File": os.path.basename(out_mp4) if mix_res.get("dubbedVideoReady") else "",
+                        "audioSeconds": mix_res.get("audioSeconds", 0.0),
+                    },
+                )
                 return
 
             if self.path == "/dub/mux-video":
