@@ -13,5 +13,6 @@ private_voices/
 license_db/
 dist_customer_package/
 client_config.json
+subtitle_ocr_mac
 
 

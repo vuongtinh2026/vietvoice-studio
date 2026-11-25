@@ -1271,13 +1271,13 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                         95,
                     )
 
-                    master_voice, speech_intervals = media_dubber.assemble_synced_voice_track(
+                    speech_intervals = media_dubber.assemble_synced_voice_to_wav(
+                        out_wav_path=pure_voice_wav,
                         rendered_segments=rendered_segs,
                         target_duration_sec=duration_sec,
                         auto_fit_timing=auto_fit,
                         ffmpeg_bin=FFMPEG_BIN,
                     )
-                    media_dubber._write_pcm_wav_48k(pure_voice_wav, master_voice, sr=TARGET_SR)
                 else:
                     _, plain_txt, _ = media_dubber.parse_timestamped_script(raw_text)
                     speak_txt = plain_txt or raw_text

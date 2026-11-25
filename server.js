@@ -1270,9 +1270,9 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/dubbing/transcribe-translate' && req.method === 'POST') {
     const dubDir = path.join('/tmp', 'voxly_dub_sessions');
     fs.mkdirSync(dubDir, { recursive: true });
-    // Prune temp files older than 45 minutes
+    // Prune temp files older than 3 hours
     try {
-      const cutoff = Date.now() - 45 * 60 * 1000;
+      const cutoff = Date.now() - 3 * 60 * 60 * 1000;
       for (const fn of fs.readdirSync(dubDir)) {
         const fp = path.join(dubDir, fn);
         const st = fs.statSync(fp);
@@ -1290,14 +1290,14 @@ const server = http.createServer(async (req, res) => {
     try {
       await new Promise((resolve, reject) => {
         let total = 0;
-        const maxUploadBytes = 350 * 1024 * 1024; // 350 MB
+        const maxUploadBytes = 2500 * 1024 * 1024; // 2.5 GB for multi-hour movies
         const ws = fs.createWriteStream(mediaPath);
         req.on('data', chunk => {
           total += chunk.length;
           if (total > maxUploadBytes) {
             ws.destroy();
             req.destroy();
-            reject(new Error('Dung lượng file vượt quá giới hạn 350MB!'));
+            reject(new Error('Dung lượng file vượt quá giới hạn 2.5GB!'));
           }
         });
         req.pipe(ws);
@@ -1772,7 +1772,7 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-function callFreeDaemonJson(pathStr, method = 'POST', bodyObj = null, extraHeaders = {}, timeoutMs = 45 * 60 * 1000) {
+function callFreeDaemonJson(pathStr, method = 'POST', bodyObj = null, extraHeaders = {}, timeoutMs = 120 * 60 * 1000) {
   const sendOnce = () => new Promise((resolve, reject) => {
     const payloadBuf = bodyObj !== null ? Buffer.from(JSON.stringify(bodyObj), 'utf-8') : null;
     const headers = { ...extraHeaders };
