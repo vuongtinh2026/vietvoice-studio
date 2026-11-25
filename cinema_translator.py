@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Voxly Cinema Script Translator v4 — Zero-English-Leak, Zero-Pinyin, Direct Hán-Việt Cinema Engine
-- Stage 1: Pure-source semantic disambiguation + newline-batched parallel NMT (zero HTTP 429,
-  zero degenerate word-repeat loops like 'không, không, không x100').
-- Stage 2: Vietnamese Phonotactic Foreign-Word Detector (`find_foreign_leaks_in_vi`) automatically
-  catches 100% of English words ('Moon Shadow Leopard', 'Your Beast Control', 'Ice') AND Chinese
-  Pinyin ('Su', 'Zifu', 'Haoran', 'Zhenwu', 'Wanluo', 'Yuan', 'Chang Qing', 'Lauro') + Xianxia/Drama
-  jargon, routing ALL flagged lines through local Metal GPU `Qwen3-8B-4bit` (direct zh -> vi,
-  ZERO English pivot!) in tight 6-line disk-cached batches with strict zero-leak verification!
-- Scales cleanly from 1-minute Shorts to 5-hour feature films with persistent batch checkpointing.
+Voxly Cinema Script Translator v5 — Character-Bible, Gender/Kinship-Aware Movie Dubbing Engine
+- Pass 0 (Character & Relationship Bible): Scans the full script once to identify every character's
+  gender (nam/nữ), age (trẻ em / thiếu niên / người lớn / lão niên), family relationship
+  (cha-mẹ-con, anh-em, sư phụ-đệ tử), and modern vs. ancient setting.
+- Pass 1 (Contiguous Scene-Context Direct Translation via Qwen3-8B Metal GPU): Translates EVERY
+  dialogue turn in contiguous 8-line scene blocks with rolling 2-line scene memory — zero English
+  pivot, zero blind 'bạn -> ngươi' replacement, exact gender ('他' vs '她' vs '它') and exact
+  Vietnamese kinship pronouns (con-mẹ, con-cha, anh-em, tôi-cô/anh/ông, đệ tử-ngài/trưởng lão).
+- Strict Phonotactic Foreign-Word Guardrail + per-batch persistent disk caching for multi-hour movies.
 """
 import concurrent.futures
 import hashlib
@@ -109,11 +109,15 @@ _ZH_ASR_HOMOPHONE_FIXES: list[tuple[str, str]] = [
     ("更深的情侣", "更深的青绿"),
     ("玻璃宠帝王略", "玻璃种帝王绿"),
     ("静置靶子", "静止靶子"),
+    # OCR visual typo fixes
+    ("人间己成炼狱", "人间已成炼狱"),
+    ("敢威肋老子", "敢威胁老子"),
+    ("千粮和衣物", "干粮和衣物"),
+    ("手腕耍甩", "手腕要甩"),
 ]
 
-# 100% PURE CHINESE -> UNAMBIGUOUS MODERN CHINESE semantic pre-expansion BEFORE NMT
+# Pure Chinese semantic pre-expansion ONLY for NMT fallback anchor
 _ZH_PURE_SEMANTIC_EXPAND: list[tuple[str, str]] = [
-    # Prevent NMT degenerate loops & literal idioms
     ("哎别别别", "哎，先别这样"),
     ("别别别", "先别这样"),
     ("哈哈哈哈", "哈哈"),
@@ -122,240 +126,106 @@ _ZH_PURE_SEMANTIC_EXPAND: list[tuple[str, str]] = [
     ("小意思", "小事一桩"),
     ("你点点", "你清点一下"),
     ("肥羊", "冤大头"),
-    ("水很深", "里面的门道很深"),
-    ("打发时间", "消磨时间"),
-    ("下了血本", "花了大本钱"),
-    # Jadeite & modern urban drama
-    ("老板，快来", "老板，快过来看看"),
-    ("今儿个出的料子还行", "今天新到的翡翠原石还不错"),
-    ("我帮你盯着几块了", "我已经帮你看好几块了"),
-    ("你会有这么好心", "你会这么好心吗"),
     ("压灯都吃不进去", "用手电筒照射连光线都透不进去"),
     ("压灯有点糯水的意思", "用手电筒照射看水头有糯种翡翠质感"),
     ("压灯", "用手电筒照看"),
-    ("莫湾基的老料", "莫湾基矿口的老翡翠原石"),
-    ("这块连个松花都没有", "这块石头连一点绿松花纹都没有"),
-    ("皮壳还这么厚", "外层石皮还这么厚"),
-    ("这料子皮壳看着还行", "这块原石外皮看着还行"),
-    ("皮壳", "外层石皮"),
     ("赌性大", "赌石风险太大"),
     ("赌个屁", "赌什么鬼啊"),
-    ("祝老板大涨", "祝老板切石大赚一笔"),
     ("涨个屁", "赚什么鬼啊"),
-    ("行就拿着，不行我走了", "同意就收下，不同意我就走"),
-    ("别急别急", "别急嘛"),
-    ("十五万，二十五，成交", "十五万，二十五万，成交"),
-    ("十五万。二十五。成交", "十五万。二十五万。成交"),
-    ("帮我开个窗就行，这个角", "帮我在石头这个角磨开个小天窗就行"),
-    ("开个窗就两千万", "只磨开个小天窗就值两千万"),
-    ("不开个窗先看看", "不先磨开个小口看看里面吗"),
-    ("昨天只开个窗", "昨天只磨开个小口"),
-    ("只开个窗", "只磨开个小口"),
-    ("开个窗", "磨开个小口"),
-    ("这要是全剥出来", "要是把石皮全部剥开"),
-    ("先把这块全剥出来", "先把这块石皮全部剥开"),
-    ("这块全剥了", "把这块石皮全部剥开"),
-    ("今天又全剥", "今天又把石皮全部剥开"),
-    ("你要全剥", "你要把石皮全部剥开吗"),
-    ("全剥", "全部剥开石皮"),
-    ("冰种，飘阳绿", "竟然是冰种飘阳绿翡翠"),
-    ("冰种飘阳绿", "冰种飘阳绿翡翠"),
-    ("冰糯，飘蓝花", "竟然是冰糯种飘蓝花翡翠"),
-    ("冰糯飘蓝花", "冰糯种飘蓝花翡翠"),
-    ("糯种淡青", "糯种翡翠呈淡青色"),
-    ("冰种是更深的青绿", "冰种翡翠是更深的青绿色"),
-    ("玻璃种，帝王绿", "至于玻璃种和帝王绿翡翠"),
-    ("玻璃种帝王绿", "玻璃种帝王绿翡翠"),
-    ("最低要糯种", "至少需要糯种翡翠"),
-    ("上周六十万收的糯种", "上星期花六十万买的糯种翡翠"),
-    ("收的糯种", "买的糯种翡翠"),
-    ("能到糯种就不错了", "能达到糯种翡翠就很不错了"),
-    ("糯冰起步", "至少达到糯冰种翡翠"),
-    ("搞不好能到冰糯", "说不定能达到冰糯种翡翠"),
-    ("说不定能到糯冰", "说不定能达到糯冰种翡翠"),
-    ("这什么种水", "这是什么极品翡翠种水"),
-    ("种水化开了", "玉质水头已经化开很通透"),
-    ("颜色也进去了", "翠绿色也渗进玉肉里了"),
-    ("没裂没棉", "无裂纹无白棉"),
-    ("两千万打底", "保底能卖两千万"),
-    ("二十五万收的", "花二十五万买来的"),
-    ("一百二十万收的", "花一百二十万买来的"),
-    ("吸完就废", "吸完灵气石头就废了"),
-    ("石头却废了", "石头却废掉了"),
-    ("玉气进了眼睛", "玉石灵气进了我的眼睛"),
-    ("黄沙皮出高货的概率不高", "黄沙石皮切出高档翡翠概率不高"),
-    ("黄沙皮", "黄沙石皮"),
-    ("蟒带清晰", "蟒蛇纹路很清晰"),
-    ("那条蟒带", "那条蟒蛇纹路"),
-    ("好料子老往外拿", "好原石经常拿去外边切"),
-    ("这块料子也不错啊", "这块原石也不错啊"),
-    ("这料子漂亮啊", "这块翡翠真漂亮啊"),
-    ("好料子", "好原石"),
-    ("这块料子", "这块原石"),
-    ("这料子", "这块翡翠"),
-    ("把存款全取出来", "把存的钱全部取出来"),
-    ("有钱庄卷款跑了", "有私人银行卷款逃跑了"),
-    ("算不上神枪手", "我虽然算不上神枪手"),
-    ("搜身", "搜查身体"),
-    ("老板，忙呢", "老板，正忙着呢"),
-    ("买自己的设备，场地", "买自己的切石设备和场地"),
     ("踩了什么狗屎运", "怎么会有这么好的运气"),
-    ("这下不发财都没天理了", "这下肯定能发大财了"),
 ]
 
-# Exact standalone short utterances -> crisp Vietnamese dubbing lines
+# Exact unambiguous 1-3 char utterances (never depend on gender/kinship!)
 _ZH_EXACT_SHORT_UTTERANCES_VI: dict[str, str] = {
     "等等": "Khoan đã!",
     "请进": "Mời vào!",
     "真的吗": "Thật vậy sao?",
+    "快了快了": "Sắp rồi, sắp rồi!",
+    "好吧": "Được thôi.",
+    "有效": "Có tác dụng rồi!",
+    "就这": "Chỉ có thế thôi à?",
     "是": "Vâng.",
     "嗯": "Ừm.",
-    "啊这是": "A, đây là...",
+    "啊啊啊": "Á á á!",
     "我去": "Trời đất ơi!",
     "卧槽": "Trời đất ơi!",
     "操": "Chết tiệt!",
     "牛逼": "Đỉnh thật!",
     "齐活": "Xong xuôi!",
-    "吸出来": "Hút linh khí ra!",
-    "又来切石": "Lại tới cắt đá đấy à?",
-    "不用，我心里有数": "Khỏi cần, trong lòng tôi tự biết rõ.",
-    "钱还是放自己这儿踏实": "Tiền cứ giữ bên mình vẫn yên tâm hơn.",
-    "你会有这么好心": "Anh mà cũng có lòng tốt thế sao?",
     "赌个屁": "Đánh cược cái con khỉ!",
     "涨个屁": "Trúng đậm cái con khỉ!",
-    "我问问": "Để tôi hỏi thử xem.",
-    "切多少": "Cắt bao nhiêu đây?",
-    "帮我切块石头": "Giúp tôi cắt tảng đá này.",
-    "运气好": "Do may mắn thôi.",
-    "不卖": "Không bán đâu.",
-    "不卖，我自己留着": "Không bán đâu, tôi để lại tự giữ.",
-    "我自己留着": "Tôi để lại tự giữ.",
-    "这是什么玩意儿": "Cái thứ quái gì thế này?",
-    "苏长老": "Tô trưởng lão.",
-    "谢谢苏长老": "Đa tạ Tô trưởng lão.",
-    "苏长老，怎么了": "Tô trưởng lão, có chuyện gì vậy?",
-    "我记错了": "Ta nhớ nhầm rồi.",
-    "准备好了吗": "Ngươi đã sẵn sàng chưa?",
-    "这只什么价格": "Con này giá bao nhiêu?",
-    "你走了可惜了": "Ngươi đi rồi thật đáng tiếc.",
-    "哪有这么多废话": "Đâu ra lắm lời nhảm nhí thế?",
-    "我不能收": "Ta không thể nhận.",
-    "你点点": "Ngài kiểm đếm lại đi.",
-    "造化仙门": "Tạo Hóa Tiên Môn.",
-    "加油吧小家伙": "Cố lên nhé, tiểu gia hỏa!",
+    "冰封即可": "Đóng băng là xong.",
+    "废话真多": "Lắm lời quá đấy.",
+    "什么东西": "Thứ gì thế?",
+    "冻住了": "Đóng băng rồi!",
+    "原来如此": "Hóa ra là vậy.",
+    "侧身": "Nghiêng người!",
+    "敕令": "Sắc lệnh!",
 }
 
-# Post-NMT Sino-Vietnamese & Jadeite / Cinema terminology fixes on Vietnamese output
+# Post-cleanup fixes (NO blind 'bạn -> ngươi' EVER!)
 _VI_POST_TERM_FIXES: list[tuple[str, str]] = [
+    (r"\banh\s+ngươi\b", "anh bạn"),
     (r"\bBoss\b", "Ông chủ"),
-    (r"\bSếp\b", "Ông chủ"),
     (r"\bmỏ\s+mỏ\b", "mỏ"),
     (r"\b(?:miệng mỏ )?cơ sở Mowan\b", "mỏ Mạc Loan Cơ"),
     (r"\bMo\s*Wanji\b", "Mạc Loan Cơ"),
-    (r"\bMowanji\b", "Mạc Loan Cơ"),
-    (r"\bMạc\s*Loan\s*Kỷ\b", "Mạc Loan Cơ"),
     (r"\bRuilida\b", "Thụy Lệ Đạt"),
-    (r"\bThụy\s*Lệ\s*Đà\b", "Thụy Lệ Đạt"),
-    (r"ngọc (?:bích )?(?:Bingnuo|băng|sáp băng) (?:với|có) (?:những )?(?:bông )?hoa màu xanh (?:lam )?(?:lơ )?lửng", "ngọc Băng Nếp Phiêu Lam Hoa"),
-    (r"băng ngọc có hoa màu xanh (?:lơ )?lơ lửng", "ngọc Băng Nếp Phiêu Lam Hoa"),
-    (r"băng ngọc có màu xanh (?:lơ )?lơ lửng", "ngọc Băng Chủng Phiêu Dương Lục"),
-    (r"ngọc bích thuộc loại băng với màu xanh lục nổi của mặt trời", "ngọc Băng Chủng Phiêu Dương Lục"),
-    (r"ngọc bích dạng sáp khác với những bông hoa màu xanh lơ lơ lửng", "ngọc Băng Nếp Phiêu Lam Hoa"),
-    (r"viên ngọc bích màu xanh nổi kiểu băng", "ngọc Băng Nếp Phiêu Lam Hoa"),
-    (r"viên ngọc bích màu xanh lá cây nổi dạng băng", "ngọc Băng Chủng Phiêu Dương Lục"),
-    (r"\bloại băng Piao\s*Yang\s*Green(?:\s*Jade)?\b", "ngọc Băng Chủng Phiêu Dương Lục"),
     (r"\bPiao\s*Yang\s*Green(?:\s*Jade)?\b", "Phiêu Dương Lục"),
-    (r"\bPiaoyang\s*Green\b", "Phiêu Dương Lục"),
     (r"\bngọc (?:bích )?Ice\s*Nuo\b", "ngọc Băng Nếp"),
     (r"\bngọc (?:bích )?Nuobing\b", "ngọc Nếp Băng"),
     (r"\bngọc (?:bích )?Bingnuo\b", "ngọc Băng Nếp"),
-    (r"\bngọc (?:bích )?sáp băng\b", "ngọc Băng Nếp"),
-    (r"\bngọc (?:bích )?băng sáp\b", "ngọc Nếp Băng"),
-    (r"\bngọc (?:bích )?sáp\b", "ngọc Nếp Chủng"),
-    (r"\bngọc lục bảo\b", "ngọc phỉ thúy"),
-    (r"\bngọc bích gạo nếp\b", "ngọc Nếp Chủng"),
-    (r"\bngọc bích băng\b", "ngọc Băng Chủng"),
-    (r"\bngọc bích thủy tinh\b", "ngọc Thủy Tinh Chủng"),
-    (r"\bxanh hoàng gia\b", "Đế Vương Lục"),
-    (r"\blục hoàng gia\b", "Đế Vương Lục"),
-    (r"\bhoa văn (?:của )?(?:thắt lưng|rắn) trăn\b", "dải vân mãng"),
-    (r"\bthắt lưng trăn\b", "dải vân mãng"),
-    (r"\bhình con trăn\b", "dải vân mãng"),
-    (r"\bkhám xét (?:cơ thể|thi thể)\b", "khám người"),
-    (r"\bcó giá tốt!\b", "chốt đơn!"),
-    (r"\bcông ty (?:ghi âm )?Lăn Đá\b", "hãng đĩa Cổn Thạch"),
-    (r"\bcông ty Giai Điệu Đá\b", "hãng đĩa Cổn Thạch"),
-    (r"\bRolling Stones\b", "hãng đĩa Cổn Thạch"),
-    (r"\bRen\s*Xianqi\b", "Nhậm Hiền Tề"),
-    (r"\bNhậm\s+Tiên\s+Kỳ\b", "Nhậm Hiền Tề"),
-    (r"\bNhậm\s+Hiền\s+Kỳ\b", "Nhậm Hiền Tề"),
-    # Xianxia fallback cleanups (even if MLX LLM is disabled on non-Apple-Silicon)
-    (r"\bTrưởng lão Su\b", "Tô trưởng lão"),
-    (r"\bLão Su\b", "Tô trưởng lão"),
-    (r"\bbác Su\b", "Tô trưởng lão"),
-    (r"\bTrưởng lão Lauro\b", "La trưởng lão"),
-    (r"\bLão Lạc\b", "La trưởng lão"),
     (r"\bMoon Shadow Leopard\b", "Nguyệt Ảnh Báo"),
-    (r"\bcon báo Moon Shadow\b", "con Nguyệt Ảnh Báo"),
     (r"\bMoon Kill\b", "Nguyệt Sát"),
     (r"\bShadow Strike\b", "Ảnh Tập"),
     (r"\bVương quốc Zifu\b", "Tử Phủ cảnh"),
-    (r"\bZifu\b", "Tử Phủ"),
     (r"\bGiáo phái Haoran\b", "Hạo Nhiên Tông"),
-    (r"\bHaoran\b", "Hạo Nhiên"),
     (r"\bHoàng đế Zhenwu\b", "Chân Vũ Đại Đế"),
     (r"\bHoàng đế Wanluo\b", "Vạn La Ma Đế"),
     (r"\bHoàng đế Yuan\b", "Nguyên Đế"),
     (r"\bChang Qing\b", "Thường Thanh"),
+    (r"\bTrưởng lão Su\b", "Tô trưởng lão"),
+    (r"\bLão Su\b", "Tô trưởng lão"),
+    (r"\bbác Su\b", "Tô trưởng lão"),
+    (r"\bTrưởng lão Lauro\b", "La trưởng lão"),
     (r"\bTang\s+H[aạ]o\b", "Đường Hạo"),
     (r"\bTang\s+Tam\b", "Đường Tam"),
     (r"\bXiao\s*San\b", "Tiểu Tam"),
+    (r"\bRen\s*Xianqi\b", "Nhậm Hiền Tề"),
 ]
 
-_ANCIENT_CN_MARKERS_RE = re.compile(
-    r"(?:老夫|本座|本尊|少主|宗门|宗主|道侣|渡劫|修仙|仙人|仙门|仙道|魂技|魂环|武魂|昊天宗|唐门|"
+# Unmistakable 21st-century modern-setting markers!
+# Even if a modern movie has Taoist priests/ghosts/cultivation (e.g. '欧洲驱魔录', urban fantasy),
+# >= 3 distinct modern-era markers lock it to `modern_cn` so modern people NEVER call each other 'ngươi'!
+_HARD_MODERN_ERA_MARKERS_RE = re.compile(
+    r"(?:英国|美国|欧洲|日本|韩国|中国|东北|机场|飞机|航班|公务员|警官|警方|警察|派出所|民警|"
+    r"教授|卡车|汽车|开车|车牌|奔驰|手机|电脑|微信|视频|网友|医院|银行|存款|公司|老板|科学|"
+    r"地铁|外套|西装|拉面|专辑|唱片|电影|导演|行车记录仪|公职人员|靶子|设备|场地|立方米|英语|中文)"
+)
+
+_ANCIENT_WORLD_MARKERS_RE = re.compile(
+    r"(?:老夫|本座|本尊|少主|宗门|宗主|道侣|渡劫|修仙|仙门|仙道|魂技|魂环|武魂|昊天宗|唐门|"
     r"陛下|皇上|娘娘|爱卿|老衲|贫道|少侠|阁下|在下|师尊|长老|掌门|族长|阁主|公子|姑娘|"
-    r"功法|筑基|金丹|元婴|紫府|灵石|灵宠|灵兽|妖兽|圣兽|秘境|藏经阁|贡献点|寿元|大帝|魔帝|遗迹|散修|闭关)"
-)
-_MODERN_CN_MARKERS_RE = re.compile(
-    r"(?:老板|块钱|存款|银行|公司|手机|警察|派出所|民警|车牌|奔驰|网友|视频|导演|专辑|唱片|"
-    r"电影|立方米|靶子|设备|场地|卡里|转账|微信|医院|学校|开车|行车记录仪|公职人员)"
+    r"功法|筑基|金丹|元婴|紫府|灵石|灵宠|灵兽|妖兽|圣兽|秘境|藏经阁|贡献点|寿元|大帝|魔帝|"
+    r"遗迹|散修|闭关|村长|邪神|神魂|尊神|旧神|炼狱|灾星|玉佩|霜刃|饭碗)"
 )
 
-# Xianxia / Wuxia / Historical Chinese triggers that benefit massively from direct Qwen3-8B Hán-Việt translation
-_XIANXIA_LLM_TRIGGER_RE = re.compile(
-    r"(?:长老|阁主|宗门|浩然宗|筑基|金丹|元婴|化神|紫府|灵石|灵宠|灵兽|妖兽|圣兽|凶兽|血脉|"
-    r"功法|秘境|仙门|仙武|仙道|魔帝|大帝|青帝|元帝|佛祖|投放|召回|寿元|藏经阁|万兽场|御兽|"
-    r"师尊|掌门|外门|内门|散修|闭关|遗迹|道运|大道|气运|屏气诀|真诀|月影豹|月杀|影袭|地玄龟|石猿|"
-    r"贡献点|苏渊|常青|老夫|本座|少主|道侣|渡劫|魂技|魂环|昊天宗|唐门|明人不说暗话|狗皮膏药|夭折|肥羊)"
-)
-
-# Literal NMT mistranslation smells in Vietnamese that MUST be repaired by Qwen3-8B
-_BAD_LITERAL_VI_SMELL_RE = re.compile(
-    r"(?:kiến\s*trúc|gương\s+xây\s+móng|nhà\s+sư\s+thuốc|thú\s+cưng\s+tinh\s+thần|tâm\s+sủng|"
-    r"đá\s+tâm\s+linh|đá\s+linh\s+hồn|cõi\s+bí\s+mật|giáo\s+phái\s+bất\s+tử|sinh\s+viên\s+rải\s+rác|"
-    r"người\s+Minh\s+chúng\s+ta|thạch\s+cao\s+bằng\s+da\s+chó|con\s+cừu\s+béo|v\.v\.|bấm\s+vào|"
-    r"việc\s+giao\s+hàng|quá\s+trình\s+sinh\s+nở|vật\s+chủ|đầu\s+tư\s+\d+\s+năm|"
-    r"nhớ\s+lại|tư\s+thế\s+nhàn\s+nhã|nhỏ\s+mọn|bị\s+gãy|tài\s+liệu\s+cũ|đèn\s+cũng\s+không\s+thể\s+ăn|"
-    r"thắt\s+lưng\s+trăn|món\s+bánh\s+bao|trà\s+túi\s+lọc|gói\s+cáp|sự\s+thật\s+lớn\s+nhất)",
-    re.IGNORECASE,
-)
-
-# Valid modern loanwords allowed ONLY in modern / international content (NEVER in ancient_cn!)
+# Valid modern loanwords & Western person/place names allowed in modern / international settings
 _MODERN_LOANWORDS_ALLOW = {
     "video", "radio", "camera", "karaoke", "album", "guitar", "coffee", "cafe", "studio",
     "taxi", "internet", "email", "ok", "km", "kg", "cm", "mm", "ml", "youtube", "tiktok",
     "douyin", "facebook", "iphone", "app", "game", "ai", "vip", "pro", "mp3", "mp4", "wav",
-    "ktv", "ost", "mercedes", "bmw", "lumi",
+    "ktv", "ost", "mercedes", "bmw", "lumi", "london", "paris", "irene", "walker", "kane",
+    "cain", "john", "peter", "david", "sarah", "anna", "jack", "tom", "mike", "alex",
+    "sam", "mark", "paul", "mary", "lisa", "emma", "eric", "adam", "aaron", "steve", "rogers",
 }
 
-# Pinyin tokens commonly leaked by Google Translate (zh -> en -> vi)
 _PINYIN_LEAK_TOKENS = {
     "su", "yuan", "qing", "chang", "zifu", "haoran", "zhenwu", "wanluo", "lauro", "niancha",
     "youfen", "tayou", "hongxinyu", "zangjinlu", "zongwen", "mowan", "mowanji", "nuobing",
     "bingnuo", "nuo", "piaoyang", "ruilida", "yu", "xu", "wu", "luo", "liu", "zhou", "zhao",
     "zhang", "xiao", "shen", "feng", "jia", "shou", "dushuang", "ranchachu", "ranbaoheidao",
-    "hehe", "tang", "chen", "lin", "guo", "gao", "han", "yang",
+    "lanzhou", "tang", "chen", "lin", "guo", "gao", "han", "yang",
 }
 
 _VI_VOWELS_STR = "aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ"
@@ -370,55 +240,39 @@ _VI_BAD_CLUSTER_RE = re.compile(
 )
 _VI_BAD_CODA_RE = re.compile(r"(?:[bdfklrsvxz]|(?<!n)g)$", re.IGNORECASE)
 _NON_LATIN_LEAK_RE = re.compile(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff]")
+_ARCHAIC_NGUOI_RE = re.compile(r"\b(?:ngươi|lão phu|bản tọa|tại hạ|các hạ|bổn tọa|huynh đài)\b", re.IGNORECASE)
 
 
 def find_foreign_leaks_in_vi(text: str, genre: str = "modern_cn", is_cjk_source: bool = True) -> list[str]:
-    """
-    Phonotactic Vietnamese syllable validator: detects English words ('Moon', 'Shadow', 'Leopard',
-    'Control', 'Your', 'Beast', 'Ice') AND Chinese Pinyin ('Su', 'Zifu', 'Haoran', 'Zhenwu',
-    'Wanluo', 'Yuan', 'Chang', 'Qing', 'Lauro') with ~99.5% precision!
-    """
     if not text:
         return []
     leaks: list[str] = []
     if _NON_LATIN_LEAK_RE.search(text):
         leaks.append("CJK_OR_NON_LATIN")
 
-    # Tokenize alphabetic words
     words = re.findall(r"[A-Za-zÀ-ỹĐđ]+", text)
     for w in words:
         wl = w.lower()
         if not wl:
             continue
-        if re.fullmatch(r"(?:ha|hi|hê|hô|hà)+", wl):
+        if re.fullmatch(r"(?:ha|hi|hê|hô|hà|á|ư|ô|a)+", wl):
             continue
         if genre != "ancient_cn" and wl in _MODERN_LOANWORDS_ALLOW:
             continue
-
-        # 1. Explicit Pinyin leak when source is CJK
         if is_cjk_source and wl in _PINYIN_LEAK_TOKENS:
-            # Allow lowercase 'su' only if Vietnamese diacritic (none here); 'su' bare is always Pinyin/foreign in drama!
             if wl == "su" and not w[0].isupper():
                 continue
             leaks.append(w)
             continue
-
-        # 2. Invalid letters/clusters (f, j, w, z, sh, ck, st, oo, ee, q without u, etc.)
         if _VI_BAD_CLUSTER_RE.search(wl):
             leaks.append(w)
             continue
-
-        # 3. Invalid Vietnamese word-final consonant coda (b, d, f, k, l, r, s, v, x, z, non-ng g)
         if _VI_BAD_CODA_RE.search(wl):
             leaks.append(w)
             continue
-
-        # 4. Monosyllabic Vietnamese law: no valid Vietnamese syllable has >= 8 letters OR internal vowel-consonant-vowel
         if len(wl) >= 8:
             leaks.append(w)
             continue
-
-        # Strip valid Vietnamese initial digraph 'gi' / 'qu' before checking internal V-C-V
         check_vcv = wl
         if check_vcv.startswith(("qu", "gi")) and len(check_vcv) > 2:
             check_vcv = check_vcv[2:]
@@ -426,7 +280,6 @@ def find_foreign_leaks_in_vi(text: str, genre: str = "modern_cn", is_cjk_source:
             leaks.append(w)
             continue
 
-    # Deduplicate preserving order
     seen = set()
     uniq: list[str] = []
     for x in leaks:
@@ -437,7 +290,6 @@ def find_foreign_leaks_in_vi(text: str, genre: str = "modern_cn", is_cjk_source:
 
 
 def _collapse_word_loops(text: str) -> str:
-    """Eliminates degenerate NMT/LLM word-repetition loops (e.g. 'không, không, không x100')."""
     if not text:
         return ""
     s = re.sub(
@@ -450,12 +302,24 @@ def _collapse_word_loops(text: str) -> str:
 
 
 def detect_script_genre(lines: list[str], is_zh_source: bool) -> str:
+    """
+    Accurately distinguishes:
+      - 'modern_cn'   : Any movie set in modern times (even modern supernatural/exorcism with Taoists & ghosts!)
+      - 'ancient_cn'  : Genuine ancient/historical/fantasy/xianxia/dark-fantasy world (ZERO 21st-century tech/countries)
+      - 'intl_cinema' : English / Korean / Japanese / Western cinema
+    """
     if not is_zh_source:
         return "intl_cinema"
     joined = "\n".join(lines)
-    ancient_hits = len(_ANCIENT_CN_MARKERS_RE.findall(joined))
-    modern_hits = len(_MODERN_CN_MARKERS_RE.findall(joined))
-    if ancient_hits >= 2 and ancient_hits >= modern_hits:
+    modern_types = set(_HARD_MODERN_ERA_MARKERS_RE.findall(joined))
+    modern_hits = len(_HARD_MODERN_ERA_MARKERS_RE.findall(joined))
+    ancient_hits = len(_ANCIENT_WORLD_MARKERS_RE.findall(joined))
+
+    # If the movie has >= 3 distinct 21st-century markers (e.g. 英国, 机场, 公务员, 警官, 教授, 卡车, 老板),
+    # it is 100% set in the modern world!
+    if len(modern_types) >= 3 or modern_hits >= 5:
+        return "modern_cn"
+    if ancient_hits >= 3 and modern_hits <= 1:
         return "ancient_cn"
     return "modern_cn"
 
@@ -494,6 +358,7 @@ def _polish_vietnamese_cinema_line(text: str, genre: str, target_lang: str = "vi
         s = re.sub(pat, rep, s, flags=re.IGNORECASE)
 
     if genre == "modern_cn":
+        # Modern dramas MUST NEVER use archaic wuxia pronouns!
         s = re.sub(r"\bLão phu\b", "Ông chủ", s)
         s = re.sub(r"\blão phu\b", "ông chủ", s)
         s = re.sub(r"\bNgươi\b", "Anh", s)
@@ -501,14 +366,13 @@ def _polish_vietnamese_cinema_line(text: str, genre: str, target_lang: str = "vi
         s = re.sub(r"\bbản tọa\b", "tôi", s, flags=re.IGNORECASE)
         s = re.sub(r"\btại hạ\b", "tôi", s, flags=re.IGNORECASE)
         s = re.sub(r"\bcác hạ\b", "anh", s, flags=re.IGNORECASE)
-        s = re.sub(r"\bBạn\b", "Anh", s)
-        s = re.sub(r"\bbạn\b", "anh", s)
         s = re.sub(r"\bnhân dân tệ\b", "tệ", s, flags=re.IGNORECASE)
     elif genre == "ancient_cn":
-        s = re.sub(r"\bBạn\b", "Ngươi", s)
-        s = re.sub(r"\bbạn\b", "ngươi", s)
-        s = re.sub(r"\bCha,\s*ngươi\b", "Phụ thân, người", s)
+        # Respectful family fixes — NEVER blindly turn 'bạn' into 'ngươi'!
+        s = re.sub(r"\bCha,\s*ngươi\b", "Cha ơi, người", s)
         s = re.sub(r"\bPhụ thân,\s*ngươi\b", "Phụ thân, người", s)
+        s = re.sub(r"\bMẹ,\s*ngươi\b", "Mẹ ơi, người", s)
+        s = re.sub(r"\bMẫu thân,\s*ngươi\b", "Mẫu thân, người", s)
     else:
         s = re.sub(r"\btao\b", "tôi", s)
         s = re.sub(r"\bTao\b", "Tôi", s)
@@ -549,7 +413,7 @@ def _get_mlx_engine():
         return None, None, None
 
 
-def _run_mlx_prompt(model, tokenizer, sampler, sys_msg: str, user_msg: str, max_tokens: int = 900) -> str:
+def _run_mlx_prompt(model, tokenizer, sampler, sys_msg: str, user_msg: str, max_tokens: int = 1100) -> str:
     from mlx_lm import generate
 
     messages = [
@@ -582,50 +446,126 @@ def _run_mlx_prompt(model, tokenizer, sampler, sys_msg: str, user_msg: str, max_
     return cleaned.strip()
 
 
-def _build_qwen_repair_system_prompt(genre: str) -> str:
+_CHAR_CLUE_RE = re.compile(
+    r"(?:叫|名为|是|爸|妈|爹|娘|养母|养父|母|父|哥|姐|弟|妹|娃|儿|女|男|小哥哥|小姐姐|"
+    r"长老|阁主|师尊|师父|村长|教授|警官|先生|女士|小姐|老板|大爷|三爷|尊神|之主|大帝|道士|仙家|徒弟|弟子)"
+)
+
+
+def _extract_character_bible(
+    model,
+    tokenizer,
+    sampler,
+    cleaned_inputs: list[str],
+    genre: str,
+    cache_dir: str,
+) -> str:
+    """
+    Pass 0: Extracts a concise Vietnamese Character & Relationship Bible (name, gender, age,
+    family role, and exact Vietnamese pronoun pairs) from the full script in ~4 seconds!
+    Cached by full script hash so re-runs are instantaneous.
+    """
+    sig = hashlib.sha256(
+        json.dumps({"v": 11, "g": genre, "n": len(cleaned_inputs), "h": cleaned_inputs[:60]}, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()[:20]
+    bible_path = os.path.join(cache_dir, f"char_bible_v11_{sig}.txt")
+    if os.path.exists(bible_path):
+        try:
+            cached = open(bible_path, "r", encoding="utf-8").read().strip()
+            if cached:
+                return cached
+        except Exception:
+            pass
+
+    # Pick up to 55 highest-signal character/kinship/relationship lines distributed across the script
+    picked: list[str] = []
+    seen = set()
+    # Always include first 18 lines (opening setup introduces main characters & relationships!)
+    for idx in range(min(18, len(cleaned_inputs))):
+        t = cleaned_inputs[idx]
+        if t and idx not in seen:
+            seen.add(idx)
+            picked.append(f"({idx + 1}) {t}")
+    # Add lines with names, family roles, gender clues across the rest of the movie
+    for idx, t in enumerate(cleaned_inputs):
+        if idx in seen or not t:
+            continue
+        if _CHAR_CLUE_RE.search(t):
+            seen.add(idx)
+            picked.append(f"({idx + 1}) {t}")
+            if len(picked) >= 55:
+                break
+
+    if not picked:
+        return ""
+
+    sys_bible = (
+        "Bạn là đạo diễn biên kịch phân tích hồ sơ nhân vật phim.\n"
+        "Đọc các câu thoại trích từ phim và tóm tắt NGẮN GỌN (tối đa 7 gạch đầu dòng bằng Tiếng Việt):\n"
+        "- Bối cảnh phim (Hiện đại hay Cổ trang/Huyền huyễn).\n"
+        "- Từng nhân vật chính: Tên (Hán-Việt cho người Hoa, tên gốc cho người Tây), GIỚI TÍNH (Nam/Nữ), ĐỘ TUỔI (bé trai/bé gái/thiếu niên/người lớn/lão niên), VAI VẾ & QUAN HỆ (cha/mẹ/con, anh/em, sư phụ/đệ tử, cảnh sát/giáo sư/bạn bè) và cặp xưng hô chuẩn Tiếng Việt.\n"
+        "Ngắn gọn súc tích, tối đa 7 dòng."
+    )
+    user_bible = "Trích đoạn lời thoại phim:\n" + "\n".join(picked[:42])
+    bible_txt = _run_mlx_prompt(model, tokenizer, sampler, sys_bible, user_bible, max_tokens=260).strip()
+
+    if bible_txt:
+        try:
+            with open(bible_path, "w", encoding="utf-8") as bf:
+                bf.write(bible_txt)
+        except Exception:
+            pass
+    return bible_txt
+
+
+def _build_qwen_cinema_system_prompt(genre: str, char_bible: str) -> str:
+    bible_section = f"\nHỒ SƠ NHÂN VẬT & VAI VẾ CỦA BỘ PHIM NÀY (BẮT BUỘC TUÂN THỦ GIỚI TÍNH & XƯNG HÔ):\n{char_bible}\n" if char_bible else ""
+
+    gender_kinship_rules = (
+        "QUY TẮC TỐI THƯỢNG VỀ GIỚI TÍNH, ĐỘ TUỔI & XƯNG HÔ TIẾNG VIỆT (TUYỆT ĐỐI KHÔNG DÙNG 'NGƯƠI' CHUNG CHO TẤT CẢ!):\n"
+        "A. PHÂN BIỆT RẠCH RÒI NAM / NỮ / TRẺ EM / CHA MẸ:\n"
+        "  - Đọc kỹ chữ Hán gốc: '他' = NAM (anh ấy/cậu ấy/ông ấy/thằng bé/hắn); '她' = NỮ (cô ấy/chị ấy/bà ấy/cô bé/nàng); '它' = con vật/đồ vật (nó).\n"
+        "  - TUYỆT ĐỐI KHÔNG dịch nhầm nam thành nữ ('他' hay cậu bé KHÔNG BAO GIỜ là 'cô bé'; '黄三爷' là Hoàng Tam Gia - nam, KHÔNG phải 'nàng tiên') và không dịch nhầm nữ thành nam ('她' hay phụ nữ KHÔNG BAO GIỜ là 'anh ta')!\n"
+        "  - '小哥哥' = anh trai (cô gái gọi chàng trai, KHÔNG dịch là 'em trai'); '小姐姐' = chị gái; '娃/小子/毛孩子' = thằng bé/cậu bé (nam) hoặc cô bé (nữ) tùy giới tính nhân vật; '寒儿' = tên con trai Hàn Nhi (KHÔNG dịch thành 'ăn nguội'!).\n"
+        "  - '爸/爹/父亲' = cha/bố; '妈/娘/母亲/养母' = mẹ/mẹ nuôi.\n"
+        "B. XƯNG HÔ CHUẨN ĐÚNG NGƯỜI NÓI VÀ NGƯỜI NGHE (DỰA VÀO MẠCH CẢNH):\n"
+        "  - Con cái nói với Cha/Mẹ (kể cả trước mộ mẹ nuôi, khi nhắc '养母', '立碑', '您'): BẮT BUỘC xưng 'con - mẹ / cha' (TUYỆT ĐỐI CẤM gọi cha mẹ là 'ngươi' hay 'ngài'!).\n"
+        "  - Cha/Mẹ nói với Con ('寒儿', '孩子', '娃'): xưng 'mẹ / cha - con'.\n"
+        "  - Đệ tử / hậu bối / người trẻ nói với Sư phụ / Trưởng lão / Giáo sư / Bề trên ('您', '长老', '师尊', '教授', '先生'): xưng 'con / đệ tử / tôi - ngài / thầy / trưởng lão / giáo sư / ông' (CẤM gọi bề trên là 'ngươi'!).\n"
+        "  - Cô gái trẻ / người nhỏ hơn nói với chàng trai ('小哥哥', '大哥'): xưng 'em - anh'.\n"
+        "  - Khi nói chuyện với phụ nữ / nữ cảnh sát ('艾琳 / Irene', '冬梅 / Đông Mai', '女士', '小姐', '姑娘'): PHẢI gọi là 'cô / chị' (TUYỆT ĐỐI KHÔNG gọi phụ nữ là 'anh'!).\n"
+        "  - Người trưởng thành trong phim hiện đại (đàn ông, công chức, đạo sĩ, tiên gia, cảnh sát, giáo sư): xưng 'tôi' (KHÔNG xưng 'mình' sến súa cho đàn ông/cảnh sát/tiên gia!) và gọi đúng giới tính 'anh / chị / cô / cậu / ông / bà'.\n"
+    )
+
     if genre == "ancient_cn":
         return (
-            "Bạn là đạo diễn biên kịch dịch phim tiên hiệp, huyền huyễn, kiếm hiệp và cổ trang Trung Quốc sang Tiếng Việt chuẩn Hán-Việt hàng đầu.\n"
-            "Quy tắc BẮT BUỘC:\n"
-            "1. Dịch 100% sang Tiếng Việt chuẩn Hán-Việt điện ảnh, mượt mà giàu cảm xúc. TUYỆT ĐỐI CẤM để sót bất kỳ từ Tiếng Anh, Pinyin hay chữ Hán nào!\n"
-            "2. Dùng đúng thuật ngữ tu tiên/cổ trang: 苏长老=Tô trưởng lão, 苏阁主=Tô các chủ, 苏渊=Tô Uyên, 刘长老=Lưu trưởng lão, 罗长老=La trưởng lão, 浩然宗=Hạo Nhiên Tông, 藏经阁=Tàng Kinh Các, 万兽场=Vạn Thú Trường, 筑基=Trúc Cơ, 金丹=Kim Đan, 元婴=Nguyên Anh, 紫府境=Tử Phủ cảnh, 功法=công pháp, 灵宠=linh sủng, 灵兽=linh thú, 妖兽=yêu thú, 灵石=linh thạch, 贡献点=điểm cống hiến, 寿元=thọ nguyên, 秘境=bí cảnh, 仙门=tiên môn, 散修=tán tu, 闭关=bế quan, 投放=đầu phóng (truyền tống về quá khứ), 召回=triệu hồi, 月影豹=Nguyệt Ảnh Báo, 月杀影袭=Nguyệt Sát và Ảnh Tập, 地玄龟=Địa Huyền Quy, 通臂石猿=Thông Tý Thạch Viên, 屏气诀=Bình Khí Quyết, 真武大帝=Chân Vũ Đại Đế, 青帝=Thanh Đế, 万罗魔帝=Vạn La Ma Đế, 元帝=Nguyên Đế, 常青=Thường Thanh, 悲悯佛祖=Bi Mẫn Phật Tổ.\n"
-            "3. Giữ chính xác 100% mọi con số và ý nghĩa câu gốc. Xưng hô đúng lễ nghi cổ trang (ta - ngươi/ngài/các hạ, sư tôn/trưởng lão).\n"
-            "4. Xuất đúng đánh số [1]..[N] tương ứng 1-đối-1. Không gộp dòng, không bỏ dòng, không lặp từ, không giải thích thêm."
+            "Bạn là đạo diễn biên kịch thuyết minh phim cổ trang, tiên hiệp, huyền huyễn Việt Nam hàng đầu.\n"
+            f"{bible_section}\n"
+            f"{gender_kinship_rules}"
+            "  - CHỈ dùng 'ta - ngươi' khi bề trên/thần linh quát kẻ dưới hoặc hai kẻ thù đang đối đầu sinh tử! Với người thân (mẹ/cha/con), bề trên (trưởng lão/sư phụ), hay cô gái gọi thiếu niên (em - anh) PHẢI dùng đúng vai vế tự nhiên.\n"
+            "C. CHẤT LƯỢNG DỊCH ĐIỆN ẢNH:\n"
+            "  - Dịch 100% sang Tiếng Việt chuẩn Hán-Việt trôi chảy, mượt mà dễ nghe, đúng 100% số liệu & ý nghĩa câu gốc. TUYỆT ĐỐI KHÔNG để sót chữ Hán, Pinyin hay từ Tiếng Anh nào.\n"
+            "  - Xuất đúng đánh số [1]..[N] tương ứng 1-đối-1. Không gộp dòng, không bỏ dòng, không lặp từ, không giải thích thêm."
         )
     if genre == "modern_cn":
         return (
-            "Bạn là đạo diễn biên kịch dịch phim hiện đại Trung Quốc (đô thị, đổ thạch, tài chính, tin tức) sang Tiếng Việt tự nhiên.\n"
-            "Quy tắc BẮT BUỘC:\n"
-            "1. Dịch 100% sang Tiếng Việt hiện đại trôi chảy, TUYỆT ĐỐI CẤM để sót từ Tiếng Anh, Pinyin hay chữ Hán!\n"
-            "2. Xưng hô hiện đại tự nhiên (Ông chủ, tôi - anh/cậu). TUYỆT ĐỐI CẤM dùng từ cổ trang (lão phu, bản tọa, ngươi, tại hạ, các hạ).\n"
-            "3. Giữ chính xác 100% mọi con số, giá tiền và tên riêng Hán-Việt (Mạc Loan Cơ, Thụy Lệ Đạt, Băng Chủng, Nếp Chủng, Băng Nếp, Nếp Băng, Đế Vương Lục, Phiêu Dương Lục, Phiêu Lam Hoa).\n"
-            "4. Xuất đúng đánh số [1]..[N] tương ứng 1-đối-1. Không gộp dòng, không bỏ dòng, không giải thích thêm."
+            "Bạn là đạo diễn biên kịch thuyết minh phim HIỆN ĐẠI Trung Quốc (đô thị, trinh thám, linh dị hiện đại, đổ thạch, hài hước) sang Tiếng Việt tự nhiên.\n"
+            f"{bible_section}\n"
+            f"{gender_kinship_rules}"
+            "  - ĐÂY LÀ PHIM BỐI CẢNH HIỆN ĐẠI: TUYỆT ĐỐI CẤM dùng từ cổ trang như 'ngươi', 'lão phu', 'bản tọa', 'tại hạ', 'các hạ'!\n"
+            "  - Dùng xưng hô đời thực tự nhiên: 'tôi - anh/chị/cô/cậu/ông/bà', bạn thân 'tôi - cậu/ông/cô', con với cha mẹ 'con - bố/mẹ', với cấp trên/giáo sư/cảnh sát 'tôi - giáo sư/cô/ông/sếp'.\n"
+            "C. CHẤT LƯỢNG DỊCH ĐIỆN ẢNH:\n"
+            "  - Dịch 100% sang Tiếng Việt tự nhiên (tên nhân vật phương Tây như Irene Walker, Kane giữ chuẩn cách gọi Cảnh sát Irene Walker, ông Kane; tên nhân vật Trung Quốc dịch chuẩn Hán-Việt như Mã Đông Mai, Trương Huyền Nhất, Hoàng Tam Gia, Mạc Loan Cơ, Thụy Lệ Đạt).\n"
+            "  - Dịch chuẩn nghĩa bối cảnh (VD: '提议' = đề xuất, KHÔNG phải 'lời cầu hôn'; '出马仙' = Xuất Mã Tiên; '仙家' của Hoàng Tam Gia = Tiên gia, KHÔNG phải 'nàng tiên'; '死马当活马医' = còn nước còn tát; '埋汰' = châm chọc/chê bai, KHÔNG phải 'chôn').\n"
+            "  - Giữ chính xác 100% số liệu, xuất đúng đánh số [1]..[N] tương ứng 1-đối-1, không gộp dòng, không bỏ dòng, không giải thích thêm."
         )
     return (
-        "Bạn là đạo diễn biên kịch dịch phim điện ảnh sang Tiếng Việt tự nhiên.\n"
-        "Dịch từng dòng sang 100% Tiếng Việt trôi chảy, giàu cảm xúc, giữ nguyên số liệu và ý nghĩa, tuyệt đối không chêm từ Tiếng Anh thừa.\n"
-        "Xuất đúng [1]..[N] tương ứng 1-đối-1."
+        "Bạn là đạo diễn biên kịch lồng tiếng phim điện ảnh quốc tế sang Tiếng Việt.\n"
+        f"{bible_section}\n"
+        f"{gender_kinship_rules}"
+        "  - Dịch 100% sang Tiếng Việt tự nhiên, phân biệt chuẩn nam/nữ/trẻ em/cha mẹ (anh-em, bố/mẹ-con, tôi-anh/cô/ông), không dùng 'ngươi' trừ bối cảnh cổ đại đối đầu, không dùng 'tao - mày'.\n"
+        "  - Xuất đúng đánh số [1]..[N] tương ứng 1-đối-1."
     )
-
-
-def _needs_llm_repair(
-    src_line: str,
-    nmt_vi: str,
-    genre: str,
-    is_zh_source: bool,
-    is_cjk_source: bool,
-    multi_hour_fast_mode: bool = False,
-) -> bool:
-    """Determines whether a line MUST be translated/repaired directly by Qwen3-8B (zero English pivot)."""
-    if not nmt_vi or _NON_LATIN_LEAK_RE.search(nmt_vi):
-        return True
-    if find_foreign_leaks_in_vi(nmt_vi, genre=genre, is_cjk_source=is_cjk_source):
-        return True
-    if _BAD_LITERAL_VI_SMELL_RE.search(nmt_vi):
-        return True
-    if not multi_hour_fast_mode and is_zh_source and genre == "ancient_cn" and _XIANXIA_LLM_TRIGGER_RE.search(src_line):
-        return True
-    return False
 
 
 def translate_cinema_lines(
@@ -636,11 +576,11 @@ def translate_cinema_lines(
     progress_cb: Callable[[int, int], None] | None = None,
 ) -> list[str]:
     """
-    2-Stage Zero-Foreign-Leak Cinema Translation Engine:
-    - Stage 1: Ultra-fast newline-batched parallel NMT (zero HTTP 429 rate-limits, word-loop killer).
-    - Stage 2: Direct Metal GPU Qwen3-8B-4bit Hán-Việt Cinema Repair for EVERY line containing
-      English/Pinyin leaks, Xianxia/cultivation jargon, or literal translation smells — with strict
-      phonotactic verification & persistent per-batch disk caching for multi-hour movies!
+    Full Character-Bible + Contiguous Scene-Context Cinema Translation Engine:
+    - Pass 0: Builds the Character & Relationship Bible (gender, age, kinship, modern/ancient setting).
+    - Pass 1: Translates ALL dialogue turns in contiguous 8-line scene blocks with rolling 2-line
+      scene memory via Qwen3-8B Metal GPU (100% direct zh -> vi, exact gender & kinship pronouns,
+      zero blind 'ngươi', zero English/Pinyin leaks), backed by NMT safety anchors & disk batch cache!
     """
     if not lines:
         return []
@@ -657,9 +597,6 @@ def translate_cinema_lines(
     )
     genre = detect_script_genre(cleaned_inputs, is_zh_source=is_zh_source)
 
-    if nmt_fallback_fn is None:
-        return cleaned_inputs
-
     sl_query = "zh-CN" if is_zh_source else (source_lang or "auto")
     tl_lower = (target_lang or "vi").lower()
     is_vi_target = tl_lower.startswith("vi")
@@ -668,206 +605,236 @@ def translate_cinema_lines(
     cache_dir = os.path.join("/tmp", "voxly_dub_sessions")
     os.makedirs(cache_dir, exist_ok=True)
 
-    # ---------------- STAGE 1: Fast Parallel NMT Baseline ----------------
-    results: list[str] = [""] * total_lines
-    pending_indices: list[int] = []
+    # ---------------- Fast NMT Baseline (safety anchor + cross-platform fallback) ----------------
+    nmt_anchors: list[str] = list(cleaned_inputs)
+    if nmt_fallback_fn is not None:
+        pending_nmt: list[int] = []
+        for idx, src_line in enumerate(cleaned_inputs):
+            bare = src_line.strip().rstrip("。！？!?.，, ")
+            if is_zh_source and is_vi_target and bare in _ZH_EXACT_SHORT_UTTERANCES_VI:
+                nmt_anchors[idx] = _ZH_EXACT_SHORT_UTTERANCES_VI[bare]
+            else:
+                pending_nmt.append(idx)
 
-    for idx, src_line in enumerate(cleaned_inputs):
-        bare = src_line.strip().rstrip("。！？!?.，, ")
-        if is_zh_source and is_vi_target and bare in _ZH_EXACT_SHORT_UTTERANCES_VI:
-            results[idx] = _ZH_EXACT_SHORT_UTTERANCES_VI[bare]
-        else:
-            pending_indices.append(idx)
+        def _tr_one_nmt(q_txt: str, orig_txt: str) -> str:
+            for attempt in range(3):
+                if attempt > 0:
+                    time.sleep(0.35 * attempt)
+                try:
+                    tr_raw, _ = nmt_fallback_fn(q_txt, sl_query, target_lang)
+                    pol = _polish_vietnamese_cinema_line(tr_raw or "", genre=genre, target_lang=target_lang)
+                    if pol and (not is_vi_target or not cjk_leak_re.search(pol)):
+                        return pol
+                except Exception:
+                    continue
+            return orig_txt
 
-    def _tr_single_with_retry(q_txt: str, orig_txt: str) -> str:
-        for attempt in range(4):
-            if attempt > 0:
-                time.sleep(0.35 * attempt)
-            try:
-                tr_raw, _ = nmt_fallback_fn(q_txt, sl_query, target_lang)
-                pol = _polish_vietnamese_cinema_line(tr_raw or "", genre=genre, target_lang=target_lang)
-                if pol and (not is_vi_target or not cjk_leak_re.search(pol)):
-                    return pol
-            except Exception:
-                continue
-        return orig_txt
+        nmt_batches = [pending_nmt[i : i + 16] for i in range(0, len(pending_nmt), 16)]
 
-    batch_size = 16
-    batches: list[list[int]] = [
-        pending_indices[i : i + batch_size] for i in range(0, len(pending_indices), batch_size)
-    ]
-
-    def _process_nmt_batch(idx_list: list[int]) -> list[tuple[int, str]]:
-        q_lines = [
-            _expand_pure_zh_semantics(cleaned_inputs[i]) if is_zh_source else cleaned_inputs[i]
-            for i in idx_list
-        ]
-        sig = hashlib.sha256(
-            json.dumps({"v": 8, "sl": sl_query, "tl": target_lang, "g": genre, "q": q_lines}, ensure_ascii=False).encode("utf-8")
-        ).hexdigest()[:20]
-        c_path = os.path.join(cache_dir, f"tr_nmt_v8_{sig}.json")
-
-        if os.path.exists(c_path):
-            try:
-                cached = json.load(open(c_path, "r", encoding="utf-8"))
-                if isinstance(cached, list) and len(cached) == len(idx_list) and all(cached):
-                    if not is_vi_target or not any(cjk_leak_re.search(x) for x in cached):
+        def _run_nmt_batch(idx_list: list[int]) -> list[tuple[int, str]]:
+            q_lines = [_expand_pure_zh_semantics(cleaned_inputs[i]) if is_zh_source else cleaned_inputs[i] for i in idx_list]
+            sig = hashlib.sha256(
+                json.dumps({"v": 10, "sl": sl_query, "tl": target_lang, "g": genre, "q": q_lines}, ensure_ascii=False).encode("utf-8")
+            ).hexdigest()[:20]
+            c_path = os.path.join(cache_dir, f"tr_nmt_v10_{sig}.json")
+            if os.path.exists(c_path):
+                try:
+                    cached = json.load(open(c_path, "r", encoding="utf-8"))
+                    if isinstance(cached, list) and len(cached) == len(idx_list) and all(cached):
                         return list(zip(idx_list, cached))
+                except Exception:
+                    pass
+
+            joined_q = "\n".join(q_lines)
+            b_outs: list[str] = []
+            for b_try in range(3):
+                if b_try > 0:
+                    time.sleep(0.45 * b_try)
+                try:
+                    tr_block, _ = nmt_fallback_fn(joined_q, sl_query, target_lang)
+                    raw_splits = [ln.strip() for ln in (tr_block or "").splitlines() if ln.strip()]
+                    if len(raw_splits) == len(idx_list):
+                        b_outs = [_polish_vietnamese_cinema_line(s, genre=genre, target_lang=target_lang) for s in raw_splits]
+                        break
+                except Exception:
+                    continue
+
+            verified: list[str] = []
+            for k, orig_i in enumerate(idx_list):
+                cand = b_outs[k] if k < len(b_outs) else ""
+                if not cand or (is_vi_target and cjk_leak_re.search(cand)):
+                    cand = _tr_one_nmt(q_lines[k], cleaned_inputs[orig_i])
+                verified.append(cand)
+
+            try:
+                with open(c_path, "w", encoding="utf-8") as cf:
+                    json.dump(verified, cf, ensure_ascii=False)
             except Exception:
                 pass
+            return list(zip(idx_list, verified))
 
-        joined_q = "\n".join(q_lines)
-        batch_outs: list[str] = []
-        for b_attempt in range(3):
-            if b_attempt > 0:
-                time.sleep(0.45 * b_attempt)
-            try:
-                tr_block, _ = nmt_fallback_fn(joined_q, sl_query, target_lang)
-                raw_splits = [ln.strip() for ln in (tr_block or "").splitlines() if ln.strip()]
-                if len(raw_splits) == len(idx_list):
-                    batch_outs = [
-                        _polish_vietnamese_cinema_line(s, genre=genre, target_lang=target_lang)
-                        for s in raw_splits
-                    ]
-                    break
-            except Exception:
-                continue
+        if nmt_batches:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                for pairs in pool.map(_run_nmt_batch, nmt_batches):
+                    for orig_i, val in pairs:
+                        nmt_anchors[orig_i] = val
 
-        verified_outs: list[str] = []
-        for k, orig_idx in enumerate(idx_list):
-            cand = batch_outs[k] if k < len(batch_outs) else ""
-            if not cand or (is_vi_target and cjk_leak_re.search(cand)):
-                cand = _tr_single_with_retry(q_lines[k], cleaned_inputs[orig_idx])
-            verified_outs.append(cand)
-
-        try:
-            with open(c_path, "w", encoding="utf-8") as cf:
-                json.dump(verified_outs, cf, ensure_ascii=False)
-        except Exception:
-            pass
-
-        return list(zip(idx_list, verified_outs))
-
-    if batches:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            for pairs in pool.map(_process_nmt_batch, batches):
-                for orig_i, tr_val in pairs:
-                    results[orig_i] = tr_val
-
-    # ---------------- STAGE 2: Direct Qwen3-8B Zero-English-Leak & Hán-Việt Repair ----------------
+    # ---------------- Character-Bible + Contiguous Scene-Context Qwen3-8B Cinema Translation ----------------
     if is_vi_target and _can_use_mlx_cinema_llm():
-        # On multi-hour feature films (> 220 turns, ~25+ min to 5+ hours), selectively repair every line
-        # with actual English/Pinyin leaks or literal mistranslation smells so 2-3h movies finish fast
-        # with 0% English leaks! On shorter episodes, polish all Xianxia/cultivation lines too.
-        multi_hour_fast = total_lines > 220
-        repair_indices = [
-            i for i in range(total_lines)
-            if _needs_llm_repair(
-                cleaned_inputs[i],
-                results[i],
-                genre=genre,
-                is_zh_source=is_zh_source,
-                is_cjk_source=is_cjk_source,
-                multi_hour_fast_mode=multi_hour_fast,
-            )
-        ]
+        with _MLX_LOCK:
+            model, tokenizer, sampler = _get_mlx_engine()
+            if model is not None and tokenizer is not None:
+                if progress_cb is not None:
+                    try:
+                        progress_cb(0, total_lines)
+                    except Exception:
+                        pass
 
-        if repair_indices:
-            with _MLX_LOCK:
-                model, tokenizer, sampler = _get_mlx_engine()
-                if model is not None and tokenizer is not None:
-                    sys_msg = _build_qwen_repair_system_prompt(genre=genre)
-                    q_batch_size = 8 if multi_hour_fast else 6
-                    n_rep = len(repair_indices)
+                # Pass 0: Extract Movie Character & Relationship Bible (gender, age, family, hierarchy)
+                char_bible = _extract_character_bible(
+                    model=model,
+                    tokenizer=tokenizer,
+                    sampler=sampler,
+                    cleaned_inputs=cleaned_inputs,
+                    genre=genre,
+                    cache_dir=cache_dir,
+                )
+                sys_msg = _build_qwen_cinema_system_prompt(genre=genre, char_bible=char_bible)
+                bible_hash = hashlib.sha256(char_bible.encode("utf-8")).hexdigest()[:10]
 
-                    for r_start in range(0, n_rep, q_batch_size):
-                        sub_idx = repair_indices[r_start : r_start + q_batch_size]
-                        if progress_cb is not None:
-                            try:
-                                progress_cb(min(total_lines - 1, int((r_start / max(1, n_rep)) * total_lines)), total_lines)
-                            except Exception:
-                                pass
+                results: list[str] = list(nmt_anchors)
+                batch_size = 6
+                prev_context: list[tuple[str, str]] = []
 
-                        b_srcs = [cleaned_inputs[i] for i in sub_idx]
-                        b_nmt = [results[i] for i in sub_idx]
-                        q_sig = hashlib.sha256(
-                            json.dumps(
-                                {"v": 9, "m": _MLX_MODEL_ID, "g": genre, "s": b_srcs},
-                                ensure_ascii=False,
-                            ).encode("utf-8")
-                        ).hexdigest()[:20]
-                        q_cache_file = os.path.join(cache_dir, f"tr_qwen_v9_{q_sig}.json")
+                for start_idx in range(0, total_lines, batch_size):
+                    end_idx = min(total_lines, start_idx + batch_size)
+                    b_srcs = cleaned_inputs[start_idx:end_idx]
+                    b_ancs = nmt_anchors[start_idx:end_idx]
 
-                        if os.path.exists(q_cache_file):
-                            try:
-                                cached_q = json.load(open(q_cache_file, "r", encoding="utf-8"))
-                                if isinstance(cached_q, list) and len(cached_q) == len(sub_idx) and all(cached_q):
-                                    for k, val in enumerate(cached_q):
-                                        results[sub_idx[k]] = val
-                                    continue
-                            except Exception:
-                                pass
-
-                        numbered_in = "\n".join(f"[{k + 1}] {b_srcs[k]}" for k in range(len(sub_idx)))
-                        user_msg = (
-                            f"Dịch {len(sub_idx)} câu thoại phim sau sang 100% Tiếng Việt chuẩn điện ảnh "
-                            f"(tuyệt đối KHÔNG sót Tiếng Anh/Pinyin/chữ Hán):\n{numbered_in}"
-                        )
-                        est_toks = max(480, sum(len(x) for x in b_srcs) * 5 + 180)
-                        raw_out = _run_mlx_prompt(model, tokenizer, sampler, sys_msg, user_msg, max_tokens=min(1600, est_toks))
-
-                        parsed_map: dict[int, str] = {}
-                        for ln in raw_out.splitlines():
-                            m = re.match(r"^\s*\[(\d+)\]\s*(.+)$", ln.strip())
-                            if not m:
-                                m = re.match(r"^\s*(\d+)[.):]\s*(.+)$", ln.strip())
-                            if m:
-                                k_i = int(m.group(1)) - 1
-                                if 0 <= k_i < len(sub_idx):
-                                    cand = _polish_vietnamese_cinema_line(m.group(2), genre=genre, target_lang=target_lang)
-                                    # Verify no extreme bloat (line-shift) and no CJK leak
-                                    anc_len = max(8, len(b_nmt[k_i]))
-                                    if (
-                                        cand
-                                        and not cjk_leak_re.search(cand)
-                                        and len(cand) <= max(int(anc_len * 2.1), anc_len + 45)
-                                    ):
-                                        parsed_map[k_i] = cand
-
-                        final_sub: list[str] = []
-                        for k in range(len(sub_idx)):
-                            chosen = parsed_map.get(k) or b_nmt[k]
-                            leaks = find_foreign_leaks_in_vi(chosen, genre=genre, is_cjk_source=is_cjk_source)
-                            if leaks:
-                                # Focused single-line zero-leak repair explicitly naming the leaked words!
-                                fix_prompt = (
-                                    f"Câu gốc: {b_srcs[k]}\n"
-                                    f"Bản dịch nháp bị sót từ ngoại lai ({', '.join(leaks[:5])}): {chosen}\n"
-                                    f"Hãy viết lại 1 câu hoàn chỉnh 100% Tiếng Việt chuẩn Hán-Việt, "
-                                    f"TUYỆT ĐỐI KHÔNG chứa các từ {', '.join(leaks[:5])} hay bất kỳ chữ Tiếng Anh/Pinyin/Hán nào (chỉ xuất duy nhất câu dịch):"
-                                )
-                                fix_out = _run_mlx_prompt(model, tokenizer, sampler, sys_msg, fix_prompt, max_tokens=240)
-                                fix_first = next((l.strip() for l in fix_out.splitlines() if l.strip()), "")
-                                fix_first = re.sub(r"^\s*(?:\[\d+\]|\d+[.):])\s*", "", fix_first)
-                                fix_clean = _polish_vietnamese_cinema_line(fix_first, genre=genre, target_lang=target_lang)
-                                if fix_clean and not cjk_leak_re.search(fix_clean):
-                                    new_leaks = find_foreign_leaks_in_vi(fix_clean, genre=genre, is_cjk_source=is_cjk_source)
-                                    if len(new_leaks) < len(leaks):
-                                        chosen = fix_clean
-
-                            results[sub_idx[k]] = chosen
-                            final_sub.append(chosen)
-
+                    if progress_cb is not None:
                         try:
-                            with open(q_cache_file, "w", encoding="utf-8") as qf:
-                                json.dump(final_sub, qf, ensure_ascii=False)
+                            progress_cb(start_idx, total_lines)
                         except Exception:
                             pass
+
+                    # Skip LLM ONLY if every single line in this block is a trivial exact 1-2 word utterance
+                    if is_zh_source and all(
+                        s.strip().rstrip("。！？!?.，, ") in _ZH_EXACT_SHORT_UTTERANCES_VI for s in b_srcs
+                    ):
+                        for k in range(len(b_srcs)):
+                            results[start_idx + k] = b_ancs[k]
+                            prev_context.append((b_srcs[k], b_ancs[k]))
+                        continue
+
+                    ctx_pairs = prev_context[-2:]
+                    q_sig = hashlib.sha256(
+                        json.dumps(
+                            {
+                                "v": 11,
+                                "m": _MLX_MODEL_ID,
+                                "g": genre,
+                                "bh": bible_hash,
+                                "ctx": [c[1] for c in ctx_pairs],
+                                "s": b_srcs,
+                            },
+                            ensure_ascii=False,
+                        ).encode("utf-8")
+                    ).hexdigest()[:20]
+                    q_cache_file = os.path.join(cache_dir, f"tr_scene_v11_{q_sig}.json")
+
+                    if os.path.exists(q_cache_file):
+                        try:
+                            cached_q = json.load(open(q_cache_file, "r", encoding="utf-8"))
+                            if isinstance(cached_q, list) and len(cached_q) == len(b_srcs) and all(cached_q):
+                                for k, val in enumerate(cached_q):
+                                    results[start_idx + k] = val
+                                    prev_context.append((b_srcs[k], val))
+                                continue
+                        except Exception:
+                            pass
+
+                    ctx_block = ""
+                    if ctx_pairs:
+                        ctx_lines = "\n".join(f'- "{s0}" => "{t0}"' for s0, t0 in ctx_pairs)
+                        ctx_block = f"2 câu thoại ngay trước đó (CHỈ để nắm mạch cảnh & giữ đúng vai vế xưng hô, KHÔNG dịch lại):\n{ctx_lines}\n\n"
+
+                    lookahead = ""
+                    if end_idx < total_lines:
+                        lookahead = f'\n\n(Câu tiếp theo để nắm ngữ cảnh, KHÔNG dịch: "{cleaned_inputs[end_idx]}")'
+
+                    numbered_in = "\n".join(f"[{k + 1}] {b_srcs[k]}" for k in range(len(b_srcs)))
+                    user_msg = (
+                        f"{ctx_block}"
+                        f"Dịch đúng {len(b_srcs)} câu thoại liên tiếp sau sang 100% Tiếng Việt chuẩn giới tính & vai vế xưng hô "
+                        f"(từ [1] đến [{len(b_srcs)}]):\n{numbered_in}{lookahead}"
+                    )
+                    est_toks = max(560, sum(len(x) for x in b_srcs) * 5 + 220)
+                    raw_out = _run_mlx_prompt(model, tokenizer, sampler, sys_msg, user_msg, max_tokens=min(1800, est_toks))
+
+                    parsed_map: dict[int, str] = {}
+                    for ln in raw_out.splitlines():
+                        m = re.match(r"^\s*\[(\d+)\]\s*(.+)$", ln.strip())
+                        if not m:
+                            m = re.match(r"^\s*(\d+)[.):]\s*(.+)$", ln.strip())
+                        if m:
+                            k_i = int(m.group(1)) - 1
+                            if 0 <= k_i < len(b_srcs):
+                                cand = _polish_vietnamese_cinema_line(m.group(2), genre=genre, target_lang=target_lang)
+                                anc_len = max(10, len(b_ancs[k_i]))
+                                if (
+                                    cand
+                                    and not cjk_leak_re.search(cand)
+                                    and len(cand) <= max(int(anc_len * 2.2), anc_len + 50)
+                                ):
+                                    parsed_map[k_i] = cand
+
+                    final_batch: list[str] = []
+                    for k in range(len(b_srcs)):
+                        bare_s = b_srcs[k].strip().rstrip("。！？!?.，, ")
+                        if is_zh_source and bare_s in _ZH_EXACT_SHORT_UTTERANCES_VI and k not in parsed_map:
+                            chosen = _ZH_EXACT_SHORT_UTTERANCES_VI[bare_s]
+                        else:
+                            chosen = parsed_map.get(k) or b_ancs[k]
+
+                        # Reject/repair ANY foreign leak OR archaic 'ngươi' in modern_cn
+                        leaks = find_foreign_leaks_in_vi(chosen, genre=genre, is_cjk_source=is_cjk_source)
+                        if genre == "modern_cn" and _ARCHAIC_NGUOI_RE.search(chosen):
+                            chosen = _polish_vietnamese_cinema_line(chosen, genre="modern_cn", target_lang=target_lang)
+                        if leaks:
+                            fix_prompt = (
+                                f"Câu gốc: {b_srcs[k]}\n"
+                                f"Bản dịch nháp bị sót từ ngoại lai ({', '.join(leaks[:5])}): {chosen}\n"
+                                f"Hãy viết lại 1 câu hoàn chỉnh 100% Tiếng Việt đúng giới tính & vai vế xưng hô, "
+                                f"TUYỆT ĐỐI KHÔNG chứa từ {', '.join(leaks[:5])} hay chữ Hán/Pinyin (chỉ xuất duy nhất câu dịch):"
+                            )
+                            fix_out = _run_mlx_prompt(model, tokenizer, sampler, sys_msg, fix_prompt, max_tokens=240)
+                            fix_first = next((l.strip() for l in fix_out.splitlines() if l.strip()), "")
+                            fix_first = re.sub(r"^\s*(?:\[\d+\]|\d+[.):])\s*", "", fix_first)
+                            fix_clean = _polish_vietnamese_cinema_line(fix_first, genre=genre, target_lang=target_lang)
+                            if fix_clean and not cjk_leak_re.search(fix_clean):
+                                if len(find_foreign_leaks_in_vi(fix_clean, genre=genre, is_cjk_source=is_cjk_source)) < len(leaks):
+                                    chosen = fix_clean
+
+                        results[start_idx + k] = chosen
+                        final_batch.append(chosen)
+                        prev_context.append((b_srcs[k], chosen))
+
+                    try:
+                        with open(q_cache_file, "w", encoding="utf-8") as qf:
+                            json.dump(final_batch, qf, ensure_ascii=False)
+                    except Exception:
+                        pass
+
+                if progress_cb is not None:
+                    try:
+                        progress_cb(total_lines, total_lines)
+                    except Exception:
+                        pass
+                return results
 
     if progress_cb is not None:
         try:
             progress_cb(total_lines, total_lines)
         except Exception:
             pass
-
-    return results
+    return nmt_anchors

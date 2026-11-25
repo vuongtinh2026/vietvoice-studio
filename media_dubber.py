@@ -1563,11 +1563,40 @@ def _download_douyin_media(
         raw_urls = [str(u) for u in (play_addr.get("url_list") or []) if u]
 
         candidate_streams: list[str] = []
+        # 1. Highest-resolution 1080p Full HD stream from Douyin bit_rate tiers (prefer H.264, then highest bitrate <= 1080p)
+        bit_rates = vid_obj.get("bit_rate") or []
+        if isinstance(bit_rates, list) and bit_rates:
+            scored_tiers = []
+            for tier in bit_rates:
+                if not isinstance(tier, dict):
+                    continue
+                t_addr = tier.get("play_addr") or {}
+                t_urls = [str(u).replace("playwm", "play") for u in (t_addr.get("url_list") or []) if u]
+                if not t_urls:
+                    continue
+                t_w = int(t_addr.get("width") or tier.get("width") or 0)
+                t_h = int(t_addr.get("height") or tier.get("height") or 0)
+                short_side = min(t_w, t_h) if (t_w > 0 and t_h > 0) else 0
+                gear = str(tier.get("gear_name") or "").lower()
+                is_1080 = 1 if (short_side >= 1000 or "1080" in gear) else 0
+                is_h264 = 1 if int(tier.get("is_h265") or 0) == 0 else 0
+                br = int(tier.get("bit_rate") or 0)
+                scored_tiers.append(((is_1080, short_side, is_h264, br), t_urls))
+            scored_tiers.sort(key=lambda x: x[0], reverse=True)
+            for _, t_urls in scored_tiers:
+                for u in t_urls:
+                    if u not in candidate_streams:
+                        candidate_streams.append(u)
+
+        # 2. Direct watermark-free 1080p Full HD -> 720p HD CDN endpoints
         if uri and not uri.startswith("http"):
+            candidate_streams.append(f"https://aweme.snssdk.com/aweme/v1/play/?video_id={uri}&ratio=1080p&line=0")
             candidate_streams.append(f"https://aweme.snssdk.com/aweme/v1/play/?video_id={uri}&ratio=720p&line=0")
         for u in raw_urls:
-            candidate_streams.append(u.replace("playwm", "play"))
-        if uri and uri.startswith("http"):
+            clean_u = u.replace("playwm", "play")
+            if clean_u not in candidate_streams:
+                candidate_streams.append(clean_u)
+        if uri and uri.startswith("http") and uri not in candidate_streams:
             candidate_streams.append(uri)
 
         if not candidate_streams:
@@ -1584,7 +1613,7 @@ def _download_douyin_media(
                     safe_stream_u,
                     stream=True,
                     allow_redirects=True,
-                    timeout=25,
+                    timeout=30,
                     headers={"Referer": "https://www.iesdouyin.com/"},
                 ) as vr:
                     if vr.status_code >= 400:
@@ -1595,7 +1624,7 @@ def _download_douyin_media(
                             if ch:
                                 total_b += len(ch)
                                 if total_b > max_bytes:
-                                    raise RuntimeError("Dung lượng video Douyin vượt quá giới hạn 1.5GB!")
+                                    raise RuntimeError("Dung lượng video Douyin vượt quá giới hạn 3GB!")
                                 vf.write(ch)
                     if total_b > 2000:
                         downloaded_ok = True
@@ -1638,15 +1667,17 @@ def _download_douyin_media(
             pass
 
         if v_codec_name and v_codec_name not in ("h264", "avc1"):
+            raw_probe = probe_media_info(raw_mp4_path, ffmpeg_bin=ffmpeg_bin)
+            tc_timeout = max(300, int(float(raw_probe.get("durationSec") or 0.0) * 0.85) + 240)
             subprocess.run(
                 [
                     ffmpeg_bin, "-nostdin", "-y", "-i", raw_mp4_path,
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
-                    "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", final_path,
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                    "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", final_path,
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                timeout=240,
+                timeout=tc_timeout,
                 check=True,
             )
             try:
@@ -1680,7 +1711,7 @@ def download_online_video_url(
     clean_url = _validate_safe_public_video_url(raw_url)
     os.makedirs(out_dir, exist_ok=True)
     mode = "audio" if download_mode == "audio" else "video"
-    url_hash = hashlib.sha256(f"{clean_url}|{mode}".encode("utf-8")).hexdigest()[:16]
+    url_hash = hashlib.sha256(f"{clean_url}|{mode}|1080p".encode("utf-8")).hexdigest()[:16]
     cache_prefix = os.path.join(out_dir, f"yt_cache_{url_hash}_{mode}")
     meta_cache_path = f"{cache_prefix}.info_meta.json"
 
@@ -1726,9 +1757,10 @@ def download_online_video_url(
         ydl_opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
     else:
         ydl_opts["format"] = (
-            "bestvideo[height<=720][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
-            "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
-            "best[height<=720][ext=mp4]/best[ext=mp4]/best"
+            "bestvideo[height<=1080][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[height<=1080]+bestaudio/"
+            "best[height<=1080][ext=mp4]/best[ext=mp4]/best"
         )
         ydl_opts["merge_output_format"] = "mp4"
 

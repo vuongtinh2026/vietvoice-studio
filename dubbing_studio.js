@@ -187,9 +187,9 @@
     if (ytModeSel) {
       const prevMode = ytModeSel.value || 'video';
       ytModeSel.innerHTML = isVi
-        ? `<option value="video">🎬 Tải Video .MP4 + Lồng tiếng (720p HD)</option>
+        ? `<option value="video">🎬 Tải Video .MP4 + Lồng tiếng (1080p Full HD)</option>
            <option value="audio">🎵 Chỉ lấy Âm thanh .MP3 (Siêu tốc)</option>`
-        : `<option value="video">🎬 Video .MP4 + AI Dubbing (720p HD)</option>
+        : `<option value="video">🎬 Video .MP4 + AI Dubbing (1080p Full HD)</option>
            <option value="audio">🎵 Audio Only .MP3 (Fast)</option>`;
       ytModeSel.value = prevMode === 'audio' ? 'audio' : 'video';
     }
