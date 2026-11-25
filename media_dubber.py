@@ -1125,16 +1125,47 @@ def mux_dubbed_audio_into_video(
                     pass
 
 
+_DOUYIN_LOCK = threading.Lock()
+_DOUYIN_SESSION = None
+_DOUYIN_MOBILE_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+)
+
+
+def extract_clean_online_url(raw_input: str) -> str:
+    """
+    Extracts a clean http/https URL even when pasted inside Douyin / TikTok / Bilibili
+    mobile share text (e.g. '4.89 复制打开抖音，看看... https://v.douyin.com/iYxxx/').
+    """
+    txt = (raw_input or "").strip()
+    if not txt:
+        return ""
+    m_http = re.search(r"https?://[^\s<>\"'，。！？；：）】》]+", txt)
+    if m_http:
+        return m_http.group(0).rstrip(".,;!?)]}'\"")
+    m_bare = re.search(
+        r"(?:www\.|v\.|m\.)?(?:douyin\.com|iesdouyin\.com|youtube\.com|youtu\.be|tiktok\.com|vt\.tiktok\.com)/[^\s<>\"'，。！？；：）】》]+",
+        txt,
+        re.IGNORECASE,
+    )
+    if m_bare:
+        return "https://" + m_bare.group(0).rstrip(".,;!?)]}'\"")
+    return txt
+
+
 def _validate_safe_public_video_url(raw_url: str) -> str:
-    url = (raw_url or "").strip()
+    url = extract_clean_online_url(raw_url)
     if not url:
-        raise ValueError("Vui lòng dán đường link YouTube hoặc video cần dịch!")
+        raise ValueError("Vui lòng dán đường link YouTube, Douyin hoặc TikTok cần dịch!")
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise ValueError("Đường link không hợp lệ! Vui lòng dán link bắt đầu bằng https:// (VD: https://www.youtube.com/watch?v=...).")
+        raise ValueError(
+            "Đường link không hợp lệ! Vui lòng dán link YouTube hoặc Douyin (VD: https://www.douyin.com/video/... hoặc https://v.douyin.com/...)."
+        )
     host = parsed.hostname.strip().lower()
     if host in ("localhost", "0.0.0.0") or host.endswith(".local"):
-        raise ValueError("Chỉ hỗ trợ đường link video công khai trên Internet (YouTube, Shorts, TikTok, Vimeo...).")
+        raise ValueError("Chỉ hỗ trợ đường link video công khai trên Internet (YouTube, Douyin, Shorts, TikTok...).")
     try:
         infos = socket.getaddrinfo(host, None)
         for item in infos:
@@ -1149,6 +1180,220 @@ def _validate_safe_public_video_url(raw_url: str) -> str:
     return url
 
 
+def _is_douyin_url(url: str) -> bool:
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    return host == "douyin.com" or host.endswith(".douyin.com") or host == "iesdouyin.com" or host.endswith(".iesdouyin.com")
+
+
+def _get_douyin_session():
+    global _DOUYIN_SESSION
+    import requests
+
+    if _DOUYIN_SESSION is None:
+        s = requests.Session()
+        s.headers.update(
+            {
+                "User-Agent": _DOUYIN_MOBILE_UA,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "zh-CN,zh;q=0.9,vi;q=0.8,en;q=0.7",
+            }
+        )
+        _DOUYIN_SESSION = s
+    return _DOUYIN_SESSION
+
+
+def _extract_douyin_id_from_str(s: str) -> str:
+    if not s:
+        return ""
+    for pat in (
+        r"[?&]modal_id=(\d{15,22})",
+        r"/(?:video|note|slides)/(\d{15,22})",
+        r"/share/(?:video|note|slides)/(\d{15,22})",
+        r"aweme_id=(\d{15,22})",
+    ):
+        m = re.search(pat, s)
+        if m:
+            return m.group(1)
+    return ""
+
+
+def _download_douyin_media(
+    clean_url: str,
+    cache_prefix: str,
+    mode: str,
+    ffmpeg_bin: str = "ffmpeg",
+) -> dict:
+    """
+    Downloads watermark-free HD Douyin (.MP4 / .M4A) directly from douyin.com, v.douyin.com,
+    ?modal_id=..., or iesdouyin.com share links using mobile ttwid session hydration (zero login required).
+    """
+    set_dub_live_progress(
+        "🎬 Đang giải mã & tải video gốc không logo từ Douyin...",
+        "🎬 Resolving & downloading watermark-free video from Douyin...",
+        14,
+    )
+    with _DOUYIN_LOCK:
+        sess = _get_douyin_session()
+        aweme_id = _extract_douyin_id_from_str(clean_url)
+
+        if not aweme_id:
+            # Resolve short link (e.g. https://v.douyin.com/xxxxxx/)
+            r_res = sess.get(clean_url, allow_redirects=True, timeout=15)
+            final_u = _validate_safe_public_video_url(r_res.url)
+            aweme_id = _extract_douyin_id_from_str(final_u) or _extract_douyin_id_from_str(r_res.text)
+
+        if not aweme_id:
+            raise RuntimeError(
+                "Không tìm thấy mã video Douyin từ đường link đã dán! Hãy dán link dạng douyin.com/video/..., ?modal_id=... hoặc link chia sẻ v.douyin.com/..."
+            )
+
+        items = []
+        share_url = f"https://www.iesdouyin.com/share/video/{aweme_id}/"
+        for attempt in range(3):
+            if attempt == 2:
+                # Fresh session reset on rare expired ttwid
+                sess.cookies.clear()
+                sess.get(share_url, timeout=12)
+            r_share = sess.get(share_url, timeout=15)
+            m_rd = re.search(r"window\._ROUTER_DATA\s*=\s*(.*?)</script>", r_share.text, re.DOTALL)
+            if m_rd:
+                raw_json = m_rd.group(1).strip().rstrip(";")
+                try:
+                    d_router = json.loads(raw_json)
+                    ld = d_router.get("loaderData") or {}
+                    for pv in ld.values():
+                        if isinstance(pv, dict) and "videoInfoRes" in pv:
+                            cand_items = (pv.get("videoInfoRes") or {}).get("item_list") or []
+                            if cand_items:
+                                items = cand_items
+                                break
+                except Exception:
+                    pass
+            if items:
+                break
+
+        if not items:
+            raise RuntimeError(
+                f"Không lấy được dữ liệu video Douyin (ID: {aweme_id}). Video có thể đã bị xóa, đặt riêng tư hoặc giới hạn khu vực."
+            )
+
+        item = items[0]
+        raw_desc = str(item.get("desc") or "").strip()
+        clean_title = re.sub(r"\s+", " ", re.sub(r"#\S+", "", raw_desc)).strip() or raw_desc[:80] or f"Douyin_{aweme_id}"
+        uploader = str((item.get("author") or {}).get("nickname") or "Douyin").strip()
+        vid_obj = item.get("video") or {}
+        thumb_list = ((vid_obj.get("cover") or {}).get("url_list")) or []
+        thumbnail = str(thumb_list[0] if thumb_list else "").strip()
+
+        play_addr = vid_obj.get("play_addr") or {}
+        uri = str(play_addr.get("uri") or "").strip()
+        raw_urls = [str(u) for u in (play_addr.get("url_list") or []) if u]
+
+        candidate_streams: list[str] = []
+        if uri and not uri.startswith("http"):
+            candidate_streams.append(f"https://aweme.snssdk.com/aweme/v1/play/?video_id={uri}&ratio=720p&line=0")
+        for u in raw_urls:
+            candidate_streams.append(u.replace("playwm", "play"))
+        if uri and uri.startswith("http"):
+            candidate_streams.append(uri)
+
+        if not candidate_streams:
+            raise RuntimeError("Bài đăng Douyin này không chứa luồng video/âm thanh hợp lệ!")
+
+        raw_mp4_path = f"{cache_prefix}_raw.mp4"
+        downloaded_ok = False
+        max_bytes = 350 * 1024 * 1024
+
+        for stream_u in candidate_streams:
+            try:
+                safe_stream_u = _validate_safe_public_video_url(stream_u)
+                with sess.get(
+                    safe_stream_u,
+                    stream=True,
+                    allow_redirects=True,
+                    timeout=25,
+                    headers={"Referer": "https://www.iesdouyin.com/"},
+                ) as vr:
+                    if vr.status_code >= 400:
+                        continue
+                    total_b = 0
+                    with open(raw_mp4_path, "wb") as vf:
+                        for ch in vr.iter_content(65536):
+                            if ch:
+                                total_b += len(ch)
+                                if total_b > max_bytes:
+                                    raise RuntimeError("Dung lượng video Douyin vượt quá giới hạn 350MB!")
+                                vf.write(ch)
+                    if total_b > 2000:
+                        downloaded_ok = True
+                        break
+            except RuntimeError:
+                raise
+            except Exception:
+                continue
+
+        if not downloaded_ok or not os.path.exists(raw_mp4_path):
+            raise RuntimeError("Không thể tải tệp video từ máy chủ CDN của Douyin. Vui lòng thử lại!")
+
+    if mode == "audio":
+        final_path = f"{cache_prefix}.m4a"
+        subprocess.run(
+            [ffmpeg_bin, "-nostdin", "-y", "-i", raw_mp4_path, "-vn", "-c:a", "aac", "-b:a", "160k", final_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=120,
+            check=True,
+        )
+        try:
+            os.remove(raw_mp4_path)
+        except OSError:
+            pass
+    else:
+        final_path = f"{cache_prefix}.mp4"
+        # Ensure browser-compatible H.264 video stream if Douyin ever served HEVC/ByteVC1
+        ffprobe_bin = resolve_ffprobe(ffmpeg_bin)
+        v_codec_name = "h264"
+        try:
+            pr_out = subprocess.check_output(
+                [ffprobe_bin, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0", raw_mp4_path],
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            ).decode("utf-8", errors="ignore").strip().lower()
+            if pr_out:
+                v_codec_name = pr_out.splitlines()[0].strip()
+        except Exception:
+            pass
+
+        if v_codec_name and v_codec_name not in ("h264", "avc1"):
+            subprocess.run(
+                [
+                    ffmpeg_bin, "-nostdin", "-y", "-i", raw_mp4_path,
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                    "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", final_path,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=240,
+                check=True,
+            )
+            try:
+                os.remove(raw_mp4_path)
+            except OSError:
+                pass
+        else:
+            os.replace(raw_mp4_path, final_path)
+
+    probed = probe_media_info(final_path, ffmpeg_bin=ffmpeg_bin)
+    return {
+        "mediaPath": final_path,
+        "title": clean_title,
+        "uploader": uploader,
+        "thumbnail": thumbnail,
+        "durationSec": round(float(probed.get("durationSec") or 0.0), 2),
+        "isVideo": bool(probed.get("hasVideo")) if mode == "video" else False,
+    }
+
+
 def download_online_video_url(
     raw_url: str,
     out_dir: str,
@@ -1156,7 +1401,7 @@ def download_online_video_url(
     ffmpeg_bin: str = "ffmpeg",
 ) -> dict:
     """
-    Downloads YouTube / Shorts / TikTok / public online video or audio via yt-dlp
+    Downloads YouTube / Shorts / Douyin (douyin.com / v.douyin.com / modal_id) / TikTok
     with local URL-hash caching so re-translating the same URL is instantaneous!
     """
     clean_url = _validate_safe_public_video_url(raw_url)
@@ -1175,6 +1420,15 @@ def download_online_video_url(
                 return cached
         except Exception:
             pass
+
+    if _is_douyin_url(clean_url):
+        res_meta = _download_douyin_media(clean_url, cache_prefix=cache_prefix, mode=mode, ffmpeg_bin=ffmpeg_bin)
+        try:
+            with open(meta_cache_path, "w", encoding="utf-8") as mf:
+                json.dump(res_meta, mf, ensure_ascii=False)
+        except Exception:
+            pass
+        return res_meta
 
     try:
         import yt_dlp

@@ -72,8 +72,16 @@
   function normalizeOnlineUrl(raw) {
     const trimmed = String(raw || '').trim();
     if (!trimmed) return '';
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    if (/^(www\.|m\.|youtube\.com\/|youtu\.be\/|tiktok\.com\/|vt\.tiktok\.com\/|fb\.watch\/)/i.test(trimmed)) {
+    // Extract embedded http(s) URL out of Douyin / TikTok / Bilibili app share text!
+    const mHttp = trimmed.match(/https?:\/\/[^\s<>"'，。！？；：）】》]+/i);
+    if (mHttp) {
+      return mHttp[0].replace(/[.,;!?)\]}'"]+$/, '');
+    }
+    const mBare = trimmed.match(/(?:www\.|v\.|m\.)?(?:douyin\.com|iesdouyin\.com|youtube\.com|youtu\.be|tiktok\.com|vt\.tiktok\.com|fb\.watch)\/[^\s<>"'，。！？；：）】》]+/i);
+    if (mBare) {
+      return `https://${mBare[0].replace(/[.,;!?)\]}'"]+$/, '')}`;
+    }
+    if (/^(www\.|m\.)/i.test(trimmed)) {
       return `https://${trimmed}`;
     }
     return trimmed;
@@ -171,8 +179,8 @@
     const ytInput = document.getElementById('dubYoutubeUrlInput');
     if (ytInput) {
       ytInput.placeholder = isVi
-        ? 'Dán link YouTube, YouTube Shorts vào đây (VD: https://www.youtube.com/watch?v=...)'
-        : 'Paste YouTube or YouTube Shorts link here (e.g. https://www.youtube.com/watch?v=...)';
+        ? 'Dán link YouTube, Douyin (douyin.com / v.douyin.com / văn bản chia sẻ app), TikTok...'
+        : 'Paste YouTube, Douyin (douyin.com / v.douyin.com / app share text), or TikTok link...';
     }
 
     const ytModeSel = document.getElementById('dubYoutubeModeSelect');
@@ -416,8 +424,8 @@
       if (typeof window.showToast === 'function') {
         window.showToast(
           isVi
-            ? 'Vui lòng dán link YouTube hoặc chọn file âm thanh (.mp3, .wav) / video (.mp4) trước!'
-            : 'Please paste a YouTube URL or choose an audio (.mp3, .wav) / video (.mp4) file first!',
+            ? 'Vui lòng dán link YouTube / Douyin hoặc chọn file âm thanh (.mp3, .wav) / video (.mp4) trước!'
+            : 'Please paste a YouTube / Douyin URL or choose an audio (.mp3, .wav) / video (.mp4) file first!',
           'warning'
         );
       }
@@ -427,15 +435,17 @@
 
     const srcLang = document.getElementById('dubSourceLang')?.value || 'auto';
     const tgtLang = document.getElementById('dubTargetLang')?.value || 'en';
+    const isDouyinLink = /(?:douyin\.com|iesdouyin\.com)/i.test(ytUrl);
+    const platName = isDouyinLink ? 'Douyin' : 'YouTube';
 
     const baseStep1Msg = useYoutube
       ? (isVi
           ? (ytMode === 'video'
-              ? '🎬 Bước 1/2: Đang tải Video từ YouTube, bóc lời nói & dịch đa ngôn ngữ...'
-              : '🎵 Bước 1/2: Đang trích xuất Âm thanh từ YouTube, bóc lời & dịch...')
+              ? `🎬 Bước 1/2: Đang tải Video từ ${platName}, bóc lời nói & biên dịch kịch bản...`
+              : `🎵 Bước 1/2: Đang trích xuất Âm thanh từ ${platName}, bóc lời & dịch...`)
           : (ytMode === 'video'
-              ? '🎬 Step 1/2: Downloading YouTube video, transcribing speech & translating...'
-              : '🎵 Step 1/2: Extracting YouTube audio, transcribing speech & translating...'))
+              ? `🎬 Step 1/2: Downloading ${platName} video, transcribing speech & translating...`
+              : `🎵 Step 1/2: Extracting ${platName} audio, transcribing speech & translating...`))
       : (isVi
           ? '🎙️ Bước 1/2: AI đang nghe nhận diện lời nói & dịch sang ngôn ngữ đích...'
           : '🎙️ Step 1/2: Transcribing speech & translating into target language...');

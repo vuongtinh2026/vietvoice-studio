@@ -732,28 +732,29 @@
               </div>
               <div>
                 <h2 class="text-base sm:text-lg font-extrabold font-display text-white flex flex-wrap items-center gap-2">
-                  <span class="lang-only-vi">Phòng Thu Dịch Âm Thanh, Video & Link YouTube Đa Ngôn Ngữ</span>
-                  <span class="lang-only-global hidden">Multilingual AI Audio, Video & YouTube Dubbing Studio</span>
-                  <span class="text-[10px] bg-pink-500/20 text-pink-200 border border-pink-400/40 px-2.5 py-0.5 rounded-full font-extrabold uppercase">YouTube + MP3 / MP4 • 48kHz</span>
+                  <span class="lang-only-vi">Phòng Thu Dịch Âm Thanh, Video, YouTube & Douyin Đa Ngôn Ngữ</span>
+                  <span class="lang-only-global hidden">Multilingual AI Audio, Video, YouTube & Douyin Dubbing Studio</span>
+                  <span class="text-[10px] bg-pink-500/20 text-pink-200 border border-pink-400/40 px-2.5 py-0.5 rounded-full font-extrabold uppercase">YouTube • Douyin • MP4 48kHz</span>
                 </h2>
                 <p class="text-xs text-slate-300/90 mt-1 leading-relaxed">
-                  <span class="lang-only-vi">Dán trực tiếp <b>Link YouTube / Shorts</b> hoặc đưa file <b>.MP3, .WAV, .M4A, .MP4, .MOV</b> vào → AI tự động bóc lời nói, dịch sang hơn 30 ngôn ngữ (hoặc đổi giọng đọc) và xuất ngay cả <b>Audio .MP3</b> lẫn <b>Video .MP4 đã lồng tiếng</b>!</span>
-                  <span class="lang-only-global hidden">Paste any <b>YouTube / Shorts URL</b> or upload <b>.MP3, .WAV, .M4A, .MP4, .MOV</b> files → AI automatically transcribes speech, translates into 30+ languages (or swaps voices), and exports both <b>48kHz Audio</b> & <b>Dubbed .MP4 Video</b>!</span>
+                  <span class="lang-only-vi">Dán trực tiếp <b>Link YouTube / Shorts / Douyin (抖音) / TikTok</b> hoặc đưa file <b>.MP3, .WAV, .M4A, .MP4, .MOV</b> vào → AI tự động tải video không logo, bóc lời nói, biên dịch kịch bản phim truyện và xuất ngay cả <b>Audio .MP3</b> lẫn <b>Video .MP4 đã lồng tiếng</b>!</span>
+                  <span class="lang-only-global hidden">Paste any <b>YouTube / Shorts / Douyin / TikTok URL</b> or upload <b>.MP3, .WAV, .M4A, .MP4, .MOV</b> files → AI automatically downloads watermark-free video, transcribes speech, adapts cinema dialogue, and exports both <b>48kHz Audio</b> & <b>Dubbed .MP4 Video</b>!</span>
                 </p>
               </div>
             </div>
           </div>
 
-          <!-- Direct YouTube / Online Video URL Bar -->
-          <div id="dubYoutubeBar" class="p-4 sm:p-5 rounded-2xl border border-rose-500/40 bg-gradient-to-r from-rose-950/30 via-[#070b18]/95 to-purple-950/25 flex flex-col gap-3 shadow-lg transition">
+          <!-- Direct YouTube / Douyin / Online Video URL Bar -->
+          <div id="dubYoutubeBar" class="p-4 sm:p-5 rounded-2xl border border-rose-500/40 bg-gradient-to-r from-rose-950/30 via-[#070b18]/95 to-cyan-950/25 flex flex-col gap-3 shadow-lg transition">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="flex items-center gap-2 text-xs sm:text-sm font-extrabold text-white">
-                <span class="w-7 h-7 rounded-lg bg-rose-500/20 border border-rose-400/40 text-rose-400 flex items-center justify-center shrink-0">
-                  <i class="fa-brands fa-youtube text-sm"></i>
+                <span class="px-2 h-7 rounded-lg bg-rose-500/20 border border-rose-400/40 flex items-center justify-center gap-1.5 shrink-0">
+                  <i class="fa-brands fa-youtube text-rose-400 text-sm"></i>
+                  <i class="fa-brands fa-tiktok text-cyan-300 text-xs"></i>
                 </span>
-                <span class="lang-only-vi">Dán Link YouTube / Shorts để tải & dịch video trực tiếp</span>
-                <span class="lang-only-global hidden">Paste YouTube / Shorts URL to Fetch, Translate & Dub Directly</span>
-                <span class="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-400/35 text-rose-200 font-bold uppercase"><span class="lang-only-vi">Mới</span><span class="lang-only-global hidden">New</span></span>
+                <span class="lang-only-vi">Dán Link YouTube / Shorts / Douyin (douyin.com) / TikTok để tải & dịch trực tiếp</span>
+                <span class="lang-only-global hidden">Paste YouTube / Shorts / Douyin (douyin.com) / TikTok Link to Translate & Dub Directly</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/35 text-cyan-200 font-bold uppercase"><span class="lang-only-vi">Không Logo HD</span><span class="lang-only-global hidden">No-Watermark HD</span></span>
               </div>
               <span id="dubYoutubeStatusBadge" class="hidden text-[11px] font-bold px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-400/35 text-emerald-300 max-w-full truncate"></span>
             </div>
@@ -762,11 +763,11 @@
               <div class="relative flex-1 flex items-center">
                 <i class="fa-solid fa-link text-rose-400/80 text-xs absolute left-3.5 pointer-events-none"></i>
                 <input
-                  type="url"
+                  type="text"
                   id="dubYoutubeUrlInput"
                   autocomplete="off"
                   spellcheck="false"
-                  placeholder="Dán link YouTube, YouTube Shorts vào đây (VD: https://www.youtube.com/watch?v=...)"
+                  placeholder="Dán link YouTube, Douyin (douyin.com / v.douyin.com / văn bản chia sẻ app), TikTok..."
                   class="w-full bg-[#050811] border border-white/15 focus:border-rose-400 rounded-xl pl-9 pr-24 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 font-medium focus:outline-none focus:ring-1 focus:ring-rose-400 transition"
                 >
                 <div class="absolute right-1.5 flex items-center gap-1">
@@ -2737,14 +2738,14 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
   <!-- Mammoth.js for Word (.docx) document parsing -->
   <script src="/mammoth.browser.min.js"></script>
   <!-- Quota Manager, Generation Timer & 8-Language Global i18n -->
-  <script src="quota_and_i18n.js?v=9.6"></script>
+  <script src="quota_and_i18n.js?v=9.7"></script>
   <!-- Main Studio Engine Logic -->
-  <script src="app.js?v=9.6"></script>
+  <script src="app.js?v=9.7"></script>
   <!-- Pro Studio Extensions (Private Vault, 110 Countries, Multi-Speaker Stem Studio, VietQR) -->
-  <script src="studio_pro.js?v=9.6"></script>
-  <!-- Multilingual Audio & Video AI Dubbing Studio (MP3 / MP4 / YouTube) -->
-  <script src="dubbing_studio.js?v=9.6"></script>
+  <script src="studio_pro.js?v=9.7"></script>
+  <!-- Multilingual Audio & Video AI Dubbing Studio (MP3 / MP4 / YouTube / Douyin) -->
+  <script src="dubbing_studio.js?v=9.7"></script>
   <!-- Option 2 License Key, HWID Lock, Real Order/Bank Checkout & Owner Admin Console -->
-  <script src="license_client_ui.js?v=9.6"></script>
+  <script src="license_client_ui.js?v=9.7"></script>
 </body>
 </html>
