@@ -440,13 +440,26 @@
           ? '🎙️ Bước 1/2: AI đang nghe nhận diện lời nói & dịch sang ngôn ngữ đích...'
           : '🎙️ Step 1/2: Transcribing speech & translating into target language...');
 
-    setDubProgress(true, baseStep1Msg, 22);
+    setDubProgress(true, baseStep1Msg, 18);
     const t0 = Date.now();
-    const step1Timer = setInterval(() => {
+    let liveMsg1 = baseStep1Msg;
+    let livePct1 = 18;
+    const step1Timer = setInterval(async () => {
       const sec = Math.floor((Date.now() - t0) / 1000);
-      const p = Math.min(54, 22 + Math.floor(sec * 0.65));
-      setDubProgress(true, `${baseStep1Msg} (${sec}s)`, p);
-    }, 1000);
+      try {
+        const pr = await fetch('/api/dubbing/progress');
+        if (pr.ok) {
+          const pd = await pr.json();
+          if (pd && pd.active && (Date.now() / 1000 - (pd.updatedAt || 0)) < 120) {
+            const msgCandidate = isVi ? pd.vi : pd.en;
+            if (msgCandidate) liveMsg1 = msgCandidate;
+            if (pd.pct >= 18 && pd.pct <= 66) livePct1 = pd.pct;
+          }
+        }
+      } catch {}
+      const fallbackPct = Math.min(64, Math.max(livePct1, 18 + Math.floor(sec * 0.35)));
+      setDubProgress(true, `${liveMsg1} (${sec}s)`, fallbackPct);
+    }, 1500);
 
     let res;
     try {
@@ -653,13 +666,26 @@
       : (isVi
           ? '🎧 Bước 2/2: Đang tổng hợp giọng AI 48kHz theo mốc thoại & trộn âm nền...'
           : '🎧 Step 2/2: Synthesizing synced 48kHz voiceover & mixing original audio...');
-    setDubProgress(true, baseStep2Msg, 65);
+    setDubProgress(true, baseStep2Msg, 68);
     const tRender0 = Date.now();
-    const step2Timer = setInterval(() => {
+    let liveMsg2 = baseStep2Msg;
+    let livePct2 = 68;
+    const step2Timer = setInterval(async () => {
       const sec = Math.floor((Date.now() - tRender0) / 1000);
-      const p = Math.min(96, 65 + Math.floor(sec * 0.7));
-      setDubProgress(true, `${baseStep2Msg} (${sec}s)`, p);
-    }, 1000);
+      try {
+        const pr = await fetch('/api/dubbing/progress');
+        if (pr.ok) {
+          const pd = await pr.json();
+          if (pd && pd.active && pd.pct >= 68) {
+            const msgCandidate = isVi ? pd.vi : pd.en;
+            if (msgCandidate) liveMsg2 = msgCandidate;
+            livePct2 = Math.min(97, pd.pct);
+          }
+        }
+      } catch {}
+      const fallbackPct = Math.min(97, Math.max(livePct2, 68 + Math.floor(sec * 0.5)));
+      setDubProgress(true, `${liveMsg2} (${sec}s)`, fallbackPct);
+    }, 1500);
 
     const headers = { 'Content-Type': 'application/json' };
     const tok = typeof window.getOwnerToken === 'function' ? window.getOwnerToken() : '';

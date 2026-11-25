@@ -1195,6 +1195,18 @@ const server = http.createServer(async (req, res) => {
   // =========================================================================
   // 2.5 API: MULTILINGUAL AUDIO & VIDEO AI DUBBING STUDIO (.MP3 / .MP4 / YOUTUBE URL)
   // =========================================================================
+  if (pathname === '/api/dubbing/progress' && req.method === 'GET') {
+    try {
+      const pRes = await callFreeDaemonJson('/dub/progress', 'GET', null, {}, 8000);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(pRes.data || { active: false }));
+    } catch {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ active: false }));
+    }
+    return;
+  }
+
   if (pathname === '/api/dubbing/youtube' && req.method === 'POST') {
     const dubDir = path.join('/tmp', 'voxly_dub_sessions');
     fs.mkdirSync(dubDir, { recursive: true });
@@ -1211,18 +1223,14 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/youtube-transcribe-translate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: ytUrl,
-          downloadMode,
-          outDir: dubDir,
-          sourceLang,
-          targetLang
-        })
+      const dRes = await callFreeDaemonJson('/dub/youtube-transcribe-translate', 'POST', {
+        url: ytUrl,
+        downloadMode,
+        outDir: dubDir,
+        sourceLang,
+        targetLang
       });
-      const data = await dRes.json().catch(() => ({}));
+      const data = dRes.data || {};
       if (!dRes.ok || !data.success) {
         throw new Error(data.error || `Lỗi tải & nhận diện link YouTube (HTTP ${dRes.status})`);
       }
@@ -1282,14 +1290,14 @@ const server = http.createServer(async (req, res) => {
     try {
       await new Promise((resolve, reject) => {
         let total = 0;
-        const maxUploadBytes = 160 * 1024 * 1024; // 160 MB
+        const maxUploadBytes = 350 * 1024 * 1024; // 350 MB
         const ws = fs.createWriteStream(mediaPath);
         req.on('data', chunk => {
           total += chunk.length;
           if (total > maxUploadBytes) {
             ws.destroy();
             req.destroy();
-            reject(new Error('Dung lượng file vượt quá giới hạn 160MB!'));
+            reject(new Error('Dung lượng file vượt quá giới hạn 350MB!'));
           }
         });
         req.pipe(ws);
@@ -1298,12 +1306,12 @@ const server = http.createServer(async (req, res) => {
         req.on('error', reject);
       });
 
-      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/transcribe-translate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mediaPath, sourceLang, targetLang })
+      const dRes = await callFreeDaemonJson('/dub/transcribe-translate', 'POST', {
+        mediaPath,
+        sourceLang,
+        targetLang
       });
-      const data = await dRes.json().catch(() => ({}));
+      const data = dRes.data || {};
       if (!dRes.ok || !data.success) {
         throw new Error(data.error || `Lỗi nhận diện giọng nói (HTTP ${dRes.status})`);
       }
@@ -1341,16 +1349,12 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/dubbing/retranslate' && req.method === 'POST') {
     try {
       const payload = await readJsonBody(req);
-      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/translate-text`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: payload.text || '',
-          sourceLang: payload.sourceLang || 'auto',
-          targetLang: payload.targetLang || 'vi'
-        })
+      const dRes = await callFreeDaemonJson('/dub/translate-text', 'POST', {
+        text: payload.text || '',
+        sourceLang: payload.sourceLang || 'auto',
+        targetLang: payload.targetLang || 'vi'
       });
-      const data = await dRes.json().catch(() => ({}));
+      const data = dRes.data || {};
       if (!dRes.ok || !data.success) {
         throw new Error(data.error || 'Lỗi dịch văn bản');
       }
@@ -1458,31 +1462,27 @@ const server = http.createServer(async (req, res) => {
       }
 
       const outId = `out_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const renderHeaders = { 'Content-Type': 'application/json' };
+      const renderHeaders = {};
       if (ownerToken) renderHeaders['X-Owner-Token'] = ownerToken;
 
-      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/render-synced`, {
-        method: 'POST',
-        headers: renderHeaders,
-        body: JSON.stringify({
-          text: spokenOnlyText,
-          segments: finalSegments,
-          voice,
-          rate,
-          pause,
-          ownerToken: ownerToken || undefined,
-          origMediaPath: meta.origPath || '',
-          isVideo: Boolean(meta.isVideo),
-          durationSec: Number(meta.durationSec || 0),
-          syncTimeline,
-          autoFitTiming,
-          origVolume: origVolumePct / 100.0,
-          smartDucking,
-          outDir: dubDir,
-          outId
-        })
-      });
-      const rData = await dRes.json().catch(() => ({}));
+      const dRes = await callFreeDaemonJson('/dub/render-synced', 'POST', {
+        text: spokenOnlyText,
+        segments: finalSegments,
+        voice,
+        rate,
+        pause,
+        ownerToken: ownerToken || undefined,
+        origMediaPath: meta.origPath || '',
+        isVideo: Boolean(meta.isVideo),
+        durationSec: Number(meta.durationSec || 0),
+        syncTimeline,
+        autoFitTiming,
+        origVolume: origVolumePct / 100.0,
+        smartDucking,
+        outDir: dubDir,
+        outId
+      }, renderHeaders);
+      const rData = dRes.data || {};
       if (!dRes.ok || !rData.success) {
         const errObj = new Error(rData.error || `Lỗi tổng hợp lồng tiếng (HTTP ${dRes.status})`);
         if (dRes.status === 403) errObj.status = 403;
@@ -1545,21 +1545,17 @@ const server = http.createServer(async (req, res) => {
       }
 
       const outId = `remix_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const dRes = await fetch(`http://127.0.0.1:${FREE_DAEMON_PORT}/dub/remix-volume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pureVoiceWavPath: meta.lastPureVoiceWavPath,
-          speechIntervals: meta.lastSpeechIntervals || [],
-          origMediaPath: meta.origPath || '',
-          isVideo: Boolean(meta.isVideo),
-          origVolume: origVolumePct / 100.0,
-          smartDucking,
-          outDir: dubDir,
-          outId
-        })
+      const dRes = await callFreeDaemonJson('/dub/remix-volume', 'POST', {
+        pureVoiceWavPath: meta.lastPureVoiceWavPath,
+        speechIntervals: meta.lastSpeechIntervals || [],
+        origMediaPath: meta.origPath || '',
+        isVideo: Boolean(meta.isVideo),
+        origVolume: origVolumePct / 100.0,
+        smartDucking,
+        outDir: dubDir,
+        outId
       });
-      const rData = await dRes.json().catch(() => ({}));
+      const rData = dRes.data || {};
       if (!dRes.ok || !rData.success) {
         throw new Error(rData.error || `Lỗi trộn lại âm thanh gốc (HTTP ${dRes.status})`);
       }
@@ -1775,6 +1771,64 @@ const server = http.createServer(async (req, res) => {
     stream.pipe(res);
   });
 });
+
+function callFreeDaemonJson(pathStr, method = 'POST', bodyObj = null, extraHeaders = {}, timeoutMs = 45 * 60 * 1000) {
+  const sendOnce = () => new Promise((resolve, reject) => {
+    const payloadBuf = bodyObj !== null ? Buffer.from(JSON.stringify(bodyObj), 'utf-8') : null;
+    const headers = { ...extraHeaders };
+    if (payloadBuf) {
+      headers['Content-Type'] = 'application/json; charset=utf-8';
+      headers['Content-Length'] = payloadBuf.length;
+    }
+    const r = http.request({
+      hostname: '127.0.0.1',
+      port: FREE_DAEMON_PORT,
+      path: pathStr,
+      method,
+      headers,
+      timeout: timeoutMs
+    }, (resp) => {
+      const chunks = [];
+      resp.on('data', ch => chunks.push(ch));
+      resp.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf-8');
+        let parsed = {};
+        try { parsed = JSON.parse(raw || '{}'); } catch {}
+        resolve({
+          ok: resp.statusCode >= 200 && resp.statusCode < 300,
+          status: resp.statusCode || 500,
+          data: parsed
+        });
+      });
+    });
+    r.on('timeout', () => {
+      r.destroy(new Error('Quá thời gian xử lý video dài (45 phút)!'));
+    });
+    r.on('error', err => reject(err));
+    if (payloadBuf) r.write(payloadBuf);
+    r.end();
+  });
+
+  return (async () => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        return await sendOnce();
+      } catch (err) {
+        if (err && (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET') && attempt < 9) {
+          await sleep(600);
+          continue;
+        }
+        throw err;
+      }
+    }
+  })();
+}
+
+// Disable Node HTTP 5-minute default requestTimeout so 10-30 minute movie dubbing never disconnects!
+server.timeout = 0;
+server.requestTimeout = 0;
+server.headersTimeout = 0;
+server.keepAliveTimeout = 600000;
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`=======================================================`);

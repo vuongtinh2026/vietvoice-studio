@@ -1046,6 +1046,8 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             self._send_json(200, {"ok": True, "warm": _VIENEU_WARM_READY})
+        elif self.path == "/dub/progress":
+            self._send_json(200, {"success": True, **media_dubber.get_dub_live_progress()})
         elif self.path == "/voices":
             self._send_json(200, {"success": True, "voices": get_public_voices()})
         elif self.path == "/private/status":
@@ -1231,6 +1233,15 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 out_mp4 = os.path.join(out_dir, f"{out_id}_dubbed.mp4") if is_video else ""
 
                 if parsed_segs:
+                    total_s = len(parsed_segs)
+                    done_counter = [0]
+                    cnt_lock = threading.Lock()
+                    media_dubber.set_dub_live_progress(
+                        f"🔊 Đang thu giọng AI 48kHz câu 1/{total_s}...",
+                        f"🔊 Synthesizing 48kHz AI dub cue 1/{total_s}...",
+                        68,
+                    )
+
                     def _synth_one_seg(seg_obj: dict) -> dict:
                         wb = dispatch_synthesize(
                             seg_obj["text"],
@@ -1240,10 +1251,25 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                             owner_token=owner_token,
                         )
                         arr = media_dubber.wav_bytes_to_f32_48k(wb, ffmpeg_bin=FFMPEG_BIN)
+                        with cnt_lock:
+                            done_counter[0] += 1
+                            dn = done_counter[0]
+                            pct = 68 + int((dn / max(1, total_s)) * 24)
+                            media_dubber.set_dub_live_progress(
+                                f"🔊 Đang thu giọng AI 48kHz khớp thoại câu {dn}/{total_s}...",
+                                f"🔊 Synthesizing 48kHz synced voice cue {dn}/{total_s}...",
+                                pct,
+                            )
                         return {"start": seg_obj["start"], "end": seg_obj["end"], "samples": arr}
 
                     with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(parsed_segs))) as coord_pool:
                         rendered_segs = list(coord_pool.map(_synth_one_seg, parsed_segs))
+
+                    media_dubber.set_dub_live_progress(
+                        "🎞️ Đang căn mốc thời gian, trộn âm gốc & đóng gói Video .MP4...",
+                        "🎞️ Aligning timeline, mixing original audio & muxing .MP4...",
+                        95,
+                    )
 
                     master_voice, speech_intervals = media_dubber.assemble_synced_voice_track(
                         rendered_segments=rendered_segs,

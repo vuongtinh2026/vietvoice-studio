@@ -8,6 +8,8 @@ Voxly Cinema Script Translator — Contextual Movie, Drama & Wuxia/Xianxia Adapt
   for movies, and strictly blocks foreign character or English-pivot leaks.
 - Includes cross-platform contextual NMT fallback for non-Apple-Silicon environments.
 """
+import hashlib
+import json
 import os
 import platform
 import re
@@ -89,6 +91,13 @@ _ZH_ASR_HOMOPHONE_FIXES: list[tuple[str, str]] = [
     ("長生格下", "长生阁下"),
     ("阻掌", "族长"),
     ("太坦佐长", "泰坦族长"),
+    ("任贤琪", "任贤齐"),
+    ("人贤齐", "任贤齐"),
+    ("人嫌棋", "任贤齐"),
+    ("任嫌棋", "任贤齐"),
+    ("张伯之", "张柏芝"),
+    ("杨谦画", "杨千嬅"),
+    ("赵船", "赵传"),
 ]
 
 # Common English words that must NEVER appear inside a Chinese/Japanese/Korean -> Vietnamese translation
@@ -168,6 +177,8 @@ def _clean_single_numbered_line(line_body: str, is_zh_source: bool = False, targ
         s = re.sub(r"\bTang\s+Tam\b", "Đường Tam", s)
         s = re.sub(r"\b(?:Tang|Tam)\s+Môn\b", "Đường Môn", s)
         s = re.sub(r"\bXiao\s*San\b", "Tiểu Tam", s, flags=re.IGNORECASE)
+        s = re.sub(r"\bNhân\s+Hiên\s+Kỳ\b", "Nhậm Hiền Tề", s, flags=re.IGNORECASE)
+        s = re.sub(r"\bNhậm\s+Hiền\s+Kỳ\b", "Nhậm Hiền Tề", s, flags=re.IGNORECASE)
         s = re.sub(r"\bhữu\s+gia\s+nhân\b", "có giai nhân", s, flags=re.IGNORECASE)
         s = re.sub(r"\bCha,\s*ngươi\b", "Phụ thân, người", s)
         s = re.sub(r"\bPhụ thân,\s*ngươi\b", "Phụ thân, người", s)
@@ -209,7 +220,7 @@ def _build_cinema_system_prompt(source_lang: str, target_lang: str, is_zh_source
                 "Bạn là đạo diễn biên kịch dịch phim và thuyết minh lồng tiếng Việt Nam hàng đầu, chuyên dịch phim Trung Quốc (cổ trang, tiên hiệp, huyền huyễn, kiếm hiệp và tâm lý hiện đại).\n"
                 "Nhiệm vụ: Dịch từng câu thoại đánh số sang Tiếng Việt mượt mà, chuẩn xác 100% nội dung, câu văn trôi chảy giàu cảm xúc để diễn viên lồng tiếng đọc khớp hình.\n"
                 "Quy tắc bắt buộc:\n"
-                "1. Dịch chuẩn xác tên nhân vật, tông môn, địa danh sang Hán-Việt (李长生=Lý Trường Sinh, 唐昊=Đường Hạo, 唐三=Đường Tam, 唐门=Đường Môn, 昊天宗=Hạo Thiên Tông, 泰坦族长=Thái Thản tộc trưởng, 魂技=Hồn kỹ, 清理门户=thanh lý môn hộ, 家奴=gia nô, 佳人=giai nhân/người đẹp, 道侣=đạo lữ, 无劫无灾=vô kiếp vô tai). Không dịch sai tên riêng và tuyệt đối không dùng Pinyin tiếng Anh.\n"
+                "1. Dịch chuẩn xác tên nhân vật, nghệ sĩ, tác phẩm, tông môn, địa danh sang Hán-Việt chuẩn (VD: 任贤齐=Nhậm Hiền Tề, 周华健=Châu Hoa Kiện, 李宗盛=Lý Tông Thịnh, 罗大佑=La Đại Hữu, 周杰伦=Châu Kiệt Luân, 张柏芝=Trương Bá Chi, 神雕侠侣=Thần Điêu Đại Hiệp, 杨过=Dương Quá, 笑傲江湖=Tiếu Ngạo Giang Hồ, 令狐冲=Lệnh Hồ Xung, 李长生=Lý Trường Sinh, 唐昊=Đường Hạo, 唐三=Đường Tam, 唐门=Đường Môn, 昊天宗=Hạo Thiên Tông, 泰坦族长=Thái Thản tộc trưởng, 佳人=giai nhân, 道侣=đạo lữ). Không dịch sai tên riêng và tuyệt đối không dùng Pinyin tiếng Anh.\n"
                 "2. Đại từ xưng hô chuẩn lễ nghi phim ảnh: bề trên xưng \"lão phu / ta - ngươi\"; con cái gọi cha mẹ là \"Phụ thân / Mẫu thân, người...\" (TUYỆT ĐỐI KHÔNG gọi cha mẹ là \"ngươi\"); nam nữ tiên hiệp/tình cảm xưng \"ta - nàng\" hoặc \"thiếp - chàng\"; đối tác tôn trọng gọi \"các hạ / ngài\". Không dùng \"bạn - tôi\" hay \"mày - tao\".\n"
                 "3. Dịch sang câu Tiếng Việt tự nhiên, dễ hiểu với khán giả Việt (ví dụ: \"北方有佳人，绝世而独立，原来这才是你本来的模样\" dịch mượt là \"Phương Bắc có giai nhân tuyệt thế độc lập, hóa ra đây mới là dung mạo thật của nàng\").\n"
                 "4. Viết 100% bằng Tiếng Việt chuẩn, tuyệt đối không để sót chữ Hán hay từ Tiếng Anh nào.\n"
@@ -257,6 +268,11 @@ def _run_mlx_prompt(model, tokenizer, sampler, sys_msg: str, user_msg: str, max_
         ) + "<think>\n\n</think>\n\n"
 
     raw = generate(model, tokenizer, prompt=prompt, max_tokens=max_tokens, sampler=sampler, verbose=False)
+    try:
+        import mlx.core as mx
+        mx.clear_cache()
+    except Exception:
+        pass
     return _strip_llm_artifacts(raw)
 
 
@@ -265,9 +281,11 @@ def translate_cinema_lines(
     source_lang: str = "auto",
     target_lang: str = "vi",
     nmt_fallback_fn: Callable[[str, str, str], tuple[str, str]] | None = None,
+    progress_cb: Callable[[int, int], None] | None = None,
 ) -> list[str]:
     """
-    Translates a list of movie dialogue turns 1-to-1 with full rolling scene context!
+    Translates a list of movie dialogue turns 1-to-1 with full rolling scene context
+    and per-batch disk caching so resuming or re-running long 10-30 minute videos is instant!
     """
     if not lines:
         return []
@@ -275,6 +293,7 @@ def translate_cinema_lines(
         return list(lines)
 
     cleaned_inputs = [preclean_source_dialogue_line(x, source_lang=source_lang) for x in lines]
+    total_lines = len(cleaned_inputs)
     is_zh_source = str(source_lang).lower().startswith("zh") or any(
         re.search(r"[\u4e00-\u9fff]", x) for x in cleaned_inputs
     )
@@ -282,16 +301,45 @@ def translate_cinema_lines(
         re.search(r"[\u3040-\u30ff\uac00-\ud7af]", x) for x in cleaned_inputs
     )
 
+    cache_dir = os.path.join("/tmp", "voxly_dub_sessions")
+    os.makedirs(cache_dir, exist_ok=True)
+
     with _MLX_LOCK:
         model, tokenizer, sampler = _get_mlx_engine()
         if model is not None and tokenizer is not None:
             sys_msg = _build_cinema_system_prompt(source_lang, target_lang, is_zh_source)
-            results: list[str] = [""] * len(cleaned_inputs)
-            batch_size = 12
+            results: list[str] = [""] * total_lines
+            avg_len = sum(len(x) for x in cleaned_inputs) / max(1, total_lines)
+            batch_size = 8 if avg_len > 52 else 12
             prev_context_pairs: list[tuple[str, str]] = []
 
-            for start_idx in range(0, len(cleaned_inputs), batch_size):
+            for start_idx in range(0, total_lines, batch_size):
                 batch = cleaned_inputs[start_idx : start_idx + batch_size]
+                if progress_cb is not None:
+                    try:
+                        progress_cb(start_idx, total_lines)
+                    except Exception:
+                        pass
+
+                batch_sig = hashlib.sha256(
+                    json.dumps(
+                        {"v": 2, "m": _MLX_MODEL_ID, "sl": source_lang, "tl": target_lang, "b": batch},
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                ).hexdigest()[:20]
+                batch_cache_file = os.path.join(cache_dir, f"tr_batch_{batch_sig}.json")
+
+                if os.path.exists(batch_cache_file):
+                    try:
+                        cached_arr = json.load(open(batch_cache_file, "r", encoding="utf-8"))
+                        if isinstance(cached_arr, list) and len(cached_arr) == len(batch) and all(cached_arr):
+                            for k, val in enumerate(cached_arr):
+                                results[start_idx + k] = val
+                                prev_context_pairs.append((batch[k], val))
+                            continue
+                    except Exception:
+                        pass
+
                 numbered = "\n".join(f"[{k + 1}] {txt}" for k, txt in enumerate(batch))
 
                 ctx_header = ""
@@ -304,20 +352,20 @@ def translate_cinema_lines(
                         f"{ctx_lines}\n\n"
                     )
 
-                # Also include 1 lookahead line if available so sentence continuity is crystal clear
                 lookahead_footer = ""
-                if start_idx + batch_size < len(cleaned_inputs):
+                if start_idx + batch_size < total_lines:
                     nxt_preview = cleaned_inputs[start_idx + batch_size]
                     lookahead_footer = f"\n\n(Câu kế tiếp để tham khảo ngữ cảnh, KHÔNG dịch: \"{nxt_preview}\")"
 
                 user_msg = f"{ctx_header}Các dòng thoại cần dịch (từ [1] đến [{len(batch)}]):\n{numbered}{lookahead_footer}"
+                est_max_toks = max(900, sum(len(x) for x in batch) * 4 + 360)
                 out_txt = _run_mlx_prompt(
                     model,
                     tokenizer,
                     sampler,
                     sys_msg,
                     user_msg,
-                    max_tokens=max(450, len(batch) * 145),
+                    max_tokens=min(3600, est_max_toks),
                 )
 
                 parsed_batch: dict[int, str] = {}
@@ -333,13 +381,14 @@ def translate_cinema_lines(
                                 parsed_batch[b_idx] = cand
 
                 # Focused single-line retry for any line missing or containing foreign leak
+                final_batch_list: list[str] = []
                 for k, src_line in enumerate(batch):
                     if k not in parsed_batch:
                         retry_msg = (
                             f"Dịch duy nhất câu thoại sau sang {_LANG_NAMES_VI.get(target_lang.lower(), target_lang)} "
                             f"chuẩn ngữ cảnh phim truyện (viết đúng định dạng [1] ...):\n[1] {src_line}"
                         )
-                        retry_out = _run_mlx_prompt(model, tokenizer, sampler, sys_msg, retry_msg, max_tokens=220)
+                        retry_out = _run_mlx_prompt(model, tokenizer, sampler, sys_msg, retry_msg, max_tokens=360)
                         cand_retry = ""
                         for rln in retry_out.splitlines():
                             rm = re.match(r"^\s*(?:\[1\]|1[.))])?\s*(.+)$", rln.strip())
@@ -352,13 +401,25 @@ def translate_cinema_lines(
                             parsed_batch[k] = cand_retry
                         elif nmt_fallback_fn is not None:
                             fb_tr, _ = nmt_fallback_fn(src_line, source_lang, target_lang)
-                            parsed_batch[k] = (fb_tr or src_line).strip()
+                            parsed_batch[k] = _clean_single_numbered_line(fb_tr or src_line, is_zh_source, target_lang)
                         else:
                             parsed_batch[k] = src_line
 
                     results[start_idx + k] = parsed_batch[k]
+                    final_batch_list.append(parsed_batch[k])
                     prev_context_pairs.append((src_line, parsed_batch[k]))
 
+                try:
+                    with open(batch_cache_file, "w", encoding="utf-8") as bf:
+                        json.dump(final_batch_list, bf, ensure_ascii=False)
+                except Exception:
+                    pass
+
+            if progress_cb is not None:
+                try:
+                    progress_cb(total_lines, total_lines)
+                except Exception:
+                    pass
             return results
 
     # Cross-platform NMT fallback when MLX is unavailable

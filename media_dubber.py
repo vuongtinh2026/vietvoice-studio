@@ -17,6 +17,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -28,6 +29,25 @@ import cinema_translator
 
 _WHISPER_LOCK = threading.Lock()
 _WHISPER_MODEL = None
+_DUB_PROGRESS = {
+    "active": False,
+    "vi": "",
+    "en": "",
+    "pct": 0,
+    "updatedAt": 0.0,
+}
+
+
+def set_dub_live_progress(vi_msg: str, en_msg: str, pct: int, active: bool = True) -> None:
+    _DUB_PROGRESS["active"] = active
+    _DUB_PROGRESS["vi"] = vi_msg
+    _DUB_PROGRESS["en"] = en_msg
+    _DUB_PROGRESS["pct"] = max(0, min(100, int(pct)))
+    _DUB_PROGRESS["updatedAt"] = time.time()
+
+
+def get_dub_live_progress() -> dict:
+    return dict(_DUB_PROGRESS)
 
 
 def resolve_ffprobe(ffmpeg_bin: str = "ffmpeg") -> str:
@@ -409,11 +429,21 @@ def translate_segments_multilingual(
         return out, sl_norm
 
     src_lines = [re.sub(r"\s+", " ", str(seg.get("text", ""))).strip() for seg in segments]
+
+    def _on_tr_progress(done_n: int, total_n: int) -> None:
+        p = 42 + int((done_n / max(1, total_n)) * 24)
+        set_dub_live_progress(
+            f"🎬 AI Biên kịch phim đang dịch mượt câu {min(done_n + 1, total_n)}/{total_n}...",
+            f"🎬 AI Cinema Translator adapting cue {min(done_n + 1, total_n)}/{total_n}...",
+            p,
+        )
+
     translated_lines = cinema_translator.translate_cinema_lines(
         lines=src_lines,
         source_lang=sl_norm,
         target_lang=tl_norm,
         nmt_fallback_fn=_translate_single_chunk_gtx,
+        progress_cb=_on_tr_progress,
     )
 
     enriched = []
@@ -622,6 +652,11 @@ def transcribe_and_translate_media(
     else:
         tmp_wav = f"{media_path}.16k.wav"
         try:
+            set_dub_live_progress(
+                "🎙️ Đang tách âm thanh & nhận diện lời thoại bằng Whisper Large-v3-Turbo...",
+                "🎙️ Extracting audio & transcribing dialogue via Whisper Large-v3-Turbo...",
+                20,
+            )
             extract_16k_wav(media_path, tmp_wav, ffmpeg_bin=ffmpeg_bin)
             with wave.open(tmp_wav, "rb") as wf:
                 raw_pcm = wf.readframes(wf.getnframes())
@@ -639,7 +674,7 @@ def transcribe_and_translate_media(
             segments_iter, info = model.transcribe(
                 audio_f32,
                 language=w_lang,
-                beam_size=4,
+                beam_size=1,
                 word_timestamps=True,
                 condition_on_previous_text=True,
                 compression_ratio_threshold=2.2,
