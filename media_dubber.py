@@ -25,6 +25,7 @@ import wave
 
 import numpy as np
 
+import audio_speaker_analyzer
 import cinema_translator
 import video_subtitle_ocr
 
@@ -361,10 +362,12 @@ def _parse_ts_str(ts_str: str) -> float:
     return float(parts[0] or 0.0)
 
 
-_TS_LINE_RE = re.compile(r"^\s*\[(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\]\s*(.*)$")
+_TS_LINE_RE = re.compile(
+    r"^\s*\[(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\]\s*(?:\[([^\]]{2,28})\]\s*)?(.*)$"
+)
 
 
-def format_timestamped_script(segments: list[dict], text_key: str = "text") -> str:
+def format_timestamped_script(segments: list[dict], text_key: str = "text", include_role: bool = False) -> str:
     lines: list[str] = []
     for seg in segments or []:
         txt = re.sub(r"\s+", " ", str(seg.get(text_key) or seg.get("text") or "")).strip()
@@ -372,13 +375,18 @@ def format_timestamped_script(segments: list[dict], text_key: str = "text") -> s
             continue
         st = format_timestamp_sec(seg.get("start", 0.0))
         en = format_timestamp_sec(seg.get("end", 0.0))
-        lines.append(f"[{st} - {en}] {txt}")
+        role_code = audio_speaker_analyzer.canonicalize_role_tag(str(seg.get("role") or seg.get("acousticRole") or ""))
+        if include_role and role_code:
+            r_lbl = audio_speaker_analyzer.role_to_display_label(role_code)
+            lines.append(f"[{st} - {en}] [{r_lbl}] {txt}")
+        else:
+            lines.append(f"[{st} - {en}] {txt}")
     return "\n".join(lines)
 
 
 def parse_timestamped_script(raw_script: str) -> tuple[list[dict], str, bool]:
     """
-    Parses `[mm:ss.d - mm:ss.d] Spoken line` lines into structured segments.
+    Parses `[mm:ss.d - mm:ss.d] [OPTIONAL_ROLE] Spoken line` lines into structured segments.
     Returns `(segments, plain_spoken_text, has_timestamps)`.
     """
     raw = (raw_script or "").strip()
@@ -393,9 +401,17 @@ def parse_timestamped_script(raw_script: str) -> tuple[list[dict], str, bool]:
             has_ts = True
             st = round(_parse_ts_str(m.group(1)), 2)
             en = round(max(st + 0.25, _parse_ts_str(m.group(2))), 2)
-            txt = m.group(3).strip()
+            raw_role = (m.group(3) or "").strip()
+            role_code = audio_speaker_analyzer.canonicalize_role_tag(raw_role) if raw_role else ""
+            txt = (m.group(4) or "").strip()
+            # If the bracket wasn't a recognized role tag (e.g. sound cue), preserve it in text
+            if raw_role and not role_code:
+                txt = f"[{raw_role}] {txt}".strip()
             if txt:
-                parsed.append({"start": st, "end": en, "text": txt})
+                seg_obj = {"start": st, "end": en, "text": txt}
+                if role_code:
+                    seg_obj["role"] = role_code
+                parsed.append(seg_obj)
         elif has_ts and parsed and line.strip():
             parsed[-1]["text"] = f"{parsed[-1]['text']} {line.strip()}".strip()
 
@@ -411,38 +427,66 @@ def translate_segments_multilingual(
     segments: list[dict],
     source_lang: str = "auto",
     target_lang: str = "vi",
+    ai_provider: str = "local",
+    ai_api_key: str = "",
+    ai_model: str = "",
 ) -> tuple[list[dict], str]:
     """
-    Translates movie dialogue turns 1-to-1 with full rolling scene context via CinemaTranslator
-    (Qwen3-8B Metal GPU screenplay engine + strict zero-foreign-leak verification).
+    Translates movie dialogue turns 1-to-1 with Acoustic Speaker Roles + Character Bible + Rolling Scene Context
+    via Pro Cinema AI Director (Qwen3-14B Local or Gemini/OpenAI/DeepSeek Cloud API).
     """
     if not segments:
         return [], source_lang or "auto"
 
     if not target_lang or target_lang == "same":
-        out = [{**s, "translatedText": s.get("text", "")} for s in segments]
+        out = [
+            {
+                **s,
+                "translatedText": s.get("text", ""),
+                "role": audio_speaker_analyzer.canonicalize_role_tag(str(s.get("role") or s.get("acousticRole") or "")) or "DAN_CHUYEN",
+            }
+            for s in segments
+        ]
         return out, source_lang or "auto"
 
     sl_norm = normalize_translate_lang_code(source_lang) if source_lang and source_lang != "auto" else "auto"
     tl_norm = normalize_translate_lang_code(target_lang)
     if sl_norm != "auto" and sl_norm.lower() == tl_norm.lower():
-        out = [{**s, "translatedText": s.get("text", "")} for s in segments]
+        out = [
+            {
+                **s,
+                "translatedText": s.get("text", ""),
+                "role": audio_speaker_analyzer.canonicalize_role_tag(str(s.get("role") or s.get("acousticRole") or "")) or "DAN_CHUYEN",
+            }
+            for s in segments
+        ]
         return out, sl_norm
 
     src_lines = [re.sub(r"\s+", " ", str(seg.get("text", ""))).strip() for seg in segments]
+    ac_roles = [str(seg.get("acousticRole") or seg.get("role") or "") for seg in segments]
+    prov_tag = (ai_provider or "local").strip().upper()
+    ai_lbl = (
+        "AI Biên kịch 8B Nhanh"
+        if prov_tag == "LOCAL_FAST"
+        else (f"AI {prov_tag} Pro" if prov_tag != "LOCAL" and ai_api_key else "AI Biên kịch 14B Pro")
+    )
 
     def _on_tr_progress(done_n: int, total_n: int) -> None:
         p = 42 + int((done_n / max(1, total_n)) * 24)
         set_dub_live_progress(
-            f"🎬 AI Biên kịch phim đang dịch mượt câu {min(done_n + 1, total_n)}/{total_n}...",
-            f"🎬 AI Cinema Translator adapting cue {min(done_n + 1, total_n)}/{total_n}...",
+            f"🎬 {ai_lbl} đang phân vai & dịch chuẩn xưng hô câu {min(done_n + 1, total_n)}/{total_n}...",
+            f"🎬 {ai_lbl} casting roles & adapting cue {min(done_n + 1, total_n)}/{total_n}...",
             p,
         )
 
-    translated_lines = cinema_translator.translate_cinema_lines(
+    translated_lines, refined_roles = cinema_translator.translate_cinema_lines_with_roles(
         lines=src_lines,
+        speaker_roles=ac_roles,
         source_lang=sl_norm,
         target_lang=tl_norm,
+        ai_provider=ai_provider,
+        ai_api_key=ai_api_key,
+        ai_model=ai_model,
         nmt_fallback_fn=_translate_single_chunk_gtx,
         progress_cb=_on_tr_progress,
     )
@@ -450,12 +494,17 @@ def translate_segments_multilingual(
     enriched = []
     for i, seg in enumerate(segments):
         tr_txt = translated_lines[i] if i < len(translated_lines) else seg["text"]
+        r_code = refined_roles[i] if i < len(refined_roles) else (seg.get("acousticRole") or "DAN_CHUYEN")
         enriched.append(
             {
                 "start": seg["start"],
                 "end": seg["end"],
                 "text": seg["text"],
                 "translatedText": (tr_txt or seg["text"]).strip(),
+                "role": r_code,
+                "roleLabel": audio_speaker_analyzer.role_to_display_label(r_code),
+                "acousticRole": seg.get("acousticRole", r_code),
+                "acousticF0": seg.get("acousticF0", 0.0),
             }
         )
     return enriched, sl_norm
@@ -465,17 +514,32 @@ def translate_script_preserving_timestamps(
     raw_text: str,
     source_lang: str = "auto",
     target_lang: str = "vi",
+    ai_provider: str = "local",
+    ai_api_key: str = "",
+    ai_model: str = "",
+    include_role: bool = True,
 ) -> tuple[str, str]:
     segs, plain, has_ts = parse_timestamped_script(raw_text)
     if has_ts and segs:
-        tr_segs, det = translate_segments_multilingual(segs, source_lang=source_lang, target_lang=target_lang)
-        return format_timestamped_script(tr_segs, text_key="translatedText"), det
+        tr_segs, det = translate_segments_multilingual(
+            segs,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            ai_provider=ai_provider,
+            ai_api_key=ai_api_key,
+            ai_model=ai_model,
+        )
+        return format_timestamped_script(tr_segs, text_key="translatedText", include_role=include_role), det
     if not plain:
         return "", source_lang or "auto"
-    tr_list = cinema_translator.translate_cinema_lines(
+    tr_list, _ = cinema_translator.translate_cinema_lines_with_roles(
         lines=[plain],
+        speaker_roles=None,
         source_lang=source_lang,
         target_lang=target_lang,
+        ai_provider=ai_provider,
+        ai_api_key=ai_api_key,
+        ai_model=ai_model,
         nmt_fallback_fn=_translate_single_chunk_gtx,
     )
     return (tr_list[0] if tr_list else plain), (source_lang or "auto")
@@ -721,12 +785,16 @@ def transcribe_and_translate_media(
     source_lang: str = "auto",
     target_lang: str = "vi",
     ffmpeg_bin: str = "ffmpeg",
+    ai_provider: str = "local",
+    ai_api_key: str = "",
+    ai_model: str = "",
+    multi_voice_cast: bool = True,
 ) -> dict:
     meta = probe_media_info(media_path, ffmpeg_bin=ffmpeg_bin)
     cache_dir = os.path.join("/tmp", "voxly_dub_sessions")
     os.makedirs(cache_dir, exist_ok=True)
     fp_key = _compute_media_fast_fingerprint(media_path, source_lang or "auto")
-    stt_cache_path = os.path.join(cache_dir, f"stt_v7_cinema_{fp_key}.json")
+    stt_cache_path = os.path.join(cache_dir, f"stt_v8_multicast_{fp_key}.json")
 
     cached_stt = None
     if os.path.exists(stt_cache_path):
@@ -842,6 +910,18 @@ def transcribe_and_translate_media(
         if not plain_source or not segs:
             raise ValueError("Không nhận diện được lời thoại hoặc phụ đề trong file này. Vui lòng kiểm tra lại video/âm thanh!")
 
+        # Acoustic Speaker Biometrics & Gender/Age/Crowd Diarization on original audio waveform!
+        if meta.get("hasAudio", True):
+            try:
+                set_dub_live_progress(
+                    "🎭 Đang phân tích sắc thái giọng gốc (Nam / Nữ / Đàn ông / Đàn bà / Trẻ em / Đám đông)...",
+                    "🎭 Analyzing original speaker voice biometrics (Male / Female / Child / Crowd)...",
+                    38,
+                )
+                segs = audio_speaker_analyzer.analyze_segments_acoustic_roles(segs, media_path, ffmpeg_bin=ffmpeg_bin)
+            except Exception as spk_err:
+                print(f"[SpeakerAnalyzer] Non-fatal skip: {spk_err}")
+
         try:
             with open(stt_cache_path, "w", encoding="utf-8") as cf:
                 json.dump(
@@ -861,10 +941,18 @@ def transcribe_and_translate_media(
         segs,
         source_lang=detected_lang,
         target_lang=target_lang,
+        ai_provider=ai_provider,
+        ai_api_key=ai_api_key,
+        ai_model=ai_model,
     )
     effective_target = detected_lang if (not target_lang or target_lang == "same") else target_lang
-    formatted_source = format_timestamped_script(tr_segs, text_key="text")
-    formatted_translated = format_timestamped_script(tr_segs, text_key="translatedText")
+    formatted_source = format_timestamped_script(tr_segs, text_key="text", include_role=False)
+    formatted_translated = format_timestamped_script(tr_segs, text_key="translatedText", include_role=bool(multi_voice_cast))
+
+    role_counts: dict[str, int] = {}
+    for s in tr_segs:
+        rl = s.get("roleLabel") or audio_speaker_analyzer.role_to_display_label(s.get("role", ""))
+        role_counts[rl] = role_counts.get(rl, 0) + 1
 
     return {
         "success": True,
@@ -878,6 +966,8 @@ def transcribe_and_translate_media(
         "translatedText": formatted_translated,
         "segments": tr_segs,
         "segmentsCount": len(tr_segs),
+        "roleSummary": role_counts,
+        "aiEngineUsed": (ai_provider if (ai_provider != "local" and ai_api_key) else cinema_translator.resolve_best_mlx_model_id()),
     }
 
 

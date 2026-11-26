@@ -87,10 +87,65 @@
     return trimmed;
   }
 
+  const CLOUD_AI_MODELS = {
+    gemini: [
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Nhanh & Cực Chuẩn)' },
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Đỉnh cao Điện Ảnh)' }
+    ],
+    deepseek: [
+      { value: 'deepseek-chat', label: 'DeepSeek V3 (Trung-Việt Siêu Chuẩn)' }
+    ],
+    openai: [
+      { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Nhanh & Mượt)' },
+      { value: 'gpt-4o', label: 'GPT-4o (Biên Kịch Cao Cấp)' }
+    ]
+  };
+
+  function getProAiConfig() {
+    const provider = document.getElementById('dubAiProviderSelect')?.value || 'local';
+    const apiKey = (document.getElementById('dubAiApiKeyInput')?.value || '').trim();
+    const model = (document.getElementById('dubAiModelSelect')?.value || '').trim();
+    const multiVoiceCast = document.getElementById('dubMultiVoiceChk')
+      ? document.getElementById('dubMultiVoiceChk').checked
+      : true;
+    return { aiProvider: provider, aiApiKey: apiKey, aiModel: model, multiVoiceCast };
+  }
+
+  function syncAiProviderUi() {
+    const provSel = document.getElementById('dubAiProviderSelect');
+    const cfgRow = document.getElementById('dubAiCloudConfigRow');
+    const keyIn = document.getElementById('dubAiApiKeyInput');
+    const mdlSel = document.getElementById('dubAiModelSelect');
+    if (!provSel || !cfgRow) return;
+    const prov = provSel.value || 'local';
+    try { localStorage.setItem('voxly_dub_ai_provider', prov); } catch {}
+    if (prov === 'local' || prov === 'local_fast') {
+      cfgRow.classList.add('hidden');
+      return;
+    }
+    cfgRow.classList.remove('hidden');
+    const models = CLOUD_AI_MODELS[prov] || [];
+    if (mdlSel) {
+      const savedMdl = (() => { try { return localStorage.getItem(`voxly_dub_ai_model_${prov}`) || ''; } catch { return ''; } })();
+      mdlSel.innerHTML = models.map(m => `<option value="${m.value}">${esc(m.label)}</option>`).join('');
+      if (savedMdl && models.some(m => m.value === savedMdl)) mdlSel.value = savedMdl;
+    }
+    if (keyIn) {
+      const savedKey = (() => { try { return localStorage.getItem(`voxly_dub_ai_key_${prov}`) || ''; } catch { return ''; } })();
+      keyIn.value = savedKey;
+      keyIn.placeholder = prov === 'gemini'
+        ? 'Dán Google Gemini API Key (AIza...) — lưu cục bộ...'
+        : (prov === 'deepseek' ? 'Dán DeepSeek API Key (sk-...) — lưu cục bộ...' : 'Dán OpenAI API Key (sk-...) — lưu cục bộ...');
+    }
+  }
+
   function stripTimestampsForQuota(raw) {
     return String(raw || '')
       .split(/\r?\n/)
-      .map(line => line.replace(/^\s*\[\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\s*-\s*\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\]\s*/, '').trim())
+      .map(line => line
+        .replace(/^\s*\[\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\s*-\s*\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\]\s*/, '')
+        .replace(/^\[[^\]]{2,28}\]\s*/, '')
+        .trim())
       .filter(Boolean)
       .join(' ')
       .trim();
@@ -501,20 +556,21 @@
 
     const srcLang = document.getElementById('dubSourceLang')?.value || 'auto';
     const tgtLang = document.getElementById('dubTargetLang')?.value || 'en';
+    const aiCfg = getProAiConfig();
     const isDouyinLink = /(?:douyin\.com|iesdouyin\.com)/i.test(ytUrl);
     const platName = isDouyinLink ? 'Douyin' : 'YouTube';
 
     const baseStep1Msg = useYoutube
       ? (isVi
           ? (ytMode === 'video'
-              ? `🎬 Bước 1/2: Đang tải Video từ ${platName}, bóc lời nói & biên dịch kịch bản...`
-              : `🎵 Bước 1/2: Đang trích xuất Âm thanh từ ${platName}, bóc lời & dịch...`)
+              ? `🎬 Bước 1/2: Đang tải Video từ ${platName}, phân tích giọng gốc & biên dịch phân vai...`
+              : `🎵 Bước 1/2: Đang trích xuất Âm thanh từ ${platName}, phân tích giọng gốc & dịch...`)
           : (ytMode === 'video'
-              ? `🎬 Step 1/2: Downloading ${platName} video, transcribing speech & translating...`
-              : `🎵 Step 1/2: Extracting ${platName} audio, transcribing speech & translating...`))
+              ? `🎬 Step 1/2: Downloading ${platName} video, analyzing speakers & translating...`
+              : `🎵 Step 1/2: Extracting ${platName} audio, analyzing speakers & translating...`))
       : (isVi
-          ? '🎙️ Bước 1/2: AI đang tải tệp, nhận diện phụ đề/lời thoại & biên dịch kịch bản...'
-          : '🎙️ Step 1/2: Uploading media, extracting subtitles/speech & translating...');
+          ? '🎙️ Bước 1/2: AI đang tải tệp, nhận diện giọng Nam/Nữ & biên dịch phân vai chuẩn xưng hô...'
+          : '🎙️ Step 1/2: Uploading media, analyzing speaker genders & translating roles...');
 
     setDubProgress(true, baseStep1Msg, 14);
 
@@ -528,18 +584,27 @@
           url: ytUrl,
           downloadMode: ytMode,
           sourceLang: srcLang,
-          targetLang: tgtLang
+          targetLang: tgtLang,
+          aiProvider: aiCfg.aiProvider,
+          aiApiKey: aiCfg.aiApiKey,
+          aiModel: aiCfg.aiModel,
+          multiVoiceCast: aiCfg.multiVoiceCast
         })
       });
     } else {
+      const upHeaders = {
+        'Content-Type': 'application/octet-stream',
+        'X-File-Name': encodeURIComponent(selectedMediaFile.name),
+        'X-Source-Lang': srcLang,
+        'X-Target-Lang': tgtLang,
+        'X-Ai-Provider': aiCfg.aiProvider,
+        'X-Ai-Model': aiCfg.aiModel,
+        'X-Multi-Voice': aiCfg.multiVoiceCast ? '1' : '0'
+      };
+      if (aiCfg.aiApiKey) upHeaders['X-Ai-Api-Key'] = aiCfg.aiApiKey;
       res = await fetch('/api/dubbing/transcribe-translate?async=1', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-File-Name': encodeURIComponent(selectedMediaFile.name),
-          'X-Source-Lang': srcLang,
-          'X-Target-Lang': tgtLang
-        },
+        headers: upHeaders,
         body: selectedMediaFile
       });
     }
@@ -600,9 +665,13 @@
     if (trBox) trBox.value = data.translatedText || '';
     if (detBadge) {
       const segCnt = data.segmentsCount || 0;
+      const roleSum = data.roleSummary && typeof data.roleSummary === 'object'
+        ? Object.entries(data.roleSummary).map(([k, v]) => `${k}:${v}`).slice(0, 5).join(', ')
+        : '';
+      const roleSuffix = roleSum ? ` • 🎭 ${roleSum}` : '';
       detBadge.textContent = isVi
-        ? `Ngôn ngữ gốc: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} câu thoại`
-        : `Detected: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} cues`;
+        ? `Ngôn ngữ gốc: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} câu thoại${roleSuffix}`
+        : `Detected: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} cues${roleSuffix}`;
     }
     if (scriptsCard) scriptsCard.classList.remove('hidden');
 
@@ -717,11 +786,16 @@
     const smartDucking = document.getElementById('dubSmartDuckChk') ? document.getElementById('dubSmartDuckChk').checked : true;
     const syncTimeline = document.getElementById('dubSyncTimelineChk') ? document.getElementById('dubSyncTimelineChk').checked : true;
     const autoFitTiming = document.getElementById('dubAutoFitChk') ? document.getElementById('dubAutoFitChk').checked : true;
+    const multiVoiceCast = document.getElementById('dubMultiVoiceChk') ? document.getElementById('dubMultiVoiceChk').checked : true;
 
     const baseStep2Msg = selectedIsVideo
       ? (isVi
-          ? '🎬 Bước 2/2: Đang lồng tiếng khớp từng mốc thoại & trộn âm thanh gốc vào Video .MP4...'
-          : '🎬 Step 2/2: Synthesizing timestamp-synced 48kHz dub & mixing original audio into .MP4...')
+          ? (multiVoiceCast
+              ? '🎭 Bước 2/2: Đang lồng tiếng đa giọng phân vai 48kHz khớp mốc thoại & đóng gói .MP4...'
+              : '🎬 Bước 2/2: Đang lồng tiếng khớp từng mốc thoại & trộn âm thanh gốc vào Video .MP4...')
+          : (multiVoiceCast
+              ? '🎭 Step 2/2: Synthesizing multi-cast 48kHz character dubbing & muxing .MP4...'
+              : '🎬 Step 2/2: Synthesizing timestamp-synced 48kHz dub & mixing original audio into .MP4...'))
       : (isVi
           ? '🎧 Bước 2/2: Đang tổng hợp giọng AI 48kHz theo mốc thoại & trộn âm nền...'
           : '🎧 Step 2/2: Synthesizing synced 48kHz voiceover & mixing original audio...');
@@ -743,6 +817,7 @@
         smartDucking,
         syncTimeline,
         autoFitTiming,
+        multiVoiceCast,
         mediaSessionId: currentMediaSessionId
       })
     });
@@ -849,6 +924,32 @@
     populateLanguageDropdowns();
     loadDubVoicesCatalog();
     setOrigVolumePct(45);
+
+    const aiProvSel = document.getElementById('dubAiProviderSelect');
+    const aiKeyIn = document.getElementById('dubAiApiKeyInput');
+    const aiMdlSel = document.getElementById('dubAiModelSelect');
+    if (aiProvSel) {
+      const savedProv = (() => { try { return localStorage.getItem('voxly_dub_ai_provider') || 'local'; } catch { return 'local'; } })();
+      if ([...aiProvSel.options].some(o => o.value === savedProv)) aiProvSel.value = savedProv;
+      syncAiProviderUi();
+      aiProvSel.addEventListener('change', () => syncAiProviderUi());
+    }
+    if (aiKeyIn) {
+      aiKeyIn.addEventListener('input', () => {
+        const p = aiProvSel?.value || 'local';
+        if (p !== 'local' && p !== 'local_fast') {
+          try { localStorage.setItem(`voxly_dub_ai_key_${p}`, aiKeyIn.value.trim()); } catch {}
+        }
+      });
+    }
+    if (aiMdlSel) {
+      aiMdlSel.addEventListener('change', () => {
+        const p = aiProvSel?.value || 'local';
+        if (p !== 'local' && p !== 'local_fast') {
+          try { localStorage.setItem(`voxly_dub_ai_model_${p}`, aiMdlSel.value); } catch {}
+        }
+      });
+    }
 
     const fileIn = document.getElementById('dubMediaFileInput');
     const btnPick = document.getElementById('btnPickDubMedia');
@@ -979,7 +1080,8 @@
               body: JSON.stringify({
                 text: srcTxt,
                 sourceLang: lastDetectedLang || 'auto',
-                targetLang: tgtSel.value
+                targetLang: tgtSel.value,
+                ...getProAiConfig()
               })
             });
             const d = await r.json();
@@ -1031,7 +1133,7 @@
               const r = await fetch('/api/dubbing/retranslate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: existingSrc, sourceLang: lastDetectedLang || 'auto', targetLang: tgtVal })
+                body: JSON.stringify({ text: existingSrc, sourceLang: lastDetectedLang || 'auto', targetLang: tgtVal, ...getProAiConfig() })
               });
               const d = await r.json().catch(() => ({}));
               if (!r.ok || !d.success) throw new Error(d.error || `HTTP ${r.status}`);
@@ -1096,7 +1198,7 @@
             const r = await fetch('/api/dubbing/retranslate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text: srcTxt, sourceLang: lastDetectedLang || 'auto', targetLang: tgtVal })
+              body: JSON.stringify({ text: srcTxt, sourceLang: lastDetectedLang || 'auto', targetLang: tgtVal, ...getProAiConfig() })
             });
             const d = await r.json();
             if (r.ok && d.success) {

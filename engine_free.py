@@ -81,6 +81,7 @@ if (
 import numpy as np
 
 from global_voices_catalog import GLOBAL_INTL_VOICES
+import audio_speaker_analyzer
 import media_dubber
 from private_vault import PrivateVoiceVault
 import vn_number_normalizer
@@ -1015,6 +1016,134 @@ def dispatch_synthesize(
         return synthesize_vieneu_48k(text, "Ngọc Huyền", rate=rate, pause_sec=pause_sec)
 
 
+# =========================================================================
+# MULTI-CAST 48kHz CINEMA VOICE DUBBING ENGINE
+# Automatically casts distinct 48kHz voices for Nam trẻ / Nam 2 / Đàn ông /
+# Ông lão / Nữ trẻ / Nữ 2 / Phụ nữ / Trẻ em / Đám đông (3-voice layered mix)!
+# =========================================================================
+ROLE_CAST_MAP_VI: dict[str, tuple[str, float]] = {
+    "NAM_TRE": ("free-vi-hai-dang", 0.0),      # Hải Đăng — Nam trẻ sáng rõ
+    "NAM_2": ("free-vi-minh-quan", 0.0),       # Minh Quân — Nam thứ hai dõng dạc
+    "DAN_ONG": ("free-vi-pham-tuyen", -0.45),  # Phạm Tuyên — Đàn ông trưởng thành uy lực
+    "ONG_LAO": ("free-vi-thien-tam", -1.35),   # Thiện Tâm — Ông lão / Đại trưởng lão ấm trầm
+    "NU_TRE": ("free-vi-ngoc-huyen", 0.0),     # Ngọc Huyền — Nữ trẻ truyền cảm
+    "NU_2": ("free-vi-quynh-anh", 0.0),        # Quỳnh Anh — Nữ thứ hai dịu dàng
+    "PHU_NU": ("free-vi-mai-anh", -0.50),      # Mai Anh — Phụ nữ / Đàn bà chín chắn
+    "TRE_EM": ("free-vi-my-duyen", 2.45),      # Mỹ Duyên — Trẻ em / Bé trai / Bé gái trong trẻo
+}
+
+
+def _apply_pitch_character_48k(samples: np.ndarray, semitones: float) -> np.ndarray:
+    """Subtle formant/pitch vocal character shaping for Elder (-1.35st) / Child (+2.45st) roles."""
+    if samples.size < 480 or abs(semitones) < 0.15:
+        return samples
+    pitch_factor = float(2.0 ** (semitones / 12.0))
+    tempo_comp = max(0.55, min(1.85, 1.0 / pitch_factor))
+    sr_shifted = int(round(TARGET_SR * pitch_factor))
+    in_wav = media_dubber._f32_48k_to_wav_bytes(samples, sr=TARGET_SR)
+    try:
+        proc = subprocess.run(
+            [
+                FFMPEG_BIN, "-nostdin", "-f", "wav", "-i", "pipe:0",
+                "-af", f"asetrate={sr_shifted},aresample={TARGET_SR},atempo={tempo_comp:.4f}",
+                "-ac", "1", "-ar", str(TARGET_SR), "-f", "s16le", "pipe:1",
+            ],
+            input=in_wav,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=25,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            return np.frombuffer(proc.stdout, dtype=np.int16).astype(np.float32) / 32768.0
+    except Exception:
+        pass
+    return samples
+
+
+def _pick_intl_role_voice(default_voice_id: str, role_code: str) -> str:
+    if default_voice_id.startswith("private-"):
+        return default_voice_id
+    base_info = resolve_voice_entry(default_voice_id)
+    lang = base_info.get("language", "vi")
+    if lang.startswith("vi"):
+        return default_voice_id
+    want_gender = "Nam" if role_code in ("NAM_TRE", "NAM_2", "DAN_ONG", "ONG_LAO") else "Nữ"
+    if base_info.get("gender") == want_gender:
+        return default_voice_id
+    for v in FREE_VOICES:
+        if v.get("language") == lang and v.get("gender") == want_gender:
+            return v["id"]
+    return default_voice_id
+
+
+def synthesize_role_segment_48k(
+    text: str,
+    role_tag: str,
+    default_voice_id: str,
+    multi_voice_cast: bool = True,
+    rate: float = 1.0,
+    pause_sec: float = 0.22,
+    owner_token: str | None = None,
+) -> tuple[np.ndarray, str]:
+    """
+    Synthesizes one dialogue cue using its casted multi-voice actor (or 3-voice staggered
+    crowd mix for `DAM_DONG`), returning `(float32_48k_samples, used_role_code)`.
+    """
+    role_code = audio_speaker_analyzer.canonicalize_role_tag(role_tag or "")
+    if not multi_voice_cast or not role_code or role_code == "DAN_CHUYEN":
+        wb = dispatch_synthesize(text, default_voice_id, rate=rate, pause_sec=pause_sec, owner_token=owner_token)
+        return media_dubber.wav_bytes_to_f32_48k(wb, ffmpeg_bin=FFMPEG_BIN), (role_code or "DAN_CHUYEN")
+
+    is_vi_voice = True
+    if not default_voice_id.startswith("private-"):
+        is_vi_voice = resolve_voice_entry(default_voice_id).get("language", "vi").startswith("vi")
+
+    # 3-Voice Layered Cinema Crowd Mix for [ĐÁM ĐÔNG]
+    if role_code == "DAM_DONG" and is_vi_voice:
+        crowd_specs = [
+            ("free-vi-minh-quan", rate, 0.0, 0.62),
+            ("free-vi-ngoc-huyen", min(1.85, rate * 1.05), 0.055, 0.50),
+            ("free-vi-pham-tuyen", max(0.65, rate * 0.96), 0.115, 0.48),
+        ]
+        layers: list[tuple[int, float, np.ndarray]] = []
+        max_len = 0
+        for vid, r_v, delay_s, gain in crowd_specs:
+            wb_c = dispatch_synthesize(text, vid, rate=r_v, pause_sec=min(pause_sec, 0.16), owner_token=owner_token)
+            arr_c = media_dubber.trim_tts_silence_48k(
+                media_dubber.wav_bytes_to_f32_48k(wb_c, ffmpeg_bin=FFMPEG_BIN), sr=TARGET_SR, pad_ms=35
+            )
+            off = int(round(delay_s * TARGET_SR))
+            layers.append((off, gain, arr_c))
+            max_len = max(max_len, off + arr_c.size)
+        if max_len > 0:
+            mix = np.zeros(max_len, dtype=np.float32)
+            for off, gain, arr_c in layers:
+                if arr_c.size > 0:
+                    mix[off : off + arr_c.size] += arr_c * gain
+            pk = float(np.max(np.abs(mix))) if mix.size else 0.0
+            if pk > 0.02:
+                mix = mix * (0.90 / pk)
+            return np.clip(mix, -0.96, 0.96), "DAM_DONG"
+
+    if is_vi_voice and role_code in ROLE_CAST_MAP_VI:
+        cast_vid, pitch_st = ROLE_CAST_MAP_VI[role_code]
+        wb = dispatch_synthesize(text, cast_vid, rate=rate, pause_sec=pause_sec, owner_token=owner_token)
+        arr = media_dubber.wav_bytes_to_f32_48k(wb, ffmpeg_bin=FFMPEG_BIN)
+        if abs(pitch_st) >= 0.15:
+            arr = _apply_pitch_character_48k(arr, pitch_st)
+        return arr, role_code
+
+    # International language gender-matched casting
+    intl_vid = _pick_intl_role_voice(default_voice_id, role_code)
+    wb = dispatch_synthesize(text, intl_vid, rate=rate, pause_sec=pause_sec, owner_token=owner_token)
+    arr = media_dubber.wav_bytes_to_f32_48k(wb, ffmpeg_bin=FFMPEG_BIN)
+    if role_code == "TRE_EM":
+        arr = _apply_pitch_character_48k(arr, 2.3)
+    elif role_code == "ONG_LAO":
+        arr = _apply_pitch_character_48k(arr, -1.3)
+    return arr, role_code
+
+
 def get_public_voices() -> list[dict]:
     private_items = VAULT.list_private_voices_public()
     public_items = [
@@ -1149,6 +1278,10 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 out_dir = str(data.get("outDir", "/tmp/voxly_dub_sessions")).strip() or "/tmp/voxly_dub_sessions"
                 source_lang = str(data.get("sourceLang", "auto")).strip() or "auto"
                 target_lang = str(data.get("targetLang", "vi")).strip() or "vi"
+                ai_provider = str(data.get("aiProvider", "local")).strip() or "local"
+                ai_api_key = str(data.get("aiApiKey", "")).strip()
+                ai_model = str(data.get("aiModel", "")).strip()
+                multi_voice_cast = bool(data.get("multiVoiceCast", True))
 
                 dl_info = media_dubber.download_online_video_url(
                     raw_url=yt_url,
@@ -1161,6 +1294,10 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                     source_lang=source_lang,
                     target_lang=target_lang,
                     ffmpeg_bin=FFMPEG_BIN,
+                    ai_provider=ai_provider,
+                    ai_api_key=ai_api_key,
+                    ai_model=ai_model,
+                    multi_voice_cast=multi_voice_cast,
                 )
                 merged = {
                     **tr_info,
@@ -1180,11 +1317,19 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                     raise ValueError("Không tìm thấy file âm thanh/video cần dịch.")
                 source_lang = str(data.get("sourceLang", "auto")).strip() or "auto"
                 target_lang = str(data.get("targetLang", "vi")).strip() or "vi"
+                ai_provider = str(data.get("aiProvider", "local")).strip() or "local"
+                ai_api_key = str(data.get("aiApiKey", "")).strip()
+                ai_model = str(data.get("aiModel", "")).strip()
+                multi_voice_cast = bool(data.get("multiVoiceCast", True))
                 res_obj = media_dubber.transcribe_and_translate_media(
                     media_path=media_path,
                     source_lang=source_lang,
                     target_lang=target_lang,
                     ffmpeg_bin=FFMPEG_BIN,
+                    ai_provider=ai_provider,
+                    ai_api_key=ai_api_key,
+                    ai_model=ai_model,
+                    multi_voice_cast=multi_voice_cast,
                 )
                 self._send_json(200, res_obj)
                 return
@@ -1194,10 +1339,18 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 raw_text = str(data.get("text", "")).strip()
                 source_lang = str(data.get("sourceLang", "auto")).strip() or "auto"
                 target_lang = str(data.get("targetLang", "vi")).strip() or "vi"
+                ai_provider = str(data.get("aiProvider", "local")).strip() or "local"
+                ai_api_key = str(data.get("aiApiKey", "")).strip()
+                ai_model = str(data.get("aiModel", "")).strip()
+                multi_voice_cast = bool(data.get("multiVoiceCast", True))
                 translated, detected = media_dubber.translate_script_preserving_timestamps(
                     raw_text,
                     source_lang=source_lang,
                     target_lang=target_lang,
+                    ai_provider=ai_provider,
+                    ai_api_key=ai_api_key,
+                    ai_model=ai_model,
+                    include_role=multi_voice_cast,
                 )
                 self._send_json(200, {"success": True, "translatedText": translated, "detectedLang": detected})
                 return
@@ -1209,6 +1362,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 voice_id = str(data.get("voice", "free-vi-ngoc-huyen")).strip() or "free-vi-ngoc-huyen"
                 rate = float(data.get("rate", 1.0))
                 pause_sec = float(data.get("pause", 0.25))
+                multi_voice_cast = bool(data.get("multiVoiceCast", True))
                 owner_token = self.headers.get("X-Owner-Token") or data.get("ownerToken")
                 orig_media = str(data.get("origMediaPath", "")).strip()
                 is_video = bool(data.get("isVideo", False))
@@ -1231,6 +1385,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                                     "start": float(s.get("start", 0.0)),
                                     "end": float(s.get("end", 0.0)),
                                     "text": t_clean,
+                                    "role": str(s.get("role", "") or s.get("acousticRole", "")).strip(),
                                 }
                             )
                 elif sync_timeline and raw_text:
@@ -1243,32 +1398,42 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 out_mp3 = os.path.join(out_dir, f"{out_id}.mp3")
                 out_mp4 = os.path.join(out_dir, f"{out_id}_dubbed.mp4") if is_video else ""
 
+                used_roles_set: set[str] = set()
                 if parsed_segs:
                     total_s = len(parsed_segs)
                     done_counter = [0]
                     cnt_lock = threading.Lock()
+                    has_any_role = multi_voice_cast and any(
+                        audio_speaker_analyzer.canonicalize_role_tag(s.get("role", "")) not in ("", "DAN_CHUYEN")
+                        for s in parsed_segs
+                    )
+                    mode_vi_lbl = "đa giọng phân vai 48kHz" if has_any_role else "giọng AI 48kHz"
+                    mode_en_lbl = "multi-cast 48kHz actor voices" if has_any_role else "48kHz AI voice"
                     media_dubber.set_dub_live_progress(
-                        f"🔊 Đang thu giọng AI 48kHz câu 1/{total_s}...",
-                        f"🔊 Synthesizing 48kHz AI dub cue 1/{total_s}...",
+                        f"🎭 Đang thu âm {mode_vi_lbl} câu 1/{total_s}...",
+                        f"🎭 Synthesizing {mode_en_lbl} cue 1/{total_s}...",
                         68,
                     )
 
                     def _synth_one_seg(seg_obj: dict) -> dict:
-                        wb = dispatch_synthesize(
-                            seg_obj["text"],
-                            voice_id,
+                        arr, used_rc = synthesize_role_segment_48k(
+                            text=seg_obj["text"],
+                            role_tag=seg_obj.get("role", ""),
+                            default_voice_id=voice_id,
+                            multi_voice_cast=multi_voice_cast,
                             rate=rate,
                             pause_sec=min(pause_sec, 0.22),
                             owner_token=owner_token,
                         )
-                        arr = media_dubber.wav_bytes_to_f32_48k(wb, ffmpeg_bin=FFMPEG_BIN)
                         with cnt_lock:
+                            used_roles_set.add(used_rc)
                             done_counter[0] += 1
                             dn = done_counter[0]
                             pct = 68 + int((dn / max(1, total_s)) * 24)
+                            r_disp = audio_speaker_analyzer.role_to_display_label(used_rc)
                             media_dubber.set_dub_live_progress(
-                                f"🔊 Đang thu giọng AI 48kHz khớp thoại câu {dn}/{total_s}...",
-                                f"🔊 Synthesizing 48kHz synced voice cue {dn}/{total_s}...",
+                                f"🎭 Đang thu {mode_vi_lbl} [{r_disp}] câu {dn}/{total_s}...",
+                                f"🎭 Synthesizing {mode_en_lbl} [{r_disp}] cue {dn}/{total_s}...",
                                 pct,
                             )
                         return {"start": seg_obj["start"], "end": seg_obj["end"], "samples": arr}
@@ -1317,6 +1482,16 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                     if voice_id.startswith("private-")
                     else resolve_voice_entry(voice_id)
                 )
+                cast_roles_disp = sorted(
+                    audio_speaker_analyzer.role_to_display_label(rc)
+                    for rc in used_roles_set
+                    if rc and rc != "DAN_CHUYEN"
+                )
+                voice_summary = (
+                    f"🎭 Đa giọng ({len(cast_roles_disp)} vai: {', '.join(cast_roles_disp[:5])})"
+                    if (multi_voice_cast and len(cast_roles_disp) >= 2)
+                    else v_info.get("name", voice_id)
+                )
                 self._send_json(
                     200,
                     {
@@ -1327,7 +1502,8 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                         "outMp3File": os.path.basename(out_mp3),
                         "outMp4File": os.path.basename(out_mp4) if mix_res.get("dubbedVideoReady") else "",
                         "audioSeconds": mix_res.get("audioSeconds", 0.0),
-                        "voiceName": v_info.get("name", voice_id),
+                        "voiceName": voice_summary,
+                        "castRoles": cast_roles_disp,
                         "syncedSegmentsCount": len(parsed_segs),
                     },
                 )

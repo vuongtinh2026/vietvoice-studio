@@ -881,6 +881,61 @@
             </div>
           </div>
 
+          <!-- Pro AI Cinema Director & Multi-Voice Role Casting Studio -->
+          <div id="dubProAiDirectorCard" class="p-4 rounded-2xl bg-gradient-to-r from-purple-950/45 via-[#070b1a]/95 to-pink-950/35 border border-purple-400/45 flex flex-col gap-3 shadow-lg">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2 text-xs sm:text-sm font-extrabold text-purple-100">
+                <span class="w-7 h-7 rounded-lg bg-purple-500/25 border border-purple-400/40 text-pink-300 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-masks-theater"></i>
+                </span>
+                <span class="lang-only-vi">AI Biên Kịch Chuyên Nghiệp & Lồng Tiếng Phân Vai Đa Giọng</span>
+                <span class="lang-only-global hidden">Pro Cinema AI Translator & Multi-Cast Character Dubbing</span>
+              </div>
+              <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 font-bold">
+                <span class="lang-only-vi">🎭 Tự phân biệt Nam • Nữ • Đàn ông • Đàn bà • Ông lão • Trẻ em • Đám đông</span>
+                <span class="lang-only-global hidden">🎭 Auto Casts Male • Female • Elder • Child • Crowd</span>
+              </span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+              <!-- Multi-Voice Toggle -->
+              <label class="md:col-span-6 p-3 rounded-xl bg-[#050811]/90 border border-pink-400/35 hover:border-pink-400/70 flex items-start gap-2.5 cursor-pointer transition">
+                <input type="checkbox" id="dubMultiVoiceChk" checked class="accent-pink-400 w-4 h-4 mt-0.5 shrink-0">
+                <span class="flex flex-col gap-1">
+                  <b class="text-xs text-pink-100">
+                    <span class="lang-only-vi">🎭 Lồng tiếng Phân Vai Đa Giọng 48kHz (Khuyên dùng cho Phim)</span>
+                    <span class="lang-only-global hidden">🎭 Multi-Voice 48kHz Character Dubbing (Recommended for Movies)</span>
+                  </b>
+                  <span class="text-[10px] text-slate-400 leading-relaxed">
+                    <span class="lang-only-vi">AI tự nghe âm sắc gốc để phân đúng giọng riêng: <b>Nam trẻ</b> (Hải Đăng), <b>Nam 2</b> (Minh Quân), <b>Đàn ông</b> (Phạm Tuyên), <b>Ông lão</b> (Thiện Tâm), <b>Nữ trẻ</b> (Ngọc Huyền), <b>Phụ nữ</b> (Mai Anh), <b>Trẻ em</b> (Mỹ Duyên), <b>Đám đông</b> (Hòa âm 3 giọng). Tắt đi nếu muốn 1 giọng thuyết minh.</span>
+                    <span class="lang-only-global hidden">Analyzes original speaker pitch/timbre and casts distinct 48kHz actor voices for Young Male, Adult Man, Elder, Young Woman, Mature Woman, Child & 3-voice Crowd. Uncheck for single-narrator mode.</span>
+                  </span>
+                </span>
+              </label>
+
+              <!-- AI Translator Engine Selector -->
+              <div class="md:col-span-6 p-3 rounded-xl bg-[#050811]/90 border border-purple-400/35 flex flex-col gap-2">
+                <label for="dubAiProviderSelect" class="text-[11px] font-extrabold text-purple-200 flex items-center gap-1.5">
+                  <i class="fa-solid fa-brain text-purple-400"></i>
+                  <span class="lang-only-vi">Động Cơ AI Dịch Thuật & Phân Vai Xưng Hô:</span>
+                  <span class="lang-only-global hidden">Pro Cinema AI Translation & Casting Engine:</span>
+                </label>
+                <select id="dubAiProviderSelect" class="w-full bg-slate-950 border border-purple-400/40 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:ring-1 focus:ring-purple-400 cursor-pointer">
+                  <option value="local">✨ AI Biên Kịch Nội Bộ 14B Pro (Miễn phí • Phân vai & xưng hô chuẩn nhất)</option>
+                  <option value="local_fast">⚡ AI Biên Kịch Nội Bộ 8B Nhanh (Miễn phí • Tối ưu tốc độ phim nhiều tiếng)</option>
+                  <option value="gemini">💎 Google Gemini 2.5 Flash / Pro (Đỉnh cao Điện Ảnh • API Key)</option>
+                  <option value="deepseek">🚀 DeepSeek V3 (Dịch Trung-Việt Siêu Chuẩn • API Key)</option>
+                  <option value="openai">🤖 OpenAI GPT-4o (Chuẩn Biên Kịch Quốc Tế • API Key)</option>
+                </select>
+
+                <div id="dubAiCloudConfigRow" class="hidden grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1">
+                  <input type="password" id="dubAiApiKeyInput" autocomplete="off" placeholder="Dán API Key (chỉ lưu cục bộ trên máy bạn)..." class="sm:col-span-7 bg-slate-950 border border-cyan-400/40 rounded-lg px-2.5 py-1.5 text-[11px] text-cyan-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-400" />
+                  <select id="dubAiModelSelect" class="sm:col-span-5 bg-slate-950 border border-white/15 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono focus:outline-none cursor-pointer"></select>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Original Audio Volume Mixer & Dialogue Timestamp Sync Controls -->
           <div id="dubVideoOptionsRow" class="p-4 rounded-2xl bg-gradient-to-r from-indigo-950/45 via-[#070b1a]/95 to-cyan-950/30 border border-indigo-400/40 flex flex-col gap-3.5 shadow-lg">
             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -2744,7 +2799,7 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
   <!-- Pro Studio Extensions (Private Vault, 110 Countries, Multi-Speaker Stem Studio, VietQR) -->
   <script src="studio_pro.js?v=9.7"></script>
   <!-- Multilingual Audio & Video AI Dubbing Studio (MP3 / MP4 / YouTube / Douyin) -->
-  <script src="dubbing_studio.js?v=9.9"></script>
+  <script src="dubbing_studio.js?v=10.0"></script>
   <!-- Option 2 License Key, HWID Lock, Real Order/Bank Checkout & Owner Admin Console -->
   <script src="license_client_ui.js?v=9.7"></script>
 </body>

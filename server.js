@@ -1275,6 +1275,10 @@ const server = http.createServer(async (req, res) => {
       const downloadMode = payload.downloadMode === 'audio' ? 'audio' : 'video';
       const sourceLang = String(payload.sourceLang || 'auto').trim() || 'auto';
       const targetLang = String(payload.targetLang || 'vi').trim() || 'vi';
+      const aiProvider = String(payload.aiProvider || 'local').trim() || 'local';
+      const aiApiKey = String(payload.aiApiKey || '').trim();
+      const aiModel = String(payload.aiModel || '').trim();
+      const multiVoiceCast = payload.multiVoiceCast !== false;
       const isAsync = parsedUrl.searchParams.get('async') === '1' || Boolean(payload.async);
 
       if (!ytUrl) {
@@ -1289,7 +1293,11 @@ const server = http.createServer(async (req, res) => {
           downloadMode,
           outDir: dubDir,
           sourceLang,
-          targetLang
+          targetLang,
+          aiProvider,
+          aiApiKey,
+          aiModel,
+          multiVoiceCast
         });
         const data = dRes.data || {};
         if (!dRes.ok || !data.success) {
@@ -1356,6 +1364,10 @@ const server = http.createServer(async (req, res) => {
     const rawExt = (path.extname(rawName) || '.mp3').toLowerCase().replace(/[^.a-z0-9]/g, '') || '.mp3';
     const sourceLang = String(req.headers['x-source-lang'] || 'auto').trim() || 'auto';
     const targetLang = String(req.headers['x-target-lang'] || 'vi').trim() || 'vi';
+    const aiProvider = String(req.headers['x-ai-provider'] || 'local').trim() || 'local';
+    const aiApiKey = String(req.headers['x-ai-api-key'] || '').trim();
+    const aiModel = String(req.headers['x-ai-model'] || '').trim();
+    const multiVoiceCast = String(req.headers['x-multi-voice'] || '1') !== '0';
     const isAsync = parsedUrl.searchParams.get('async') === '1';
     const sessionId = `dub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const mediaPath = path.join(dubDir, `${sessionId}_orig${rawExt}`);
@@ -1383,7 +1395,11 @@ const server = http.createServer(async (req, res) => {
         const dRes = await callFreeDaemonJson('/dub/transcribe-translate', 'POST', {
           mediaPath,
           sourceLang,
-          targetLang
+          targetLang,
+          aiProvider,
+          aiApiKey,
+          aiModel,
+          multiVoiceCast
         });
         const data = dRes.data || {};
         if (!dRes.ok || !data.success) {
@@ -1437,7 +1453,11 @@ const server = http.createServer(async (req, res) => {
       const dRes = await callFreeDaemonJson('/dub/translate-text', 'POST', {
         text: payload.text || '',
         sourceLang: payload.sourceLang || 'auto',
-        targetLang: payload.targetLang || 'vi'
+        targetLang: payload.targetLang || 'vi',
+        aiProvider: String(payload.aiProvider || 'local').trim() || 'local',
+        aiApiKey: String(payload.aiApiKey || '').trim(),
+        aiModel: String(payload.aiModel || '').trim(),
+        multiVoiceCast: payload.multiVoiceCast !== false
       });
       const data = dRes.data || {};
       if (!dRes.ok || !data.success) {
@@ -1462,6 +1482,7 @@ const server = http.createServer(async (req, res) => {
       const pause = parseFloat(payload.pause) || 0.25;
       const syncTimeline = payload.syncTimeline !== false;
       const autoFitTiming = payload.autoFitTiming !== false;
+      const multiVoiceCast = payload.multiVoiceCast !== false;
       const origVolumePct = payload.origVolumePct !== undefined && payload.origVolumePct !== null
         ? Math.max(0, Math.min(100, Number(payload.origVolumePct)))
         : (payload.bgMixMode === 'mute' ? 0 : 40);
@@ -1475,8 +1496,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // Parse `[mm:ss.d - mm:ss.d] Spoken text` cues and strip timestamps before counting quota!
-      const tsRe = /^\s*\[(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\]\s*(.*)$/;
+      // Parse `[mm:ss.d - mm:ss.d] [OPTIONAL_ROLE] Spoken text` cues and strip timestamps + role tags before counting quota!
+      const tsRe = /^\s*\[(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\]\s*(?:\[([^\]]{2,28})\]\s*)?(.*)$/;
       const parseTsSec = (s) => {
         const p = String(s || '').split(':').map(Number);
         if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
@@ -1492,8 +1513,16 @@ const server = http.createServer(async (req, res) => {
           hasTimestamps = true;
           const st = parseTsSec(m[1]);
           const en = Math.max(st + 0.25, parseTsSec(m[2]));
-          const txt = (m[3] || '').trim();
-          if (txt) parsedSegs.push({ start: st, end: en, text: normalizeTextForVoice(txt, voice) });
+          const roleTag = (m[3] || '').trim();
+          const txt = (m[4] || '').trim();
+          if (txt) {
+            parsedSegs.push({
+              start: st,
+              end: en,
+              role: roleTag,
+              text: normalizeTextForVoice(txt, voice)
+            });
+          }
         } else if (hasTimestamps && parsedSegs.length > 0 && line.trim()) {
           parsedSegs[parsedSegs.length - 1].text = normalizeTextForVoice(
             `${parsedSegs[parsedSegs.length - 1].text} ${line.trim()}`,
@@ -1541,6 +1570,7 @@ const server = http.createServer(async (req, res) => {
           finalSegments = meta.segments.map((s, idx) => ({
             start: s.start,
             end: s.end,
+            role: s.role || s.acousticRole || '',
             text: normalizeTextForVoice(plainLines[idx], voice)
           }));
         }
@@ -1558,6 +1588,7 @@ const server = http.createServer(async (req, res) => {
           voice,
           rate,
           pause,
+          multiVoiceCast,
           ownerToken: ownerToken || undefined,
           origMediaPath: meta.origPath || '',
           isVideo: Boolean(meta.isVideo),

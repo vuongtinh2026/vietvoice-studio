@@ -17,6 +17,8 @@ import subprocess
 import tempfile
 from typing import Callable
 
+import audio_speaker_analyzer
+
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _OCR_BIN_PATH = os.path.join(_SCRIPT_DIR, "subtitle_ocr_mac")
 _OCR_SWIFT_PATH = os.path.join(_SCRIPT_DIR, "subtitle_ocr_mac.swift")
@@ -345,10 +347,11 @@ def _punctuate_single_card(text: str) -> str:
     return t
 
 
-def _coalesce_subtitle_cards(cards: list[dict]) -> list[dict]:
+def _coalesce_subtitle_cards(cards: list[dict], audio_16k=None) -> list[dict]:
     """
     Merges rapid consecutive short subtitle cards of the SAME speaker turn into natural,
-    complete spoken sentences (target 2.0s–6.0s), removing duplicate repeats cleanly!
+    complete spoken sentences (target 2.0s–6.0s), AUTOMATICALLY SPLITTING whenever the
+    original video audio shows a different actor speaking (e.g. Woman 235Hz vs Man 125Hz)!
     """
     if not cards:
         return []
@@ -357,6 +360,10 @@ def _coalesce_subtitle_cards(cards: list[dict]) -> list[dict]:
     for c in cards:
         cc = dict(c)
         cc["text"] = _punctuate_single_card(cc["text"])
+        if audio_16k is not None and getattr(audio_16k, "size", 0) >= 1600:
+            cc["_vf"] = audio_speaker_analyzer.extract_segment_voice_features(
+                audio_16k, float(cc["start"]), float(cc["end"])
+            )
         prep_cards.append(cc)
 
     merged: list[dict] = [dict(prep_cards[0])]
@@ -389,33 +396,63 @@ def _coalesce_subtitle_cards(cards: list[dict]) -> list[dict]:
             cur["end"] = round(max(cur["end"], nxt["end"]), 2)
             continue
 
+        # Acoustic Speaker-Change Guardrail: NEVER glue two different actors' voices into one line!
+        speaker_changed = False
+        if "_vf" in cur and "_vf" in nxt:
+            speaker_changed = audio_speaker_analyzer.is_acoustic_speaker_change(cur["_vf"], nxt["_vf"])
+
         is_cjk = bool(_CJK_CHAR_RE.search(cur_txt + nxt_txt))
         combined_dur = nxt["end"] - cur["start"]
         cur_dur = cur["end"] - cur["start"]
         joiner = "，" if (is_cjk and not re.search(r"[，。？！、；：,.?!]$", cur_txt)) else ("" if is_cjk else " ")
         combined_txt = f"{cur_txt}{joiner}{nxt_txt}".strip()
 
-        max_chars = 36 if is_cjk else 140
+        max_chars = 34 if is_cjk else 135
         cur_ends_strong = bool(re.search(r"[?？!！。][\"')\]»”’]*$", cur_txt))
-        nxt_is_exclam = bool(re.match(r"^(?:我去|卧槽|操|牛逼|赌个屁|涨个屁|等等)[！!。]?$", nxt_txt))
+        # Dialogue turn-end / Q&A switch detector for unpunctuated Chinese movie subtitles
+        # (e.g. '你没事吧' -> '没事的', '我跟你一起' -> '有人进来了' -> '去看看' -> '好的长官')
+        cur_is_complete_turn = bool(
+            re.search(r"(?:吗|呢|吧|一起|看看|进来了|没事|好的|滚开|死了|分神了一下)$", cur_bare)
+        )
+        nxt_starts_new_turn = bool(
+            re.match(
+                r"^(?:我去|卧槽|操|牛逼|赌个屁|涨个屁|等等|好的|没事|有人|去看看|尝过|滚开|别|快|师姐|师兄|长官|大长老|"
+                r"不好|怎么|什么|谁|哎|喂)",
+                nxt_bare,
+            )
+        )
+        nxt_is_exclam = bool(re.match(r"^(?:我去|卧槽|操|牛逼|赌个屁|涨个屁|等等|好的长官|没事的)[！!。]?$", nxt_txt))
+        cur_card_count = int(cur.get("_cards", 1))
 
         should_join = False
-        if not cur_ends_strong and not nxt_is_exclam and combined_dur <= 6.2 and len(combined_txt) <= max_chars:
-            if gap <= 0.35:
+        if (
+            not speaker_changed
+            and not cur_ends_strong
+            and not nxt_is_exclam
+            and not (cur_is_complete_turn and (gap >= 0.15 or nxt_starts_new_turn))
+            and cur_card_count < 2
+            and combined_dur <= 5.5
+            and len(combined_txt) <= max_chars
+        ):
+            if gap <= 0.25:
                 should_join = True
-            elif gap <= 0.68 and (cur_dur < 2.8 or len(cur_txt) <= (10 if is_cjk else 30)):
+            elif gap <= 0.50 and not cur_is_complete_turn and (cur_dur < 1.8 or len(cur_bare) <= (8 if is_cjk else 24)):
                 should_join = True
 
         if should_join:
             cur["end"] = round(max(cur["end"], nxt["end"]), 2)
             cur["text"] = combined_txt
             cur["conf"] = round(0.5 * (cur.get("conf", 0.8) + nxt.get("conf", 0.8)), 3)
+            cur["_cards"] = cur_card_count + 1
         else:
             nxt_copy = dict(nxt)
             nxt_copy["text"] = nxt_txt
+            nxt_copy["_cards"] = 1
             merged.append(nxt_copy)
 
     for seg in merged:
+        seg.pop("_vf", None)
+        seg.pop("_cards", None)
         t = seg["text"].strip()
         if _CJK_CHAR_RE.search(t) and not re.search(r"[。！？.!?…]$", t):
             t += "。"
@@ -583,7 +620,11 @@ def extract_hard_subtitles(
     if not cards:
         return {"usable": False, "avgConf": 0.0, "coverageRatio": 0.0, "segments": []}
 
-    segments = _coalesce_subtitle_cards(cards)
+    try:
+        speech_16k = audio_speaker_analyzer.load_speech_band_16k(media_path, ffmpeg_bin=ffmpeg_bin)
+    except Exception:
+        speech_16k = None
+    segments = _coalesce_subtitle_cards(cards, audio_16k=speech_16k)
     avg_conf = sum(s["conf"] for s in segments) / max(1, len(segments))
     first_t = segments[0]["start"]
     last_t = segments[-1]["end"]
