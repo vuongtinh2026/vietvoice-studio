@@ -466,9 +466,9 @@ def translate_segments_multilingual(
     ac_roles = [str(seg.get("acousticRole") or seg.get("role") or "") for seg in segments]
     prov_tag = (ai_provider or "local").strip().upper()
     ai_lbl = (
-        "AI Biên kịch 8B Nhanh"
-        if prov_tag == "LOCAL_FAST"
-        else (f"AI {prov_tag} Pro" if prov_tag != "LOCAL" and ai_api_key else "AI Biên kịch 14B Pro")
+        "AI Biên kịch 14B Pro"
+        if prov_tag == "LOCAL_14B"
+        else (f"AI {prov_tag} Pro" if prov_tag not in ("LOCAL", "LOCAL_FAST") and ai_api_key else "AI Biên kịch 8B Pro")
     )
 
     def _on_tr_progress(done_n: int, total_n: int) -> None:
@@ -967,7 +967,11 @@ def transcribe_and_translate_media(
         "segments": tr_segs,
         "segmentsCount": len(tr_segs),
         "roleSummary": role_counts,
-        "aiEngineUsed": (ai_provider if (ai_provider != "local" and ai_api_key) else cinema_translator.resolve_best_mlx_model_id()),
+        "aiEngineUsed": (
+            ai_provider
+            if (ai_provider not in ("local", "local_fast", "local_14b") and ai_api_key)
+            else cinema_translator.resolve_best_mlx_model_id(prefer_14b=(ai_provider == "local_14b"))
+        ),
     }
 
 

@@ -35,6 +35,32 @@ _MLX_SAMPLER = None
 _MLX_LOADED_MODEL_ID = ""
 _MLX_LOAD_FAILED = False
 
+# Preemption / Cancel generation counter so an abandoned 45-min job NEVER locks out new videos!
+_JOB_GEN_LOCK = threading.Lock()
+_ACTIVE_JOB_GEN = 0
+
+
+class TranslationCancelledError(RuntimeError):
+    pass
+
+
+def cancel_active_translations() -> int:
+    """Increments the global translation generation so any stale background job aborts cleanly."""
+    global _ACTIVE_JOB_GEN
+    with _JOB_GEN_LOCK:
+        _ACTIVE_JOB_GEN += 1
+        return _ACTIVE_JOB_GEN
+
+
+def get_active_translation_gen() -> int:
+    with _JOB_GEN_LOCK:
+        return _ACTIVE_JOB_GEN
+
+
+def _check_not_cancelled(my_gen: int) -> None:
+    if my_gen > 0 and my_gen != get_active_translation_gen():
+        raise TranslationCancelledError("Tác vụ dịch trước đã được dừng để xử lý yêu cầu mới.")
+
 _OPENCC_T2S = None
 _OPENCC_READY = False
 
@@ -66,11 +92,11 @@ def _is_hf_model_cached_locally(repo_id: str) -> bool:
     return False
 
 
-def resolve_best_mlx_model_id() -> str:
+def resolve_best_mlx_model_id(prefer_14b: bool = False) -> str:
     env_override = os.environ.get("VOXLY_CINEMA_LLM", "").strip()
     if env_override:
         return env_override
-    if _get_system_ram_gb() >= 22.0 and _is_hf_model_cached_locally("mlx-community/Qwen3-14B-4bit"):
+    if prefer_14b and _get_system_ram_gb() >= 22.0 and _is_hf_model_cached_locally("mlx-community/Qwen3-14B-4bit"):
         return "mlx-community/Qwen3-14B-4bit"
     return "mlx-community/Qwen3-8B-4bit"
 
@@ -155,6 +181,10 @@ _ZH_ASR_HOMOPHONE_FIXES: list[tuple[str, str]] = [
     ("敢威肋老子", "敢威胁老子"),
     ("千粮和衣物", "干粮和衣物"),
     ("手腕耍甩", "手腕要甩"),
+    ("范围肉", "范围内"),
+    ("请间", "请问"),
+    ("是香", "是否"),
+    ("香则", "否则"),
 ]
 
 # Pure Chinese semantic pre-expansion ONLY for NMT fallback anchor
@@ -370,7 +400,10 @@ def preclean_source_dialogue_line(text: str, source_lang: str = "auto") -> str:
     t = re.sub(r"\s+", " ", (text or "")).strip()
     if not t:
         return ""
-    is_zh = str(source_lang).lower().startswith("zh") or bool(re.search(r"[\u4e00-\u9fff]", t))
+    sl = str(source_lang or "auto").lower()
+    has_kana_or_hangul = bool(re.search(r"[\u3040-\u30ff\uac00-\ud7af]", t))
+    is_non_zh_explicit = sl.startswith(("ja", "ko", "en", "vi", "fr", "de", "es", "ru", "th"))
+    is_zh = sl.startswith("zh") or (not is_non_zh_explicit and not has_kana_or_hangul and bool(re.search(r"[\u4e00-\u9fff]", t)))
     if is_zh:
         t = _to_simplified(t)
         for wrong, right in _ZH_ASR_HOMOPHONE_FIXES:
@@ -435,9 +468,9 @@ def _can_use_mlx_cinema_llm() -> bool:
     return True
 
 
-def _get_mlx_engine(prefer_fast_8b: bool = False):
+def _get_mlx_engine(prefer_14b: bool = False):
     global _MLX_MODEL, _MLX_TOKENIZER, _MLX_SAMPLER, _MLX_LOADED_MODEL_ID, _MLX_LOAD_FAILED
-    target_id = "mlx-community/Qwen3-8B-4bit" if prefer_fast_8b else resolve_best_mlx_model_id()
+    target_id = resolve_best_mlx_model_id(prefer_14b=prefer_14b)
     if _MLX_MODEL is not None and _MLX_TOKENIZER is not None and _MLX_LOADED_MODEL_ID == target_id:
         return _MLX_MODEL, _MLX_TOKENIZER, _MLX_SAMPLER, _MLX_LOADED_MODEL_ID
     if not _can_use_mlx_cinema_llm():
@@ -685,9 +718,9 @@ def _build_director_system_prompt(genre: str, char_bible: str) -> str:
         "Bối cảnh Cổ trang/Tiên hiệp: dùng Hán-Việt mượt; CHỈ dùng 'ta - ngươi' khi bề trên/kẻ thù đối đầu, còn lại dùng đúng vai vế."
         if genre == "ancient_cn"
         else (
-            "Bối cảnh Hiện đại/Khoa huyễn: CẤM dùng 'ngươi/lão phu/tại hạ' cho nhân vật trẻ (chỉ Đại trưởng lão/tiền bối cổ đại dùng giọng uy nghiêm)."
+            "Bối cảnh Hiện đại/Đô thị/Khoa huyễn: TUYỆT ĐỐI CẤM dùng 'ngươi', 'ta', 'lão phu', 'tại hạ', 'tớ', 'mình', 'các bạn' cho người hiện đại (chỉ dùng tôi/anh/em/con/chú/bác/cô; riêng Đại trưởng lão cổ đại mới dùng giọng cổ kính). Thuật ngữ hệ thống: 宿主=ký chủ, 系统=hệ thống, 签到=điểm danh, 绑定=liên kết, 魔都=Ma Đô."
             if genre == "modern_cn"
-            else "Bối cảnh Quốc tế: dịch Tiếng Việt điện ảnh tự nhiên, đúng giới tính & vai vế."
+            else "Bối cảnh Quốc tế (Nhật/Hàn/Âu Mỹ): dịch 100% Tiếng Việt điện ảnh tự nhiên, đúng giới tính & vai vế (anh/em, vợ/chồng, bố/mẹ/con, tôi/cô/anh), CẤM dùng 'ngươi', 'ta', 'tớ'."
         )
     )
     return (
@@ -736,18 +769,31 @@ def translate_cinema_lines_with_roles(
         return list(lines), norm_acoustic_roles
 
     cleaned_inputs = [preclean_source_dialogue_line(x, source_lang=source_lang) for x in lines]
-    is_zh_source = str(source_lang).lower().startswith("zh") or any(
-        re.search(r"[\u4e00-\u9fff]", x) for x in cleaned_inputs
+    sl_lower = str(source_lang or "auto").lower()
+    has_ja_kana = any(re.search(r"[\u3040-\u30ff]", x) for x in cleaned_inputs)
+    has_ko_hangul = any(re.search(r"[\uac00-\ud7af]", x) for x in cleaned_inputs)
+    is_zh_source = sl_lower.startswith("zh") or (
+        not sl_lower.startswith(("ja", "ko", "en", "vi", "fr", "de", "es", "ru", "th"))
+        and not has_ja_kana
+        and not has_ko_hangul
+        and any(re.search(r"[\u4e00-\u9fff]", x) for x in cleaned_inputs)
     )
-    is_cjk_source = is_zh_source or str(source_lang).lower().startswith(("ja", "ko")) or any(
-        re.search(r"[\u3040-\u30ff\uac00-\ud7af]", x) for x in cleaned_inputs
-    )
+    is_cjk_source = is_zh_source or sl_lower.startswith(("ja", "ko")) or has_ja_kana or has_ko_hangul
     genre = detect_script_genre(cleaned_inputs, is_zh_source=is_zh_source)
 
-    sl_query = "zh-CN" if is_zh_source else (source_lang or "auto")
+    if is_zh_source:
+        sl_query = "zh-CN"
+    elif has_ja_kana or sl_lower.startswith("ja"):
+        sl_query = "ja"
+    elif has_ko_hangul or sl_lower.startswith("ko"):
+        sl_query = "ko"
+    else:
+        sl_query = source_lang or "auto"
     tl_lower = (target_lang or "vi").lower()
     is_vi_target = tl_lower.startswith("vi")
     cjk_leak_re = _NON_LATIN_LEAK_RE
+
+    my_job_gen = get_active_translation_gen()
 
     cache_dir = os.path.join("/tmp", "voxly_dub_sessions")
     os.makedirs(cache_dir, exist_ok=True)
@@ -835,6 +881,7 @@ def translate_cinema_lines_with_roles(
         engine_sig: str,
         batch_size: int,
     ) -> tuple[list[str], list[str]]:
+        _check_not_cancelled(my_job_gen)
         if progress_cb is not None:
             try:
                 progress_cb(0, total_lines)
@@ -849,6 +896,7 @@ def translate_cinema_lines_with_roles(
             genre=genre,
             cache_dir=cache_dir,
         )
+        _check_not_cancelled(my_job_gen)
         sys_msg = _build_director_system_prompt(genre=genre, char_bible=char_bible)
         bible_hash = hashlib.sha256(char_bible.encode("utf-8")).hexdigest()[:10]
 
@@ -857,6 +905,7 @@ def translate_cinema_lines_with_roles(
         prev_context: list[tuple[str, str, str]] = []
 
         for start_idx in range(0, total_lines, batch_size):
+            _check_not_cancelled(my_job_gen)
             end_idx = min(total_lines, start_idx + batch_size)
             b_srcs = cleaned_inputs[start_idx:end_idx]
             b_ancs = nmt_anchors[start_idx:end_idx]
@@ -868,11 +917,11 @@ def translate_cinema_lines_with_roles(
                 except Exception:
                     pass
 
-            ctx_triples = prev_context[-3:]
+            ctx_triples = prev_context[-2:]
             q_sig = hashlib.sha256(
                 json.dumps(
                     {
-                        "v": 13,
+                        "v": 14,
                         "eng": engine_sig,
                         "g": genre,
                         "bh": bible_hash,
@@ -883,7 +932,7 @@ def translate_cinema_lines_with_roles(
                     ensure_ascii=False,
                 ).encode("utf-8")
             ).hexdigest()[:20]
-            q_cache_file = os.path.join(cache_dir, f"tr_dir_v13_{q_sig}.json")
+            q_cache_file = os.path.join(cache_dir, f"tr_dir_v14_{q_sig}.json")
 
             if os.path.exists(q_cache_file):
                 try:
@@ -977,24 +1026,36 @@ def translate_cinema_lines_with_roles(
                 if genre == "modern_cn" and _ARCHAIC_NGUOI_RE.search(chosen) and chosen_role != "ONG_LAO":
                     chosen = _polish_vietnamese_cinema_line(chosen, genre="modern_cn", target_lang=target_lang)
 
+                # Only run expensive single-line LLM repair when genuine CJK/non-Latin leak OR >=2 bad tokens appear!
                 leaks = find_foreign_leaks_in_vi(chosen, genre=genre, is_cjk_source=is_cjk_source)
-                if leaks:
-                    fix_prompt = (
-                        f"Câu gốc ({audio_speaker_analyzer.role_to_display_label(chosen_role)}): {b_srcs[k]}\n"
-                        f"Bản dịch nháp bị sót từ ngoại lai ({', '.join(leaks[:5])}): {chosen}\n"
-                        f"Hãy viết lại 1 câu hoàn chỉnh 100% Tiếng Việt chuẩn giới tính & vai vế xưng hô, "
-                        f"TUYỆT ĐỐI KHÔNG chứa từ {', '.join(leaks[:5])} hay chữ Hán/Pinyin (chỉ xuất duy nhất câu dịch):"
-                    )
-                    try:
-                        fix_out = run_prompt_fn(sys_msg, fix_prompt, 260)
-                        fix_first = next((l.strip() for l in fix_out.splitlines() if l.strip()), "")
-                        fix_first = re.sub(r"^\s*(?:\[\d+\]|\d+[.):])\s*", "", fix_first)
-                        fix_clean = _polish_vietnamese_cinema_line(fix_first, genre=genre, target_lang=target_lang)
-                        if fix_clean and not cjk_leak_re.search(fix_clean):
-                            if len(find_foreign_leaks_in_vi(fix_clean, genre=genre, is_cjk_source=is_cjk_source)) < len(leaks):
-                                chosen = fix_clean
-                    except Exception:
-                        pass
+                needs_hard_repair = bool(leaks) and (
+                    "CJK_OR_NON_LATIN" in leaks
+                    or len(leaks) >= 2
+                    or (is_zh_source and any(w.lower() in _PINYIN_LEAK_TOKENS for w in leaks))
+                )
+                if needs_hard_repair:
+                    _check_not_cancelled(my_job_gen)
+                    # Instant clean fallback to verified NMT anchor if NMT anchor has 0 leaks (saves 15s/line!)
+                    anc_leaks = find_foreign_leaks_in_vi(b_ancs[k], genre=genre, is_cjk_source=is_cjk_source)
+                    if not anc_leaks and b_ancs[k] and not cjk_leak_re.search(b_ancs[k]):
+                        chosen = b_ancs[k]
+                    else:
+                        fix_prompt = (
+                            f"Câu gốc ({audio_speaker_analyzer.role_to_display_label(chosen_role)}): {b_srcs[k]}\n"
+                            f"Bản dịch nháp bị sót từ ngoại lai ({', '.join(leaks[:5])}): {chosen}\n"
+                            f"Hãy viết lại 1 câu hoàn chỉnh 100% Tiếng Việt chuẩn giới tính & vai vế xưng hô, "
+                            f"TUYỆT ĐỐI KHÔNG chứa từ {', '.join(leaks[:5])} hay chữ Hán/Pinyin (chỉ xuất duy nhất câu dịch):"
+                        )
+                        try:
+                            fix_out = run_prompt_fn(sys_msg, fix_prompt, 220)
+                            fix_first = next((l.strip() for l in fix_out.splitlines() if l.strip()), "")
+                            fix_first = re.sub(r"^\s*(?:\[\d+\]|\d+[.):])\s*", "", fix_first)
+                            fix_clean = _polish_vietnamese_cinema_line(fix_first, genre=genre, target_lang=target_lang)
+                            if fix_clean and not cjk_leak_re.search(fix_clean):
+                                if len(find_foreign_leaks_in_vi(fix_clean, genre=genre, is_cjk_source=is_cjk_source)) < len(leaks):
+                                    chosen = fix_clean
+                        except Exception:
+                            pass
 
                 results_txt[start_idx + k] = chosen
                 results_roles[start_idx + k] = chosen_role
@@ -1024,15 +1085,17 @@ def translate_cinema_lines_with_roles(
             batch_size=18,
         )
 
-    # Route 2: Built-in Pro Local AI Director (Qwen3-14B-4bit Pro or Qwen3-8B-4bit Fast for multi-hour movies)
+    # Route 2: Built-in Pro Local AI Director (Qwen3-8B-4bit Fast Pro default, or Qwen3-14B-4bit when explicitly chosen!)
     if is_vi_target and _can_use_mlx_cinema_llm():
+        want_14b = (prov_clean == "local_14b")
         with _MLX_LOCK:
-            model, tokenizer, sampler, loaded_mid = _get_mlx_engine(prefer_fast_8b=(prov_clean == "local_fast"))
+            _check_not_cancelled(my_job_gen)
+            model, tokenizer, sampler, loaded_mid = _get_mlx_engine(prefer_14b=want_14b)
             if model is not None and tokenizer is not None:
                 return _execute_director_pipeline(
                     run_prompt_fn=lambda s_m, u_m, mt: _run_mlx_prompt(model, tokenizer, sampler, s_m, u_m, max_tokens=mt),
                     engine_sig=f"mlx:{loaded_mid}",
-                    batch_size=12,
+                    batch_size=(12 if want_14b else 16),
                 )
 
     if progress_cb is not None:

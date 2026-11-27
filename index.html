@@ -921,10 +921,10 @@
                   <span class="lang-only-global hidden">Pro Cinema AI Translation & Casting Engine:</span>
                 </label>
                 <select id="dubAiProviderSelect" class="w-full bg-slate-950 border border-purple-400/40 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:ring-1 focus:ring-purple-400 cursor-pointer">
-                  <option value="local">✨ AI Biên Kịch Nội Bộ 14B Pro (Miễn phí • Phân vai & xưng hô chuẩn nhất)</option>
-                  <option value="local_fast">⚡ AI Biên Kịch Nội Bộ 8B Nhanh (Miễn phí • Tối ưu tốc độ phim nhiều tiếng)</option>
-                  <option value="gemini">💎 Google Gemini 2.5 Flash / Pro (Đỉnh cao Điện Ảnh • API Key)</option>
-                  <option value="deepseek">🚀 DeepSeek V3 (Dịch Trung-Việt Siêu Chuẩn • API Key)</option>
+                  <option value="local">⚡ AI Biên Kịch Nội Bộ 8B Pro (Nhanh gấp 2.5x • Phân vai & xưng hô chuẩn • Miễn phí)</option>
+                  <option value="local_14b">✨ AI Biên Kịch Nội Bộ 14B Siêu Chi Tiết (Chậm hơn • Hợp phim ngắn &lt; 10 phút)</option>
+                  <option value="gemini">💎 Google Gemini 2.5 Flash / Pro (Siêu tốc 15s & Đỉnh cao Điện Ảnh • API Key)</option>
+                  <option value="deepseek">🚀 DeepSeek V3 (Siêu tốc & Dịch Trung-Việt Chuẩn Nhất • API Key)</option>
                   <option value="openai">🤖 OpenAI GPT-4o (Chuẩn Biên Kịch Quốc Tế • API Key)</option>
                 </select>
 
@@ -1027,9 +1027,14 @@
 
           <!-- Live Progress Bar -->
           <div id="dubProgressBox" class="hidden p-3.5 rounded-2xl bg-[#050811]/95 border border-pink-400/35">
-            <div class="flex items-center justify-between text-xs mb-1.5">
-              <span id="dubProgressText" class="text-pink-200 font-bold">...</span>
-              <span id="dubProgressPct" class="text-cyan-300 font-mono font-bold">0%</span>
+            <div class="flex items-center justify-between gap-2 text-xs mb-1.5">
+              <span id="dubProgressText" class="text-pink-200 font-bold truncate">...</span>
+              <div class="flex items-center gap-2 shrink-0">
+                <span id="dubProgressPct" class="text-cyan-300 font-mono font-bold">0%</span>
+                <button type="button" id="btnDubCancelJob" class="px-2.5 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/45 text-rose-200 text-[10px] font-extrabold cursor-pointer transition">
+                  <i class="fa-solid fa-stop mr-1"></i><span class="lang-only-vi">Dừng / Hủy</span><span class="lang-only-global hidden">Stop / Cancel</span>
+                </button>
+              </div>
             </div>
             <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
               <div id="dubProgressBar" class="h-full bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-400 transition-all duration-300" style="width: 0%"></div>
@@ -2799,7 +2804,7 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
   <!-- Pro Studio Extensions (Private Vault, 110 Countries, Multi-Speaker Stem Studio, VietQR) -->
   <script src="studio_pro.js?v=9.7"></script>
   <!-- Multilingual Audio & Video AI Dubbing Studio (MP3 / MP4 / YouTube / Douyin) -->
-  <script src="dubbing_studio.js?v=10.0"></script>
+  <script src="dubbing_studio.js?v=10.1"></script>
   <!-- Option 2 License Key, HWID Lock, Real Order/Bank Checkout & Owner Admin Console -->
   <script src="license_client_ui.js?v=9.7"></script>
 </body>

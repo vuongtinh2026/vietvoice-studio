@@ -582,6 +582,20 @@ function attachQuotaHeaders(headersObj, licState) {
 
 // Async background job registry so multi-hour movies (1–5+ hours) NEVER hit browser fetch timeouts!
 const dubAsyncJobs = new Map();
+async function cancelRunningDubJobs(reason = 'Đã dừng tác vụ dịch cũ.') {
+  for (const job of dubAsyncJobs.values()) {
+    if (job.status === 'running') {
+      job.status = 'error';
+      job.cancelled = true;
+      job.error = reason;
+      job.updatedAt = Date.now();
+    }
+  }
+  try {
+    await callFreeDaemonJson('/dub/cancel', 'POST', {}, {}, 5000);
+  } catch {}
+}
+
 function createDubAsyncJob(runnerFn) {
   const now = Date.now();
   for (const [k, v] of dubAsyncJobs.entries()) {
@@ -593,12 +607,14 @@ function createDubAsyncJob(runnerFn) {
   Promise.resolve()
     .then(() => runnerFn())
     .then(resObj => {
+      if (job.cancelled) return;
       job.status = 'done';
       job.updatedAt = Date.now();
       job.data = resObj && resObj.body !== undefined ? resObj.body : resObj;
       job.quotaState = resObj && resObj.quotaState ? resObj.quotaState : null;
     })
     .catch(err => {
+      if (job.cancelled) return;
       job.status = 'error';
       job.updatedAt = Date.now();
       job.statusCode = err.status || 500;
@@ -610,7 +626,7 @@ function createDubAsyncJob(runnerFn) {
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Owner-Token, X-Audio-Bitrate, X-License-Key, X-Client-HWID, X-Client-Machine, X-Simulated-HWID, X-Simulated-Machine, X-File-Name, X-Source-Lang, X-Target-Lang');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Owner-Token, X-Audio-Bitrate, X-License-Key, X-Client-HWID, X-Client-Machine, X-Simulated-HWID, X-Simulated-Machine, X-File-Name, X-Source-Lang, X-Target-Lang, X-Ai-Provider, X-Ai-Api-Key, X-Ai-Model, X-Multi-Voice');
   res.setHeader('Access-Control-Expose-Headers', 'X-Audio-Seconds, X-Audio-Voice, X-Voice-Name, X-Total-Chunks, X-License-Mode, X-License-Used, X-License-Max, X-License-Remaining, X-License-Plan, X-License-Hwid');
 
   if (req.method === 'OPTIONS') {
@@ -1222,6 +1238,13 @@ const server = http.createServer(async (req, res) => {
   // =========================================================================
   // 2.5 API: MULTILINGUAL AUDIO & VIDEO AI DUBBING STUDIO (.MP3 / .MP4 / YOUTUBE URL)
   // =========================================================================
+  if (pathname === '/api/dubbing/cancel' && req.method === 'POST') {
+    await cancelRunningDubJobs('Người dùng đã dừng tác vụ dịch hiện tại.');
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ success: true, cancelled: true }));
+    return;
+  }
+
   if (pathname === '/api/dubbing/progress' && req.method === 'GET') {
     try {
       const pRes = await callFreeDaemonJson('/dub/progress', 'GET', null, {}, 8000);
@@ -1330,6 +1353,7 @@ const server = http.createServer(async (req, res) => {
       };
 
       if (isAsync) {
+        await cancelRunningDubJobs('Đã tự động dừng tác vụ cũ để xử lý link video mới.');
         const jobId = createDubAsyncJob(runYoutubeJob);
         res.writeHead(202, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ success: true, async: true, jobId }));
@@ -1430,6 +1454,7 @@ const server = http.createServer(async (req, res) => {
       };
 
       if (isAsync) {
+        await cancelRunningDubJobs('Đã tự động dừng tác vụ cũ để xử lý file mới.');
         const jobId = createDubAsyncJob(runTranscribeJob);
         res.writeHead(202, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ success: true, async: true, jobId }));

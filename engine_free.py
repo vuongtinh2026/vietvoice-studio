@@ -82,6 +82,7 @@ import numpy as np
 
 from global_voices_catalog import GLOBAL_INTL_VOICES
 import audio_speaker_analyzer
+import cinema_translator
 import media_dubber
 from private_vault import PrivateVoiceVault
 import vn_number_normalizer
@@ -1271,8 +1272,15 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 self.wfile.write(audio_bytes)
                 return
 
+            if self.path == "/dub/cancel":
+                new_gen = cinema_translator.cancel_active_translations()
+                media_dubber.set_dub_live_progress("", "", 0, active=False)
+                self._send_json(200, {"success": True, "cancelled": True, "gen": new_gen})
+                return
+
             if self.path == "/dub/youtube-transcribe-translate":
                 data = self._read_json()
+                cinema_translator.cancel_active_translations()
                 yt_url = str(data.get("url", "")).strip()
                 dl_mode = str(data.get("downloadMode", "video")).strip() or "video"
                 out_dir = str(data.get("outDir", "/tmp/voxly_dub_sessions")).strip() or "/tmp/voxly_dub_sessions"
@@ -1312,6 +1320,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
 
             if self.path == "/dub/transcribe-translate":
                 data = self._read_json()
+                cinema_translator.cancel_active_translations()
                 media_path = str(data.get("mediaPath", "")).strip()
                 if not media_path or not os.path.exists(media_path):
                     raise ValueError("Không tìm thấy file âm thanh/video cần dịch.")
@@ -1336,6 +1345,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
 
             if self.path == "/dub/translate-text":
                 data = self._read_json()
+                cinema_translator.cancel_active_translations()
                 raw_text = str(data.get("text", "")).strip()
                 source_lang = str(data.get("sourceLang", "auto")).strip() or "auto"
                 target_lang = str(data.get("targetLang", "vi")).strip() or "vi"
@@ -1589,6 +1599,8 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(wav_bytes)))
             self.end_headers()
             self.wfile.write(wav_bytes)
+        except cinema_translator.TranslationCancelledError as ce:
+            self._send_json(499, {"success": False, "cancelled": True, "error": str(ce)})
         except PermissionError as pe:
             self._send_json(403, {"success": False, "code": "private_locked", "error": str(pe)})
         except BrokenPipeError:

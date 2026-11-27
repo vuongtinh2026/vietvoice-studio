@@ -119,7 +119,7 @@
     if (!provSel || !cfgRow) return;
     const prov = provSel.value || 'local';
     try { localStorage.setItem('voxly_dub_ai_provider', prov); } catch {}
-    if (prov === 'local' || prov === 'local_fast') {
+    if (prov === 'local' || prov === 'local_14b' || prov === 'local_fast') {
       cfgRow.classList.add('hidden');
       return;
     }
@@ -478,11 +478,15 @@
     return `${rem}s`;
   }
 
+  let activeDubPollGen = 0;
+
   /**
    * Polls an async server background job (`/api/dubbing/job/:jobId`) every 1.5s so even
    * 2–5+ hour feature films NEVER hit Chromium/Safari idle HTTP fetch timeouts!
+   * Supports instant 1-click user cancellation via `#btnDubCancelJob`.
    */
   async function waitForDubAsyncJob(jobId, opts = {}) {
+    const myPollGen = ++activeDubPollGen;
     const isVi = isViLang();
     const minPct = opts.minPct ?? 18;
     const maxPct = opts.maxPct ?? 65;
@@ -493,9 +497,15 @@
 
     while (true) {
       await new Promise(r => setTimeout(r, 1500));
+      if (myPollGen !== activeDubPollGen) {
+        throw new Error(isVi ? 'Đã dừng tác vụ dịch hiện tại.' : 'Current dubbing job was cancelled.');
+      }
       const sec = Math.floor((Date.now() - t0) / 1000);
       try {
         const pr = await fetch(`/api/dubbing/job/${encodeURIComponent(jobId)}`);
+        if (myPollGen !== activeDubPollGen) {
+          throw new Error(isVi ? 'Đã dừng tác vụ dịch hiện tại.' : 'Current dubbing job was cancelled.');
+        }
         const jd = await pr.json().catch(() => ({}));
         consecutiveNetErrs = 0;
 
@@ -523,7 +533,7 @@
         const fallbackPct = Math.min(maxPct, Math.max(livePct, minPct + Math.floor(sec * 0.25)));
         setDubProgress(true, `${liveMsg} (${formatElapsedTimer(sec)})`, fallbackPct);
       } catch (err) {
-        if (err && /Lỗi|Tác vụ|Không tìm thấy|vượt quá|hết hạn|HTTP 403/i.test(String(err.message || ''))) {
+        if (err && /Lỗi|Tác vụ|Đã dừng|cancelled|Không tìm thấy|vượt quá|hết hạn|HTTP 403/i.test(String(err.message || ''))) {
           throw err;
         }
         consecutiveNetErrs += 1;
@@ -929,7 +939,8 @@
     const aiKeyIn = document.getElementById('dubAiApiKeyInput');
     const aiMdlSel = document.getElementById('dubAiModelSelect');
     if (aiProvSel) {
-      const savedProv = (() => { try { return localStorage.getItem('voxly_dub_ai_provider') || 'local'; } catch { return 'local'; } })();
+      let savedProv = (() => { try { return localStorage.getItem('voxly_dub_ai_provider') || 'local'; } catch { return 'local'; } })();
+      if (savedProv === 'local_fast') savedProv = 'local';
       if ([...aiProvSel.options].some(o => o.value === savedProv)) aiProvSel.value = savedProv;
       syncAiProviderUi();
       aiProvSel.addEventListener('change', () => syncAiProviderUi());
@@ -937,7 +948,7 @@
     if (aiKeyIn) {
       aiKeyIn.addEventListener('input', () => {
         const p = aiProvSel?.value || 'local';
-        if (p !== 'local' && p !== 'local_fast') {
+        if (p !== 'local' && p !== 'local_14b') {
           try { localStorage.setItem(`voxly_dub_ai_key_${p}`, aiKeyIn.value.trim()); } catch {}
         }
       });
@@ -945,8 +956,33 @@
     if (aiMdlSel) {
       aiMdlSel.addEventListener('change', () => {
         const p = aiProvSel?.value || 'local';
-        if (p !== 'local' && p !== 'local_fast') {
+        if (p !== 'local' && p !== 'local_14b') {
           try { localStorage.setItem(`voxly_dub_ai_model_${p}`, aiMdlSel.value); } catch {}
+        }
+      });
+    }
+
+    const btnCancelJob = document.getElementById('btnDubCancelJob');
+    if (btnCancelJob) {
+      btnCancelJob.addEventListener('click', async () => {
+        activeDubPollGen += 1;
+        btnCancelJob.disabled = true;
+        try {
+          await fetch('/api/dubbing/cancel', { method: 'POST' });
+        } catch {}
+        setDubProgress(false);
+        btnCancelJob.disabled = false;
+        const b1 = document.getElementById('btnDubFullAuto');
+        const b2 = document.getElementById('btnDubTranscribeOnly');
+        const b3 = document.getElementById('btnDubRegenerate');
+        if (b1) b1.disabled = false;
+        if (b2) b2.disabled = false;
+        if (b3) b3.disabled = false;
+        if (typeof window.showToast === 'function') {
+          window.showToast(
+            isViLang() ? '⛔ Đã dừng tác vụ dịch cũ! Bạn có thể dịch video mới ngay.' : '⛔ Stopped current job! You can start a new video now.',
+            'info'
+          );
         }
       });
     }
