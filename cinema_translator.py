@@ -183,6 +183,7 @@ _ZH_ASR_HOMOPHONE_FIXES: list[tuple[str, str]] = [
     ("手腕耍甩", "手腕要甩"),
     ("范围肉", "范围内"),
     ("请间", "请问"),
+    ("宿圭", "宿主"),
     ("是香", "是否"),
     ("香则", "否则"),
 ]
@@ -274,6 +275,11 @@ _VI_POST_TERM_FIXES: list[tuple[str, str]] = [
     (r"\bĐại\s+Lão\s+Nguyên\b", "Đại trưởng lão"),
     (r"\bhố\s+hụi\b", "hố đen"),
     (r"\bhồn\s+phong\b", "Hồn Phiên"),
+    (r"^\s*Ding\b[,!.\s]*", "Ting! "),
+    (r"\bUh\b", "Ừ"),
+    (r"\b([A-Za-zÀ-ỹĐđ]{2,18})-(?:san|chan|kun|sama)\b", r"\1"),
+    (r"\bthành\s+phố\s+ma\s+thuật\b", "Ma Đô"),
+    (r"\bKý\s+chủ\s+tốt\b", "Vâng, ký chủ"),
 ]
 
 _HARD_MODERN_ERA_MARKERS_RE = re.compile(
@@ -373,7 +379,7 @@ def _collapse_word_loops(text: str) -> str:
     if not text:
         return ""
     s = re.sub(
-        r"\b([A-Za-zÀ-ỹĐđ]+(?:\s+[A-Za-zÀ-ỹĐđ]+)?)(?:[,\s]+\1){3,}\b",
+        r"\b([A-Za-zÀ-ỹĐđ]+(?:\s+[A-Za-zÀ-ỹĐđ]+){0,2})(?:[,\s]+\1){2,}\b",
         r"\1, \1",
         text,
         flags=re.IGNORECASE,
@@ -454,7 +460,10 @@ def _polish_vietnamese_cinema_line(text: str, genre: str, target_lang: str = "vi
         s = re.sub(r"\btao\b", "tôi", s)
         s = re.sub(r"\bTao\b", "Tôi", s)
 
-    return re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s+", " ", s).strip()
+    if s and s[0].islower():
+        s = s[0].upper() + s[1:]
+    return s
 
 
 def _can_use_mlx_cinema_llm() -> bool:
@@ -646,24 +655,23 @@ def _extract_character_bible(
     run_prompt_fn: Callable[[str, str, int], str],
     engine_sig: str,
     cleaned_inputs: list[str],
-    acoustic_roles: list[str],
+    nmt_anchors: list[str],
     genre: str,
     cache_dir: str,
 ) -> str:
     sig = hashlib.sha256(
         json.dumps(
             {
-                "v": 13,
+                "v": 15,
                 "eng": engine_sig,
                 "g": genre,
                 "n": len(cleaned_inputs),
                 "h": cleaned_inputs[:60],
-                "r": acoustic_roles[:60],
             },
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()[:20]
-    bible_path = os.path.join(cache_dir, f"char_bible_v13_{sig}.txt")
+    bible_path = os.path.join(cache_dir, f"char_bible_v15_{sig}.txt")
     if os.path.exists(bible_path):
         try:
             cached = open(bible_path, "r", encoding="utf-8").read().strip()
@@ -674,34 +682,34 @@ def _extract_character_bible(
 
     picked: list[str] = []
     seen = set()
-    for idx in range(min(22, len(cleaned_inputs))):
+    for idx in range(min(16, len(cleaned_inputs))):
         t = cleaned_inputs[idx]
         if t and idx not in seen:
             seen.add(idx)
-            r_lbl = audio_speaker_analyzer.role_to_display_label(acoustic_roles[idx] if idx < len(acoustic_roles) else "")
-            picked.append(f"({idx + 1}) [{r_lbl}] {t}")
+            anc = nmt_anchors[idx] if idx < len(nmt_anchors) else ""
+            picked.append(f"({idx + 1}) {t} | {anc}")
     for idx, t in enumerate(cleaned_inputs):
         if idx in seen or not t:
             continue
         if _CHAR_CLUE_RE.search(t):
             seen.add(idx)
-            r_lbl = audio_speaker_analyzer.role_to_display_label(acoustic_roles[idx] if idx < len(acoustic_roles) else "")
-            picked.append(f"({idx + 1}) [{r_lbl}] {t}")
-            if len(picked) >= 55:
+            anc = nmt_anchors[idx] if idx < len(nmt_anchors) else ""
+            picked.append(f"({idx + 1}) {t} | {anc}")
+            if len(picked) >= 26:
                 break
 
     if not picked:
         return ""
 
     sys_bible = (
-        "Bạn là Đạo diễn Lồng tiếng phim Việt Nam. Đọc nhanh trích đoạn thoại (đính kèm nhãn âm sắc giọng gốc) "
-        "và tóm tắt tối đa 6 dòng NGẮN GỌN:\n"
-        "- Bối cảnh (Hiện đại / Khoa huyễn tu tiên / Cổ trang).\n"
-        "- Từng nhân vật: Tên Hán-Việt chuẩn (VD: 若星=Nhược Tinh, 雪儿=Tuyết Nhi, 大长老=Đại trưởng lão), Giới tính, Nhãn giọng (NAM TRẺ/NAM 2/ĐÀN ÔNG/ÔNG LÃO/NỮ TRẺ/NỮ 2/PHỤ NỮ/TRẺ EM), và cặp xưng hô chuẩn.\n"
-        "- CẤM đề xuất đại từ trẻ con 'tớ - cậu', 'mình', 'các bạn' cho người lớn/chiến binh/cảnh sát (dùng tôi/anh/em/đệ/muội/con)."
+        "Bạn là Biên dịch viên Thuyết minh phim chuyên nghiệp Việt Nam. Đọc nhanh các câu thoại mẫu kèm bản dịch sát nghĩa "
+        "và tóm tắt NGẮN GỌN tối đa 5 dòng:\n"
+        "- Bối cảnh phim (Hiện đại đời thường / Nhật-Hàn / Khoa huyễn hệ thống / Cổ trang tiên hiệp).\n"
+        "- Từng nhân vật chính: Tên chuẩn (Hán-Việt cho phim Trung, bỏ hậu tố -san/-chan cho phim Nhật), Giới tính, Quan hệ (vợ-chồng, bạn bè, cha-mẹ-con, ký chủ-hệ thống, sư tỷ-đệ) và cặp xưng hô tự nhiên.\n"
+        "- CẤM đề xuất 'tớ', 'mình', 'các bạn', 'ta', 'ngươi' cho người lớn trong phim hiện đại."
     )
-    user_bible = "Lời thoại mẫu:\n" + "\n".join(picked[:28])
-    bible_txt = run_prompt_fn(sys_bible, user_bible, 220).strip()
+    user_bible = "Lời thoại mẫu:\n" + "\n".join(picked[:22])
+    bible_txt = run_prompt_fn(sys_bible, user_bible, 200).strip()
 
     if bible_txt:
         try:
@@ -712,27 +720,37 @@ def _extract_character_bible(
     return bible_txt
 
 
-def _build_director_system_prompt(genre: str, char_bible: str) -> str:
-    bible_section = f"\nHỒ SƠ NHÂN VẬT:\n{char_bible}\n" if char_bible else ""
-    tone_line = (
-        "Bối cảnh Cổ trang/Tiên hiệp: dùng Hán-Việt mượt; CHỈ dùng 'ta - ngươi' khi bề trên/kẻ thù đối đầu, còn lại dùng đúng vai vế."
-        if genre == "ancient_cn"
-        else (
-            "Bối cảnh Hiện đại/Đô thị/Khoa huyễn: TUYỆT ĐỐI CẤM dùng 'ngươi', 'ta', 'lão phu', 'tại hạ', 'tớ', 'mình', 'các bạn' cho người hiện đại (chỉ dùng tôi/anh/em/con/chú/bác/cô; riêng Đại trưởng lão cổ đại mới dùng giọng cổ kính). Thuật ngữ hệ thống: 宿主=ký chủ, 系统=hệ thống, 签到=điểm danh, 绑定=liên kết, 魔都=Ma Đô."
-            if genre == "modern_cn"
-            else "Bối cảnh Quốc tế (Nhật/Hàn/Âu Mỹ): dịch 100% Tiếng Việt điện ảnh tự nhiên, đúng giới tính & vai vế (anh/em, vợ/chồng, bố/mẹ/con, tôi/cô/anh), CẤM dùng 'ngươi', 'ta', 'tớ'."
+def _build_narration_system_prompt(genre: str, char_bible: str) -> str:
+    bible_section = f"\nHỒ SƠ BỐI CẢNH & NHÂN VẬT:\n{char_bible}\n" if char_bible else ""
+    if genre == "ancient_cn":
+        tone_line = (
+            "Thể loại Cổ trang/Tiên hiệp: dùng Hán-Việt tự nhiên dễ nghe; đúng vai vế (cha/mẹ-con, sư phụ/trưởng lão-đệ tử), "
+            "CHỈ dùng 'ta - ngươi' khi đối đầu kẻ địch."
         )
-    )
+    elif genre == "modern_cn":
+        tone_line = (
+            "Thể loại Hiện đại/Đô thị/Hệ thống Trung Quốc: dùng xưng hô đời thực (tôi/anh/em/con/ông/bà/cô/chú), "
+            "TUYỆT ĐỐI CẤM 'ngươi', 'ta', 'lão phu', 'tại hạ', 'tớ', 'mình', 'các bạn' cho người hiện đại. "
+            "Từ chuẩn: 宿主=ký chủ (KHÔNG dịch chủ nhà), 系统=hệ thống, 签到=điểm danh, 绑定=liên kết, 江城=Giang Thành, 魔都=Ma Đô, 别吵了=đừng làm ồn nữa."
+        )
+    else:
+        tone_line = (
+            "Thể loại Phim Quốc tế (Nhật/Hàn/Âu Mỹ): thuyết minh Tiếng Việt đời thường tự nhiên, sát nghĩa từng câu thoại, "
+            "đúng quan hệ (vợ-chồng: anh/em, bạn bè: cậu/tôi hoặc anh/em, cha mẹ-con). CẤM 'ngươi', 'ta'. "
+            "Bỏ hậu tố '-san/-chan/-kun' (VD: Momo-chan -> Momo, Takeda-san -> anh Takeda), dịch chuẩn thành ngữ Nhật/Anh (同窓会=họp lớp, 行ってきます=em đi đây, やばい=chết thật/nguy to rồi)."
+        )
+
     return (
-        "Bạn là Đạo diễn Biên kịch & Phân vai Lồng tiếng phim Việt Nam hàng đầu.\n"
+        "Bạn là Biên tập viên Thuyết minh phim Việt Nam chuẩn xác từng từ.\n"
         f"{tone_line}{bible_section}\n"
-        "ĐỊNH DẠNG BẮT BUỘC MỖI DÒNG: [số] [NHÃN_VAI] Câu thoại Tiếng Việt\n"
-        "NHÃN_VAI hợp lệ: [NAM TRẺ], [NAM 2], [ĐÀN ÔNG], [ÔNG LÃO] (CHỈ cho trưởng lão/ông già), [NỮ TRẺ], [NỮ 2], [PHỤ NỮ], [TRẺ EM], [ĐÁM ĐÔNG], [DẪN CHUYỆN].\n"
-        "QUY TẮC:\n"
-        "1. Bám sát `(Giọng gốc: ...)` để giữ đúng giới tính Nam/Nữ, chỉnh vai chính xác theo đối thoại (lính/phản diện=[NAM 2]/[ĐÀN ÔNG], Đại trưởng lão=[ÔNG LÃO], sư tỷ/cô gái=[NỮ TRẺ]/[NỮ 2], cả đám hô=[ĐÁM ĐÔNG]).\n"
-        "2. Xưng hô ĐÚNG NGƯỜI NÓI -> NGƯỜI NGHE: '他'=anh ấy/hắn, '她'=cô ấy/nàng; con-cha/mẹ; em/đệ/muội-sư tỷ/sư huynh; tôi/em-anh/cô/ông/trưởng quan/ngài; kẻ địch dùng 'các người/cô ta'.\n"
-        "   TUYỆT ĐỐI CẤM dùng đại từ trẻ con 'tớ', 'mình', 'các bạn' cho người lớn/chiến binh/tu sĩ/cảnh sát!\n"
-        "3. Dịch 100% Tiếng Việt tự nhiên, chuẩn Hán-Việt tên riêng (若星=Nhược Tinh, 雪儿=Tuyết Nhi, 大长老=Đại trưởng lão, 超微黑洞=hố đen siêu vi, EMP=xung điện từ, 蠢死了=Ngốc chết đi được!), KHÔNG sót chữ Hán/Pinyin/Tiếng Anh, giữ đúng số liệu, xuất đúng 1-đối-1 không giải thích."
+        "NHIỆM VỤ: Mỗi mục gồm `Gốc` (thoại gốc) và `Nghĩa sát` (bản dịch bám sát từ vựng & con số). "
+        "Hãy biên tập thành lời THUYẾT MINH Tiếng Việt 100% CHÍNH XÁC TỪNG TỪ, trôi chảy dễ đọc thành tiếng.\n"
+        "QUY TẮC TUYỆT ĐỐI:\n"
+        "1. TRUNG THÀNH 100% Ý NGHĨA & CON SỐ: Bám sát `Nghĩa sát` kết hợp `Gốc` — KHÔNG bịa thêm ý, KHÔNG bỏ sót ý, KHÔNG đổi sai chủ ngữ (ai nói với ai giữ nguyên!).\n"
+        "2. QUY ĐỔI SỐ ĐẾM TRUNG QUỐC CHUẨN 100%: 1万=1 vạn (10 nghìn), 1亿=100 triệu (TUYỆT ĐỐI KHÔNG dịch 1亿 thành 1 tỷ!), 10亿=1 tỷ. Giữ chính xác mọi con số, giờ giấc.\n"
+        "3. THUẦN VIỆT 100% ĐỂ ĐỌC THUYẾT MINH: KHÔNG để sót chữ Hán, Kana, Pinyin, tiếng Anh (EMP=xung điện từ, Ding=Ting, Uh=Ừ). Tên riêng Trung Quốc dùng chuẩn Hán-Việt (若星=Nhược Tinh, 雪儿=Tuyết Nhi, 大长老=Đại trưởng lão).\n"
+        "4. ĐỊNH DẠNG XUẤT DUY NHẤT: `[1] Câu thuyết minh Tiếng Việt` ... `[N] Câu thuyết minh Tiếng Việt`. "
+        "KHÔNG thêm nhãn vai [NAM]/[NỮ], KHÔNG gộp dòng, KHÔNG bỏ dòng, KHÔNG giải thích thêm."
     )
 
 
@@ -892,24 +910,23 @@ def translate_cinema_lines_with_roles(
             run_prompt_fn=run_prompt_fn,
             engine_sig=engine_sig,
             cleaned_inputs=cleaned_inputs,
-            acoustic_roles=norm_acoustic_roles,
+            nmt_anchors=nmt_anchors,
             genre=genre,
             cache_dir=cache_dir,
         )
         _check_not_cancelled(my_job_gen)
-        sys_msg = _build_director_system_prompt(genre=genre, char_bible=char_bible)
+        sys_msg = _build_narration_system_prompt(genre=genre, char_bible=char_bible)
         bible_hash = hashlib.sha256(char_bible.encode("utf-8")).hexdigest()[:10]
 
         results_txt: list[str] = list(nmt_anchors)
-        results_roles: list[str] = list(norm_acoustic_roles)
-        prev_context: list[tuple[str, str, str]] = []
+        results_roles: list[str] = ["DAN_CHUYEN"] * total_lines
+        prev_context: list[tuple[str, str]] = []
 
         for start_idx in range(0, total_lines, batch_size):
             _check_not_cancelled(my_job_gen)
             end_idx = min(total_lines, start_idx + batch_size)
             b_srcs = cleaned_inputs[start_idx:end_idx]
             b_ancs = nmt_anchors[start_idx:end_idx]
-            b_ac_roles = norm_acoustic_roles[start_idx:end_idx]
 
             if progress_cb is not None:
                 try:
@@ -917,22 +934,22 @@ def translate_cinema_lines_with_roles(
                 except Exception:
                     pass
 
-            ctx_triples = prev_context[-2:]
+            ctx_pairs = prev_context[-2:]
             q_sig = hashlib.sha256(
                 json.dumps(
                     {
-                        "v": 14,
+                        "v": 15,
                         "eng": engine_sig,
                         "g": genre,
                         "bh": bible_hash,
-                        "ctx": [f"{c[1]}:{c[2]}" for c in ctx_triples],
+                        "ctx": [c[1] for c in ctx_pairs],
                         "s": b_srcs,
-                        "r": b_ac_roles,
+                        "a": b_ancs,
                     },
                     ensure_ascii=False,
                 ).encode("utf-8")
             ).hexdigest()[:20]
-            q_cache_file = os.path.join(cache_dir, f"tr_dir_v14_{q_sig}.json")
+            q_cache_file = os.path.join(cache_dir, f"tr_nar_v15_{q_sig}.json")
 
             if os.path.exists(q_cache_file):
                 try:
@@ -940,49 +957,41 @@ def translate_cinema_lines_with_roles(
                     if (
                         isinstance(cached_q, dict)
                         and isinstance(cached_q.get("texts"), list)
-                        and isinstance(cached_q.get("roles"), list)
                         and len(cached_q["texts"]) == len(b_srcs)
-                        and len(cached_q["roles"]) == len(b_srcs)
                     ):
                         for k in range(len(b_srcs)):
                             t_v = cached_q["texts"][k]
-                            r_v = cached_q["roles"][k]
                             results_txt[start_idx + k] = t_v
-                            results_roles[start_idx + k] = r_v
-                            prev_context.append((b_srcs[k], r_v, t_v))
+                            prev_context.append((b_srcs[k], t_v))
                         continue
                 except Exception:
                     pass
 
             ctx_block = ""
-            if ctx_triples:
-                ctx_lines = "\n".join(
-                    f'- [{audio_speaker_analyzer.role_to_display_label(r0)}] "{s0}" => "{t0}"'
-                    for s0, r0, t0 in ctx_triples
-                )
+            if ctx_pairs:
+                ctx_lines = "\n".join(f'- "{s0}" => "{t0}"' for s0, t0 in ctx_pairs)
                 ctx_block = (
-                    "Các câu thoại ngay trước đó (CHỈ để nắm mạch cảnh & giữ đúng vai vế xưng hô, KHÔNG dịch lại):\n"
+                    "2 câu thoại ngay trước đó (CHỈ để nắm mạch truyện & thống nhất xưng hô, KHÔNG dịch lại):\n"
                     f"{ctx_lines}\n\n"
                 )
 
             lookahead = ""
             if end_idx < total_lines:
-                la_r = audio_speaker_analyzer.role_to_display_label(norm_acoustic_roles[end_idx])
-                lookahead = f'\n\n(Câu tiếp theo để nắm ngữ cảnh, KHÔNG dịch: [{la_r}] "{cleaned_inputs[end_idx]}")'
+                lookahead = f'\n\n(Câu tiếp theo để nắm ngữ cảnh, KHÔNG dịch: "{cleaned_inputs[end_idx]}")'
 
             numbered_in = "\n".join(
-                f"[{k + 1}] (Giọng gốc: {audio_speaker_analyzer.role_to_display_label(b_ac_roles[k])}) {b_srcs[k]}"
+                f"[{k + 1}] Gốc: {b_srcs[k]}\n    Nghĩa sát: {b_ancs[k]}"
                 for k in range(len(b_srcs))
             )
             user_msg = (
                 f"{ctx_block}"
-                f"Hãy phân vai & dịch đúng {len(b_srcs)} câu thoại liên tiếp sau sang 100% Tiếng Việt chuẩn giới tính & vai vế xưng hô "
-                f"theo định dạng `[k] [NHÃN_VAI] Câu dịch` (từ [1] đến [{len(b_srcs)}]):\n{numbered_in}{lookahead}"
+                f"Hãy biên dịch thuyết minh chuẩn xác từng từ cho đúng {len(b_srcs)} câu sau sang 100% Tiếng Việt tự nhiên "
+                f"(xuất đúng dạng `[1] ...` đến `[{len(b_srcs)}] ...`, KHÔNG thêm nhãn vai):\n{numbered_in}{lookahead}"
             )
-            est_toks = max(720, sum(len(x) for x in b_srcs) * 6 + len(b_srcs) * 28 + 260)
+            est_toks = max(720, sum(len(x) for x in b_ancs) * 2 + len(b_srcs) * 24 + 260)
             raw_out = run_prompt_fn(sys_msg, user_msg, min(3200, est_toks))
 
-            parsed_map: dict[int, tuple[str, str]] = {}
+            parsed_map: dict[int, str] = {}
             for ln in raw_out.splitlines():
                 m = re.match(r"^\s*\[(\d+)\]\s*(.+)$", ln.strip())
                 if not m:
@@ -993,40 +1002,42 @@ def translate_cinema_lines_with_roles(
                 if not (0 <= k_i < len(b_srcs)):
                     continue
                 rest = m.group(2).strip()
-                role_code = ""
                 m_r = _LEADING_ROLE_TAG_RE.match(rest)
-                if m_r:
-                    cand_role = audio_speaker_analyzer.canonicalize_role_tag(m_r.group(1))
-                    if cand_role:
-                        role_code = cand_role
-                        rest = m_r.group(2).strip()
+                if m_r and audio_speaker_analyzer.canonicalize_role_tag(m_r.group(1)):
+                    rest = m_r.group(2).strip()
                 cand_txt = _polish_vietnamese_cinema_line(rest, genre=genre, target_lang=target_lang)
-                anc_len = max(12, len(b_ancs[k_i]))
+                anc_len = max(14, len(b_ancs[k_i]))
                 if (
                     cand_txt
                     and not cjk_leak_re.search(cand_txt)
                     and len(cand_txt) <= max(int(anc_len * 2.4), anc_len + 65)
                 ):
-                    parsed_map[k_i] = (cand_txt, role_code or b_ac_roles[k_i])
+                    parsed_map[k_i] = cand_txt
 
             final_texts: list[str] = []
-            final_roles: list[str] = []
             for k in range(len(b_srcs)):
                 if k in parsed_map:
-                    chosen, chosen_role = parsed_map[k]
+                    chosen = parsed_map[k]
                 else:
                     bare_s = b_srcs[k].strip().rstrip("。！？!?.，, ")
                     if is_zh_source and bare_s in _ZH_EXACT_SHORT_UTTERANCES_VI:
                         chosen = _ZH_EXACT_SHORT_UTTERANCES_VI[bare_s]
                     else:
                         chosen = b_ancs[k]
-                    chosen_role = b_ac_roles[k]
+
+                # Guardrail: fix classic Chinese 1亿 (100 million) -> '1 tỷ' hallucination + 宿主 -> 'chủ nhà'
+                if is_zh_source:
+                    if re.search(r"(?:1|一)亿", b_srcs[k]) and re.search(r"\b1\s*tỷ\b", chosen, flags=re.IGNORECASE):
+                        chosen = re.sub(r"\b1\s*tỷ\b", "100 triệu", chosen, flags=re.IGNORECASE)
+                    if "宿主" in b_srcs[k] and re.search(r"\bchủ\s+nhà\b", chosen, flags=re.IGNORECASE):
+                        chosen = re.sub(r"\bchủ\s+nhà\b", "ký chủ", chosen, flags=re.IGNORECASE)
+                    if chosen and chosen[0].islower():
+                        chosen = chosen[0].upper() + chosen[1:]
 
                 # Repair ANY foreign leak OR archaic 'ngươi' in modern_cn
-                if genre == "modern_cn" and _ARCHAIC_NGUOI_RE.search(chosen) and chosen_role != "ONG_LAO":
+                if genre == "modern_cn" and _ARCHAIC_NGUOI_RE.search(chosen):
                     chosen = _polish_vietnamese_cinema_line(chosen, genre="modern_cn", target_lang=target_lang)
 
-                # Only run expensive single-line LLM repair when genuine CJK/non-Latin leak OR >=2 bad tokens appear!
                 leaks = find_foreign_leaks_in_vi(chosen, genre=genre, is_cjk_source=is_cjk_source)
                 needs_hard_repair = bool(leaks) and (
                     "CJK_OR_NON_LATIN" in leaks
@@ -1035,15 +1046,15 @@ def translate_cinema_lines_with_roles(
                 )
                 if needs_hard_repair:
                     _check_not_cancelled(my_job_gen)
-                    # Instant clean fallback to verified NMT anchor if NMT anchor has 0 leaks (saves 15s/line!)
                     anc_leaks = find_foreign_leaks_in_vi(b_ancs[k], genre=genre, is_cjk_source=is_cjk_source)
                     if not anc_leaks and b_ancs[k] and not cjk_leak_re.search(b_ancs[k]):
                         chosen = b_ancs[k]
                     else:
                         fix_prompt = (
-                            f"Câu gốc ({audio_speaker_analyzer.role_to_display_label(chosen_role)}): {b_srcs[k]}\n"
-                            f"Bản dịch nháp bị sót từ ngoại lai ({', '.join(leaks[:5])}): {chosen}\n"
-                            f"Hãy viết lại 1 câu hoàn chỉnh 100% Tiếng Việt chuẩn giới tính & vai vế xưng hô, "
+                            f"Câu gốc: {b_srcs[k]}\n"
+                            f"Nghĩa sát: {b_ancs[k]}\n"
+                            f"Bản nháp bị sót từ ngoại lai ({', '.join(leaks[:5])}): {chosen}\n"
+                            f"Hãy viết lại 1 câu thuyết minh hoàn chỉnh 100% Tiếng Việt chuẩn xác từng từ, "
                             f"TUYỆT ĐỐI KHÔNG chứa từ {', '.join(leaks[:5])} hay chữ Hán/Pinyin (chỉ xuất duy nhất câu dịch):"
                         )
                         try:
@@ -1058,14 +1069,12 @@ def translate_cinema_lines_with_roles(
                             pass
 
                 results_txt[start_idx + k] = chosen
-                results_roles[start_idx + k] = chosen_role
                 final_texts.append(chosen)
-                final_roles.append(chosen_role)
-                prev_context.append((b_srcs[k], chosen_role, chosen))
+                prev_context.append((b_srcs[k], chosen))
 
             try:
                 with open(q_cache_file, "w", encoding="utf-8") as qf:
-                    json.dump({"texts": final_texts, "roles": final_roles}, qf, ensure_ascii=False)
+                    json.dump({"texts": final_texts}, qf, ensure_ascii=False)
             except Exception:
                 pass
 

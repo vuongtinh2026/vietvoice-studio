@@ -474,8 +474,8 @@ def translate_segments_multilingual(
     def _on_tr_progress(done_n: int, total_n: int) -> None:
         p = 42 + int((done_n / max(1, total_n)) * 24)
         set_dub_live_progress(
-            f"🎬 {ai_lbl} đang phân vai & dịch chuẩn xưng hô câu {min(done_n + 1, total_n)}/{total_n}...",
-            f"🎬 {ai_lbl} casting roles & adapting cue {min(done_n + 1, total_n)}/{total_n}...",
+            f"🎙️ {ai_lbl} đang biên dịch thuyết minh chuẩn từng từ câu {min(done_n + 1, total_n)}/{total_n}...",
+            f"🎙️ {ai_lbl} translating exact narration cue {min(done_n + 1, total_n)}/{total_n}...",
             p,
         )
 
@@ -517,7 +517,7 @@ def translate_script_preserving_timestamps(
     ai_provider: str = "local",
     ai_api_key: str = "",
     ai_model: str = "",
-    include_role: bool = True,
+    include_role: bool = False,
 ) -> tuple[str, str]:
     segs, plain, has_ts = parse_timestamped_script(raw_text)
     if has_ts and segs:
@@ -788,7 +788,7 @@ def transcribe_and_translate_media(
     ai_provider: str = "local",
     ai_api_key: str = "",
     ai_model: str = "",
-    multi_voice_cast: bool = True,
+    multi_voice_cast: bool = False,
 ) -> dict:
     meta = probe_media_info(media_path, ffmpeg_bin=ffmpeg_bin)
     cache_dir = os.path.join("/tmp", "voxly_dub_sessions")
@@ -910,18 +910,6 @@ def transcribe_and_translate_media(
         if not plain_source or not segs:
             raise ValueError("Không nhận diện được lời thoại hoặc phụ đề trong file này. Vui lòng kiểm tra lại video/âm thanh!")
 
-        # Acoustic Speaker Biometrics & Gender/Age/Crowd Diarization on original audio waveform!
-        if meta.get("hasAudio", True):
-            try:
-                set_dub_live_progress(
-                    "🎭 Đang phân tích sắc thái giọng gốc (Nam / Nữ / Đàn ông / Đàn bà / Trẻ em / Đám đông)...",
-                    "🎭 Analyzing original speaker voice biometrics (Male / Female / Child / Crowd)...",
-                    38,
-                )
-                segs = audio_speaker_analyzer.analyze_segments_acoustic_roles(segs, media_path, ffmpeg_bin=ffmpeg_bin)
-            except Exception as spk_err:
-                print(f"[SpeakerAnalyzer] Non-fatal skip: {spk_err}")
-
         try:
             with open(stt_cache_path, "w", encoding="utf-8") as cf:
                 json.dump(
@@ -947,12 +935,7 @@ def transcribe_and_translate_media(
     )
     effective_target = detected_lang if (not target_lang or target_lang == "same") else target_lang
     formatted_source = format_timestamped_script(tr_segs, text_key="text", include_role=False)
-    formatted_translated = format_timestamped_script(tr_segs, text_key="translatedText", include_role=bool(multi_voice_cast))
-
-    role_counts: dict[str, int] = {}
-    for s in tr_segs:
-        rl = s.get("roleLabel") or audio_speaker_analyzer.role_to_display_label(s.get("role", ""))
-        role_counts[rl] = role_counts.get(rl, 0) + 1
+    formatted_translated = format_timestamped_script(tr_segs, text_key="translatedText", include_role=False)
 
     return {
         "success": True,
@@ -966,7 +949,6 @@ def transcribe_and_translate_media(
         "translatedText": formatted_translated,
         "segments": tr_segs,
         "segmentsCount": len(tr_segs),
-        "roleSummary": role_counts,
         "aiEngineUsed": (
             ai_provider
             if (ai_provider not in ("local", "local_fast", "local_14b") and ai_api_key)

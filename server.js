@@ -1301,7 +1301,7 @@ const server = http.createServer(async (req, res) => {
       const aiProvider = String(payload.aiProvider || 'local').trim() || 'local';
       const aiApiKey = String(payload.aiApiKey || '').trim();
       const aiModel = String(payload.aiModel || '').trim();
-      const multiVoiceCast = payload.multiVoiceCast !== false;
+      const multiVoiceCast = false;
       const isAsync = parsedUrl.searchParams.get('async') === '1' || Boolean(payload.async);
 
       if (!ytUrl) {
@@ -1391,7 +1391,7 @@ const server = http.createServer(async (req, res) => {
     const aiProvider = String(req.headers['x-ai-provider'] || 'local').trim() || 'local';
     const aiApiKey = String(req.headers['x-ai-api-key'] || '').trim();
     const aiModel = String(req.headers['x-ai-model'] || '').trim();
-    const multiVoiceCast = String(req.headers['x-multi-voice'] || '1') !== '0';
+    const multiVoiceCast = false;
     const isAsync = parsedUrl.searchParams.get('async') === '1';
     const sessionId = `dub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const mediaPath = path.join(dubDir, `${sessionId}_orig${rawExt}`);
@@ -1482,7 +1482,7 @@ const server = http.createServer(async (req, res) => {
         aiProvider: String(payload.aiProvider || 'local').trim() || 'local',
         aiApiKey: String(payload.aiApiKey || '').trim(),
         aiModel: String(payload.aiModel || '').trim(),
-        multiVoiceCast: payload.multiVoiceCast !== false
+        multiVoiceCast: false
       });
       const data = dRes.data || {};
       if (!dRes.ok || !data.success) {
@@ -1507,7 +1507,7 @@ const server = http.createServer(async (req, res) => {
       const pause = parseFloat(payload.pause) || 0.25;
       const syncTimeline = payload.syncTimeline !== false;
       const autoFitTiming = payload.autoFitTiming !== false;
-      const multiVoiceCast = payload.multiVoiceCast !== false;
+      const multiVoiceCast = false;
       const origVolumePct = payload.origVolumePct !== undefined && payload.origVolumePct !== null
         ? Math.max(0, Math.min(100, Number(payload.origVolumePct)))
         : (payload.bgMixMode === 'mute' ? 0 : 40);

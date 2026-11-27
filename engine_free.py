@@ -1289,7 +1289,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 ai_provider = str(data.get("aiProvider", "local")).strip() or "local"
                 ai_api_key = str(data.get("aiApiKey", "")).strip()
                 ai_model = str(data.get("aiModel", "")).strip()
-                multi_voice_cast = bool(data.get("multiVoiceCast", True))
+                multi_voice_cast = False
 
                 dl_info = media_dubber.download_online_video_url(
                     raw_url=yt_url,
@@ -1329,7 +1329,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 ai_provider = str(data.get("aiProvider", "local")).strip() or "local"
                 ai_api_key = str(data.get("aiApiKey", "")).strip()
                 ai_model = str(data.get("aiModel", "")).strip()
-                multi_voice_cast = bool(data.get("multiVoiceCast", True))
+                multi_voice_cast = False
                 res_obj = media_dubber.transcribe_and_translate_media(
                     media_path=media_path,
                     source_lang=source_lang,
@@ -1352,7 +1352,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 ai_provider = str(data.get("aiProvider", "local")).strip() or "local"
                 ai_api_key = str(data.get("aiApiKey", "")).strip()
                 ai_model = str(data.get("aiModel", "")).strip()
-                multi_voice_cast = bool(data.get("multiVoiceCast", True))
+                multi_voice_cast = False
                 translated, detected = media_dubber.translate_script_preserving_timestamps(
                     raw_text,
                     source_lang=source_lang,
@@ -1372,7 +1372,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 voice_id = str(data.get("voice", "free-vi-ngoc-huyen")).strip() or "free-vi-ngoc-huyen"
                 rate = float(data.get("rate", 1.0))
                 pause_sec = float(data.get("pause", 0.25))
-                multi_voice_cast = bool(data.get("multiVoiceCast", True))
+                multi_voice_cast = False
                 owner_token = self.headers.get("X-Owner-Token") or data.get("ownerToken")
                 orig_media = str(data.get("origMediaPath", "")).strip()
                 is_video = bool(data.get("isVideo", False))
@@ -1413,37 +1413,28 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                     total_s = len(parsed_segs)
                     done_counter = [0]
                     cnt_lock = threading.Lock()
-                    has_any_role = multi_voice_cast and any(
-                        audio_speaker_analyzer.canonicalize_role_tag(s.get("role", "")) not in ("", "DAN_CHUYEN")
-                        for s in parsed_segs
-                    )
-                    mode_vi_lbl = "đa giọng phân vai 48kHz" if has_any_role else "giọng AI 48kHz"
-                    mode_en_lbl = "multi-cast 48kHz actor voices" if has_any_role else "48kHz AI voice"
                     media_dubber.set_dub_live_progress(
-                        f"🎭 Đang thu âm {mode_vi_lbl} câu 1/{total_s}...",
-                        f"🎭 Synthesizing {mode_en_lbl} cue 1/{total_s}...",
+                        f"🎙️ Đang thu giọng thuyết minh 48kHz câu 1/{total_s}...",
+                        f"🎙️ Synthesizing 48kHz voice-over narration cue 1/{total_s}...",
                         68,
                     )
 
                     def _synth_one_seg(seg_obj: dict) -> dict:
-                        arr, used_rc = synthesize_role_segment_48k(
-                            text=seg_obj["text"],
-                            role_tag=seg_obj.get("role", ""),
-                            default_voice_id=voice_id,
-                            multi_voice_cast=multi_voice_cast,
+                        wb = dispatch_synthesize(
+                            seg_obj["text"],
+                            voice_id,
                             rate=rate,
                             pause_sec=min(pause_sec, 0.22),
                             owner_token=owner_token,
                         )
+                        arr = media_dubber.wav_bytes_to_f32_48k(wb, ffmpeg_bin=FFMPEG_BIN)
                         with cnt_lock:
-                            used_roles_set.add(used_rc)
                             done_counter[0] += 1
                             dn = done_counter[0]
                             pct = 68 + int((dn / max(1, total_s)) * 24)
-                            r_disp = audio_speaker_analyzer.role_to_display_label(used_rc)
                             media_dubber.set_dub_live_progress(
-                                f"🎭 Đang thu {mode_vi_lbl} [{r_disp}] câu {dn}/{total_s}...",
-                                f"🎭 Synthesizing {mode_en_lbl} [{r_disp}] cue {dn}/{total_s}...",
+                                f"🎙️ Đang thu giọng thuyết minh 48kHz câu {dn}/{total_s}...",
+                                f"🎙️ Synthesizing 48kHz voice-over narration cue {dn}/{total_s}...",
                                 pct,
                             )
                         return {"start": seg_obj["start"], "end": seg_obj["end"], "samples": arr}
@@ -1452,8 +1443,8 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                         rendered_segs = list(coord_pool.map(_synth_one_seg, parsed_segs))
 
                     media_dubber.set_dub_live_progress(
-                        "🎞️ Đang căn mốc thời gian, trộn âm gốc & đóng gói Video .MP4...",
-                        "🎞️ Aligning timeline, mixing original audio & muxing .MP4...",
+                        "🎞️ Đang căn mốc thời gian, trộn âm gốc & đóng gói Video .MP4 thuyết minh...",
+                        "🎞️ Aligning timeline, mixing original audio & muxing narrated .MP4...",
                         95,
                     )
 

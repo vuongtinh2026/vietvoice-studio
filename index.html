@@ -737,8 +737,8 @@
                   <span class="text-[10px] bg-pink-500/20 text-pink-200 border border-pink-400/40 px-2.5 py-0.5 rounded-full font-extrabold uppercase">YouTube • Douyin • MP4 48kHz</span>
                 </h2>
                 <p class="text-xs text-slate-300/90 mt-1 leading-relaxed">
-                  <span class="lang-only-vi">Dán trực tiếp <b>Link YouTube / Shorts / Douyin (抖音) / TikTok</b> hoặc đưa file <b>.MP3, .WAV, .M4A, .MP4, .MOV</b> vào → AI tự động tải video không logo, bóc lời nói, biên dịch kịch bản phim truyện và xuất ngay cả <b>Audio .MP3</b> lẫn <b>Video .MP4 đã lồng tiếng</b>!</span>
-                  <span class="lang-only-global hidden">Paste any <b>YouTube / Shorts / Douyin / TikTok URL</b> or upload <b>.MP3, .WAV, .M4A, .MP4, .MOV</b> files → AI automatically downloads watermark-free video, transcribes speech, adapts cinema dialogue, and exports both <b>48kHz Audio</b> & <b>Dubbed .MP4 Video</b>!</span>
+                  <span class="lang-only-vi">Dán trực tiếp <b>Link YouTube / Shorts / Douyin (抖音) / TikTok</b> hoặc đưa file <b>.MP3, .WAV, .M4A, .MP4, .MOV</b> vào → AI tự động tải video không logo, bóc lời nói, biên dịch <b>thuyết minh chuẩn xác từng từ</b> và xuất ngay cả <b>Audio .MP3</b> lẫn <b>Video .MP4 đã thuyết minh</b>!</span>
+                  <span class="lang-only-global hidden">Paste any <b>YouTube / Shorts / Douyin / TikTok URL</b> or upload <b>.MP3, .WAV, .M4A, .MP4, .MOV</b> files → AI automatically downloads watermark-free video, transcribes speech, translates word-accurate narration, and exports both <b>48kHz Audio</b> & <b>Narrated .MP4 Video</b>!</span>
                 </p>
               </div>
             </div>
@@ -784,7 +784,7 @@
 
               <div class="lg:w-72 shrink-0">
                 <select id="dubYoutubeModeSelect" class="w-full bg-[#050811] border border-rose-400/35 rounded-xl px-3 py-2.5 text-xs text-rose-100 font-bold focus:outline-none focus:ring-1 focus:ring-rose-400 cursor-pointer">
-                  <option value="video">🎬 Tải Video .MP4 + Lồng tiếng (1080p Full HD)</option>
+                  <option value="video">🎬 Tải Video .MP4 + Thuyết minh (1080p Full HD)</option>
                   <option value="audio">🎵 Chỉ lấy Âm thanh .MP3 (Siêu tốc)</option>
                 </select>
               </div>
@@ -863,8 +863,8 @@
               <div class="flex items-center justify-between">
                 <label class="text-[11px] font-extrabold text-emerald-300 uppercase tracking-wider">
                   <i class="fa-solid fa-microphone-lines text-emerald-400 mr-1"></i>
-                  <span class="lang-only-vi">3. Giọng Đọc Lồng Tiếng Mới</span>
-                  <span class="lang-only-global hidden">3. Target AI Voice</span>
+                  <span class="lang-only-vi">3. Giọng Đọc Thuyết Minh</span>
+                  <span class="lang-only-global hidden">3. Narration AI Voice</span>
                 </label>
                 <label class="text-[10px] text-slate-400 flex items-center gap-1 cursor-pointer">
                   <input type="checkbox" id="dubShowAllVoicesChk" class="accent-emerald-400">
@@ -881,57 +881,39 @@
             </div>
           </div>
 
-          <!-- Pro AI Cinema Director & Multi-Voice Role Casting Studio -->
-          <div id="dubProAiDirectorCard" class="p-4 rounded-2xl bg-gradient-to-r from-purple-950/45 via-[#070b1a]/95 to-pink-950/35 border border-purple-400/45 flex flex-col gap-3 shadow-lg">
+          <!-- Pro AI Cinema Narration Translator (Word-for-Word Faithful Single-Voice Mode) -->
+          <div id="dubProAiDirectorCard" class="p-4 rounded-2xl bg-gradient-to-r from-purple-950/45 via-[#070b1a]/95 to-cyan-950/35 border border-purple-400/45 flex flex-col gap-3 shadow-lg">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="flex items-center gap-2 text-xs sm:text-sm font-extrabold text-purple-100">
-                <span class="w-7 h-7 rounded-lg bg-purple-500/25 border border-purple-400/40 text-pink-300 flex items-center justify-center shrink-0">
-                  <i class="fa-solid fa-masks-theater"></i>
+                <span class="w-7 h-7 rounded-lg bg-purple-500/25 border border-purple-400/40 text-cyan-300 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-microphone-lines"></i>
                 </span>
-                <span class="lang-only-vi">AI Biên Kịch Chuyên Nghiệp & Lồng Tiếng Phân Vai Đa Giọng</span>
-                <span class="lang-only-global hidden">Pro Cinema AI Translator & Multi-Cast Character Dubbing</span>
+                <span class="lang-only-vi">AI Biên Dịch Thuyết Minh Chuẩn Xác Từng Từ (Chế Độ 1 Giọng Thuyết Minh)</span>
+                <span class="lang-only-global hidden">Pro Word-Accurate Cinema Narration AI (Single-Voice Voice-Over Mode)</span>
               </div>
               <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 font-bold">
-                <span class="lang-only-vi">🎭 Tự phân biệt Nam • Nữ • Đàn ông • Đàn bà • Ông lão • Trẻ em • Đám đông</span>
-                <span class="lang-only-global hidden">🎭 Auto Casts Male • Female • Elder • Child • Crowd</span>
+                <span class="lang-only-vi">✅ Bám sát 100% nghĩa gốc &amp; số đếm • 1 Giọng 48kHz ổn định</span>
+                <span class="lang-only-global hidden">✅ 100% Faithful Translation &amp; Numbers • Clean 48kHz Narration</span>
               </span>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
-              <!-- Multi-Voice Toggle -->
-              <label class="md:col-span-6 p-3 rounded-xl bg-[#050811]/90 border border-pink-400/35 hover:border-pink-400/70 flex items-start gap-2.5 cursor-pointer transition">
-                <input type="checkbox" id="dubMultiVoiceChk" checked class="accent-pink-400 w-4 h-4 mt-0.5 shrink-0">
-                <span class="flex flex-col gap-1">
-                  <b class="text-xs text-pink-100">
-                    <span class="lang-only-vi">🎭 Lồng tiếng Phân Vai Đa Giọng 48kHz (Khuyên dùng cho Phim)</span>
-                    <span class="lang-only-global hidden">🎭 Multi-Voice 48kHz Character Dubbing (Recommended for Movies)</span>
-                  </b>
-                  <span class="text-[10px] text-slate-400 leading-relaxed">
-                    <span class="lang-only-vi">AI tự nghe âm sắc gốc để phân đúng giọng riêng: <b>Nam trẻ</b> (Hải Đăng), <b>Nam 2</b> (Minh Quân), <b>Đàn ông</b> (Phạm Tuyên), <b>Ông lão</b> (Thiện Tâm), <b>Nữ trẻ</b> (Ngọc Huyền), <b>Phụ nữ</b> (Mai Anh), <b>Trẻ em</b> (Mỹ Duyên), <b>Đám đông</b> (Hòa âm 3 giọng). Tắt đi nếu muốn 1 giọng thuyết minh.</span>
-                    <span class="lang-only-global hidden">Analyzes original speaker pitch/timbre and casts distinct 48kHz actor voices for Young Male, Adult Man, Elder, Young Woman, Mature Woman, Child & 3-voice Crowd. Uncheck for single-narrator mode.</span>
-                  </span>
-                </span>
+            <div class="p-3 rounded-xl bg-[#050811]/90 border border-purple-400/35 flex flex-col gap-2">
+              <label for="dubAiProviderSelect" class="text-[11px] font-extrabold text-purple-200 flex items-center gap-1.5">
+                <i class="fa-solid fa-brain text-purple-400"></i>
+                <span class="lang-only-vi">Động Cơ AI Biên Dịch Thuyết Minh:</span>
+                <span class="lang-only-global hidden">Pro Narration Translation AI Engine:</span>
               </label>
+              <select id="dubAiProviderSelect" class="w-full bg-slate-950 border border-purple-400/40 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:ring-1 focus:ring-purple-400 cursor-pointer">
+                <option value="local">⚡ AI Thuyết Minh Nội Bộ 8B Pro (Nhanh • Bám sát nghĩa gốc từng từ • Miễn phí)</option>
+                <option value="local_14b">✨ AI Thuyết Minh Nội Bộ 14B Siêu Chi Tiết (Hợp phim ngắn &lt; 10 phút • Miễn phí)</option>
+                <option value="gemini">💎 Google Gemini 2.5 Flash / Pro (Siêu tốc 15s &amp; Chính xác tuyệt đối • API Key)</option>
+                <option value="deepseek">🚀 DeepSeek V3 (Dịch Trung-Nhật-Việt Siêu Chuẩn • API Key)</option>
+                <option value="openai">🤖 OpenAI GPT-4o (Biên Dịch Quốc Tế Cao Cấp • API Key)</option>
+              </select>
 
-              <!-- AI Translator Engine Selector -->
-              <div class="md:col-span-6 p-3 rounded-xl bg-[#050811]/90 border border-purple-400/35 flex flex-col gap-2">
-                <label for="dubAiProviderSelect" class="text-[11px] font-extrabold text-purple-200 flex items-center gap-1.5">
-                  <i class="fa-solid fa-brain text-purple-400"></i>
-                  <span class="lang-only-vi">Động Cơ AI Dịch Thuật & Phân Vai Xưng Hô:</span>
-                  <span class="lang-only-global hidden">Pro Cinema AI Translation & Casting Engine:</span>
-                </label>
-                <select id="dubAiProviderSelect" class="w-full bg-slate-950 border border-purple-400/40 rounded-xl px-3 py-2 text-xs text-white font-semibold focus:outline-none focus:ring-1 focus:ring-purple-400 cursor-pointer">
-                  <option value="local">⚡ AI Biên Kịch Nội Bộ 8B Pro (Nhanh gấp 2.5x • Phân vai & xưng hô chuẩn • Miễn phí)</option>
-                  <option value="local_14b">✨ AI Biên Kịch Nội Bộ 14B Siêu Chi Tiết (Chậm hơn • Hợp phim ngắn &lt; 10 phút)</option>
-                  <option value="gemini">💎 Google Gemini 2.5 Flash / Pro (Siêu tốc 15s & Đỉnh cao Điện Ảnh • API Key)</option>
-                  <option value="deepseek">🚀 DeepSeek V3 (Siêu tốc & Dịch Trung-Việt Chuẩn Nhất • API Key)</option>
-                  <option value="openai">🤖 OpenAI GPT-4o (Chuẩn Biên Kịch Quốc Tế • API Key)</option>
-                </select>
-
-                <div id="dubAiCloudConfigRow" class="hidden grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1">
-                  <input type="password" id="dubAiApiKeyInput" autocomplete="off" placeholder="Dán API Key (chỉ lưu cục bộ trên máy bạn)..." class="sm:col-span-7 bg-slate-950 border border-cyan-400/40 rounded-lg px-2.5 py-1.5 text-[11px] text-cyan-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-400" />
-                  <select id="dubAiModelSelect" class="sm:col-span-5 bg-slate-950 border border-white/15 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono focus:outline-none cursor-pointer"></select>
-                </div>
+              <div id="dubAiCloudConfigRow" class="hidden grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1">
+                <input type="password" id="dubAiApiKeyInput" autocomplete="off" placeholder="Dán API Key (chỉ lưu cục bộ trên máy bạn)..." class="sm:col-span-7 bg-slate-950 border border-cyan-400/40 rounded-lg px-2.5 py-1.5 text-[11px] text-cyan-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-400" />
+                <select id="dubAiModelSelect" class="sm:col-span-5 bg-slate-950 border border-white/15 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 font-mono focus:outline-none cursor-pointer"></select>
               </div>
             </div>
           </div>
@@ -995,7 +977,7 @@
                 <input type="checkbox" id="dubSyncTimelineChk" checked class="accent-emerald-400 w-4 h-4 mt-0.5 shrink-0">
                 <span>
                   <b class="text-emerald-200 block"><span class="lang-only-vi">Khớp đúng thời gian từng câu thoại</span><span class="lang-only-global hidden">Exact Dialogue Timestamp Sync</span></b>
-                  <span class="text-slate-400 text-[10px]"><span class="lang-only-vi">Nhân vật nói ở giây nào AI lồng tiếng đúng giây đó tới hết video</span><span class="lang-only-global hidden">Places each dubbed line at its exact [mm:ss] video timestamp</span></span>
+                  <span class="text-slate-400 text-[10px]"><span class="lang-only-vi">Nhân vật nói ở giây nào AI thuyết minh đúng giây đó tới hết video</span><span class="lang-only-global hidden">Places each narrated line at its exact [mm:ss] video timestamp</span></span>
                 </span>
               </label>
 
@@ -1014,8 +996,8 @@
             <div class="flex flex-wrap items-center gap-2.5">
               <button type="button" id="btnDubFullAuto" class="btn-aurora-primary px-6 py-3 rounded-2xl text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50">
                 <i class="fa-solid fa-wand-magic-sparkles"></i>
-                <span class="lang-only-vi">🚀 Tự Động Nhận Diện, Dịch & Lồng Tiếng Ngay</span>
-                <span class="lang-only-global hidden">🚀 Auto-Transcribe, Translate & Dub Now</span>
+                <span class="lang-only-vi">🚀 Tự Động Nhận Diện, Dịch & Thuyết Minh Ngay</span>
+                <span class="lang-only-global hidden">🚀 Auto-Transcribe, Translate & Narrate Now</span>
               </button>
               <button type="button" id="btnDubTranscribeOnly" class="px-4 py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-cyan-200 border border-cyan-400/35 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
                 <i class="fa-solid fa-file-lines"></i>
@@ -1046,8 +1028,8 @@
             <div class="flex flex-wrap items-center justify-between gap-2">
               <span class="text-xs font-extrabold text-white flex items-center gap-2">
                 <i class="fa-solid fa-pen-to-square text-amber-400"></i>
-                <span class="lang-only-vi">Kiểm Tra & Chỉnh Sửa Lời Thoại Trước Hoặc Sau Khi Lồng Tiếng</span>
-                <span class="lang-only-global hidden">Review & Edit Transcript / Translation</span>
+                <span class="lang-only-vi">Kiểm Tra & Chỉnh Sửa Kịch Bản Thuyết Minh Trước Hoặc Sau Khi Xuất File</span>
+                <span class="lang-only-global hidden">Review & Edit Narration Transcript / Translation</span>
               </span>
               <span id="dubDetectedLangBadge" class="text-[10px] bg-cyan-500/20 text-cyan-200 border border-cyan-400/35 px-2.5 py-0.5 rounded-full font-mono font-bold">Auto</span>
             </div>
@@ -1065,7 +1047,7 @@
 
               <div class="flex flex-col gap-1.5">
                 <div class="flex items-center justify-between text-[11px] text-pink-200 font-bold">
-                  <span><span class="lang-only-vi">Kịch bản lồng tiếng theo mốc [Bắt đầu - Kết thúc] (Sửa trực tiếp):</span><span class="lang-only-global hidden">Timestamped Dubbing Script [Start - End] (Editable):</span></span>
+                  <span><span class="lang-only-vi">Kịch bản thuyết minh theo mốc [Bắt đầu - Kết thúc] (Sửa trực tiếp):</span><span class="lang-only-global hidden">Timestamped Narration Script [Start - End] (Editable):</span></span>
                 </div>
                 <textarea id="dubTranslatedScript" rows="6" class="w-full bg-slate-950/90 border border-pink-400/35 rounded-xl p-3 text-xs font-mono text-white focus:outline-none focus:ring-1 focus:ring-pink-400 leading-relaxed"></textarea>
               </div>
@@ -1074,8 +1056,8 @@
             <div class="flex justify-end">
               <button type="button" id="btnDubRegenerate" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 text-slate-950 font-extrabold text-xs cursor-pointer flex items-center gap-2 shadow-lg">
                 <i class="fa-solid fa-rotate"></i>
-                <span class="lang-only-vi">Tạo Giọng & Xuất File Từ Bản Dịch Này</span>
-                <span class="lang-only-global hidden">Render Dubbed Audio / MP4 From Edited Script</span>
+                <span class="lang-only-vi">Tạo Giọng Thuyết Minh & Xuất File Từ Bản Dịch Này</span>
+                <span class="lang-only-global hidden">Render Narrated Audio / MP4 From Edited Script</span>
               </button>
             </div>
           </div>
@@ -1086,16 +1068,16 @@
               <div>
                 <h3 class="text-sm font-extrabold text-emerald-300 flex items-center gap-2">
                   <i class="fa-solid fa-circle-check text-emerald-400"></i>
-                  <span class="lang-only-vi">Bản Dịch Âm Thanh / Video Đã Xuất Xưởng!</span>
-                  <span class="lang-only-global hidden">Translated Audio / Dubbed Video Ready!</span>
+                  <span class="lang-only-vi">Bản Thuyết Minh Âm Thanh / Video Đã Xuất Xưởng!</span>
+                  <span class="lang-only-global hidden">Narrated Audio / Video Ready!</span>
                 </h3>
                 <p id="dubOutputMetaText" class="text-xs text-slate-300 mt-1"></p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
-                <a id="btnDubDownloadMp4" href="#" download="voxly-dubbed.mp4" class="hidden px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg">
+                <a id="btnDubDownloadMp4" href="#" download="voxly-thuyetminh.mp4" class="hidden px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg">
                   <i class="fa-solid fa-film"></i>
-                  <span class="lang-only-vi">Tải Video .MP4 Đã Lồng Tiếng</span>
-                  <span class="lang-only-global hidden">Download Dubbed .MP4 Video</span>
+                  <span class="lang-only-vi">Tải Video .MP4 Đã Thuyết Minh</span>
+                  <span class="lang-only-global hidden">Download Narrated .MP4 Video</span>
                 </a>
                 <a id="btnDubDownloadMp3" href="#" download="voxly-dubbed.mp3" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow-lg">
                   <i class="fa-solid fa-file-audio"></i>
@@ -2803,8 +2785,8 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
   <script src="app.js?v=9.7"></script>
   <!-- Pro Studio Extensions (Private Vault, 110 Countries, Multi-Speaker Stem Studio, VietQR) -->
   <script src="studio_pro.js?v=9.7"></script>
-  <!-- Multilingual Audio & Video AI Dubbing Studio (MP3 / MP4 / YouTube / Douyin) -->
-  <script src="dubbing_studio.js?v=10.1"></script>
+  <!-- Multilingual Audio & Video AI Narration Studio (MP3 / MP4 / YouTube / Douyin) -->
+  <script src="dubbing_studio.js?v=10.2"></script>
   <!-- Option 2 License Key, HWID Lock, Real Order/Bank Checkout & Owner Admin Console -->
   <script src="license_client_ui.js?v=9.7"></script>
 </body>

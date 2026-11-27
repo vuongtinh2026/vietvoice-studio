@@ -105,10 +105,7 @@
     const provider = document.getElementById('dubAiProviderSelect')?.value || 'local';
     const apiKey = (document.getElementById('dubAiApiKeyInput')?.value || '').trim();
     const model = (document.getElementById('dubAiModelSelect')?.value || '').trim();
-    const multiVoiceCast = document.getElementById('dubMultiVoiceChk')
-      ? document.getElementById('dubMultiVoiceChk').checked
-      : true;
-    return { aiProvider: provider, aiApiKey: apiKey, aiModel: model, multiVoiceCast };
+    return { aiProvider: provider, aiApiKey: apiKey, aiModel: model, multiVoiceCast: false };
   }
 
   function syncAiProviderUi() {
@@ -242,9 +239,9 @@
     if (ytModeSel) {
       const prevMode = ytModeSel.value || 'video';
       ytModeSel.innerHTML = isVi
-        ? `<option value="video">🎬 Tải Video .MP4 + Lồng tiếng (1080p Full HD)</option>
+        ? `<option value="video">🎬 Tải Video .MP4 + Thuyết minh (1080p Full HD)</option>
            <option value="audio">🎵 Chỉ lấy Âm thanh .MP3 (Siêu tốc)</option>`
-        : `<option value="video">🎬 Video .MP4 + AI Dubbing (1080p Full HD)</option>
+        : `<option value="video">🎬 Video .MP4 + AI Narration (1080p Full HD)</option>
            <option value="audio">🎵 Audio Only .MP3 (Fast)</option>`;
       ytModeSel.value = prevMode === 'audio' ? 'audio' : 'video';
     }
@@ -573,14 +570,14 @@
     const baseStep1Msg = useYoutube
       ? (isVi
           ? (ytMode === 'video'
-              ? `🎬 Bước 1/2: Đang tải Video từ ${platName}, phân tích giọng gốc & biên dịch phân vai...`
-              : `🎵 Bước 1/2: Đang trích xuất Âm thanh từ ${platName}, phân tích giọng gốc & dịch...`)
+              ? `🎬 Bước 1/2: Đang tải Video từ ${platName}, bóc lời & biên dịch thuyết minh chuẩn từng từ...`
+              : `🎵 Bước 1/2: Đang trích xuất Âm thanh từ ${platName}, bóc lời & biên dịch thuyết minh...`)
           : (ytMode === 'video'
-              ? `🎬 Step 1/2: Downloading ${platName} video, analyzing speakers & translating...`
-              : `🎵 Step 1/2: Extracting ${platName} audio, analyzing speakers & translating...`))
+              ? `🎬 Step 1/2: Downloading ${platName} video, extracting speech & translating exact narration...`
+              : `🎵 Step 1/2: Extracting ${platName} audio, transcribing & translating exact narration...`))
       : (isVi
-          ? '🎙️ Bước 1/2: AI đang tải tệp, nhận diện giọng Nam/Nữ & biên dịch phân vai chuẩn xưng hô...'
-          : '🎙️ Step 1/2: Uploading media, analyzing speaker genders & translating roles...');
+          ? '🎙️ Bước 1/2: AI đang tải tệp, nhận diện lời thoại & biên dịch thuyết minh chuẩn từng từ...'
+          : '🎙️ Step 1/2: Uploading media, extracting speech & translating exact narration...');
 
     setDubProgress(true, baseStep1Msg, 14);
 
@@ -675,13 +672,9 @@
     if (trBox) trBox.value = data.translatedText || '';
     if (detBadge) {
       const segCnt = data.segmentsCount || 0;
-      const roleSum = data.roleSummary && typeof data.roleSummary === 'object'
-        ? Object.entries(data.roleSummary).map(([k, v]) => `${k}:${v}`).slice(0, 5).join(', ')
-        : '';
-      const roleSuffix = roleSum ? ` • 🎭 ${roleSum}` : '';
       detBadge.textContent = isVi
-        ? `Ngôn ngữ gốc: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} câu thoại${roleSuffix}`
-        : `Detected: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} cues${roleSuffix}`;
+        ? `Ngôn ngữ gốc: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} câu thuyết minh`
+        : `Detected: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} cues`;
     }
     if (scriptsCard) scriptsCard.classList.remove('hidden');
 
@@ -796,19 +789,15 @@
     const smartDucking = document.getElementById('dubSmartDuckChk') ? document.getElementById('dubSmartDuckChk').checked : true;
     const syncTimeline = document.getElementById('dubSyncTimelineChk') ? document.getElementById('dubSyncTimelineChk').checked : true;
     const autoFitTiming = document.getElementById('dubAutoFitChk') ? document.getElementById('dubAutoFitChk').checked : true;
-    const multiVoiceCast = document.getElementById('dubMultiVoiceChk') ? document.getElementById('dubMultiVoiceChk').checked : true;
+    const multiVoiceCast = false;
 
     const baseStep2Msg = selectedIsVideo
       ? (isVi
-          ? (multiVoiceCast
-              ? '🎭 Bước 2/2: Đang lồng tiếng đa giọng phân vai 48kHz khớp mốc thoại & đóng gói .MP4...'
-              : '🎬 Bước 2/2: Đang lồng tiếng khớp từng mốc thoại & trộn âm thanh gốc vào Video .MP4...')
-          : (multiVoiceCast
-              ? '🎭 Step 2/2: Synthesizing multi-cast 48kHz character dubbing & muxing .MP4...'
-              : '🎬 Step 2/2: Synthesizing timestamp-synced 48kHz dub & mixing original audio into .MP4...'))
+          ? '🎙️ Bước 2/2: Đang đọc thuyết minh 48kHz khớp mốc thời gian & trộn âm thanh gốc vào Video .MP4...'
+          : '🎙️ Step 2/2: Synthesizing timestamp-synced 48kHz narration & mixing original audio into .MP4...')
       : (isVi
-          ? '🎧 Bước 2/2: Đang tổng hợp giọng AI 48kHz theo mốc thoại & trộn âm nền...'
-          : '🎧 Step 2/2: Synthesizing synced 48kHz voiceover & mixing original audio...');
+          ? '🎧 Bước 2/2: Đang tổng hợp giọng thuyết minh AI 48kHz theo mốc thoại & trộn âm nền...'
+          : '🎧 Step 2/2: Synthesizing synced 48kHz narration & mixing original audio...');
     setDubProgress(true, baseStep2Msg, 68);
 
     const headers = { 'Content-Type': 'application/json' };
@@ -840,11 +829,11 @@
       data = await waitForDubAsyncJob(data.jobId, { baseMsg: baseStep2Msg, minPct: 68, maxPct: 98 });
     }
     if (!data || !data.success) {
-      throw new Error((data && data.error) || 'Lỗi xuất file lồng tiếng.');
+      throw new Error((data && data.error) || 'Lỗi xuất file thuyết minh.');
     }
 
     if (data.mediaSessionId) currentMediaSessionId = data.mediaSessionId;
-    setDubProgress(true, isVi ? '✅ Hoàn tất dịch & lồng tiếng khớp mốc thời gian!' : '✅ Timestamp-synced dubbing complete!', 100);
+    setDubProgress(true, isVi ? '✅ Hoàn tất dịch & thuyết minh chuẩn xác khớp mốc thời gian!' : '✅ Timestamp-synced narration complete!', 100);
 
     applyRenderedMediaToPlayer(data, null);
 
@@ -856,16 +845,16 @@
     const volInfo = isVi ? ` • Âm gốc: ${origVolumePct}%` : ` • Orig Audio: ${origVolumePct}%`;
     if (metaInfo) {
       metaInfo.textContent = isVi
-        ? `⚡ Hoàn tất trong ${secStr}${cuesInfo}${volInfo} • Giọng: ${data.voiceName} • Thời lượng: ${data.audioSeconds}s • Đã trừ ${(data.charsUsed || 0).toLocaleString('vi-VN')} ký tự`
-        : `⚡ Rendered in ${secStr}${cuesInfo}${volInfo} • Voice: ${data.voiceName} • Duration: ${data.audioSeconds}s • Used ${(data.charsUsed || 0).toLocaleString('en-US')} chars`;
+        ? `⚡ Hoàn tất trong ${secStr}${cuesInfo}${volInfo} • Giọng thuyết minh: ${data.voiceName} • Thời lượng: ${data.audioSeconds}s • Đã trừ ${(data.charsUsed || 0).toLocaleString('vi-VN')} ký tự`
+        : `⚡ Rendered in ${secStr}${cuesInfo}${volInfo} • Narrator: ${data.voiceName} • Duration: ${data.audioSeconds}s • Used ${(data.charsUsed || 0).toLocaleString('en-US')} chars`;
     }
 
     document.getElementById('dubOutputCard')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     if (typeof window.showToast === 'function') {
       window.showToast(
         isVi
-          ? `🎉 Đã lồng tiếng khớp lời thoại thành công trong ${secStr}!`
-          : `🎉 Synced dubbing rendered in ${secStr}!`,
+          ? `🎉 Đã xuất bản thuyết minh khớp lời thoại thành công trong ${secStr}!`
+          : `🎉 Synced narration rendered in ${secStr}!`,
         'success'
       );
     }
@@ -1204,8 +1193,8 @@
             setDubProgress(
               true,
               isViLang()
-                ? '✅ Đã bóc lời & dịch xong! Bạn có thể kiểm tra/chỉnh sửa bên dưới rồi bấm Tạo Lồng Tiếng.'
-                : '✅ Transcribed & translated! Review/edit below, then click Render Dubbed Output.',
+                ? '✅ Đã bóc lời & dịch thuyết minh xong! Bạn có thể kiểm tra/chỉnh sửa bên dưới rồi bấm Tạo Giọng Thuyết Minh.'
+                : '✅ Transcribed & translated! Review/edit below, then click Render Narrated Output.',
               100
             );
           }
