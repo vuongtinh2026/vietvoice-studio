@@ -631,7 +631,18 @@ def _run_cloud_llm_prompt(
 
     if prov == "gemini":
         mdl = (model_name or "gemini-2.5-flash").strip()
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent?key={key}"
+        is_vertex_express_key = key.startswith("AQ.")
+        candidate_urls = (
+            [
+                f"https://aiplatform.googleapis.com/v1/publishers/google/models/{mdl}:generateContent",
+                f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent",
+            ]
+            if is_vertex_express_key
+            else [
+                f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent",
+                f"https://aiplatform.googleapis.com/v1/publishers/google/models/{mdl}:generateContent",
+            ]
+        )
         body = json.dumps(
             {
                 "systemInstruction": {"parts": [{"text": sys_msg}]},
@@ -643,18 +654,30 @@ def _run_cloud_llm_prompt(
             },
             ensure_ascii=False,
         ).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=body,
-            method="POST",
-            headers={"Content-Type": "application/json; charset=utf-8"},
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as he:
-            err_body = he.read().decode("utf-8", errors="ignore")[:240]
-            raise RuntimeError(f"Lỗi Gemini API (HTTP {he.code}): Kiểm tra lại API Key hoặc hạn mức ({err_body})")
+        data = None
+        last_err = ""
+        for url in candidate_urls:
+            req = urllib.request.Request(
+                url,
+                data=body,
+                method="POST",
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                    "x-goog-api-key": key,
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    break
+            except urllib.error.HTTPError as he:
+                err_body = he.read().decode("utf-8", errors="ignore")[:240]
+                last_err = f"HTTP {he.code}: {err_body}"
+                if he.code in (400, 401, 403, 404):
+                    continue
+                raise RuntimeError(f"Lỗi Gemini API ({last_err})")
+        if data is None:
+            raise RuntimeError(f"Lỗi Gemini API ({last_err}): Vui lòng kiểm tra lại API Key hoặc hạn mức.")
         cands = data.get("candidates") or []
         parts = ((cands[0].get("content") or {}).get("parts") or []) if cands else []
         txt = "".join(str(p.get("text") or "") for p in parts if not p.get("thought"))

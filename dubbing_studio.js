@@ -131,7 +131,7 @@
       const savedKey = (() => { try { return localStorage.getItem(`voxly_dub_ai_key_${prov}`) || ''; } catch { return ''; } })();
       keyIn.value = savedKey;
       keyIn.placeholder = prov === 'gemini'
-        ? 'Dán Google Gemini API Key (AIza...) — lưu cục bộ...'
+        ? 'Dán Google Gemini / Vertex API Key (AIza... hoặc AQ.Ab...) — lưu cục bộ...'
         : (prov === 'deepseek' ? 'Dán DeepSeek API Key (sk-...) — lưu cục bộ...' : 'Dán OpenAI API Key (sk-...) — lưu cục bộ...');
     }
   }
