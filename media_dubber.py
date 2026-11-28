@@ -520,13 +520,31 @@ def translate_segments_multilingual(
         else (f"AI {prov_tag} Pro" if prov_tag not in ("LOCAL", "LOCAL_FAST") and ai_api_key else "AI Biên kịch 8B Pro")
     )
 
+    last_tr_pct = [41]
+
     def _on_tr_progress(done_n: int, total_n: int) -> None:
-        p = 42 + int((done_n / max(1, total_n)) * 24)
+        # Keep strictly within 42..65% while Step 1 is still active (66% only triggers when Step 1 returns!)
+        p = 42 + int((done_n / max(1, total_n)) * 23)
+        p = max(42, min(65, p))
+        last_tr_pct[0] = p
         set_dub_live_progress(
             f"🎙️ {ai_lbl} đang biên dịch thuyết minh chuẩn từng từ câu {min(done_n + 1, total_n)}/{total_n}...",
             f"🎙️ {ai_lbl} translating exact narration cue {min(done_n + 1, total_n)}/{total_n}...",
             p,
         )
+
+    def _on_tr_status(vi_s: str, en_s: str) -> None:
+        set_dub_live_progress(
+            f"{vi_s} ({ai_lbl})",
+            f"{en_s} ({ai_lbl})",
+            last_tr_pct[0],
+        )
+
+    set_dub_live_progress(
+        f"🌐 Đang dịch nền bám sát từng câu cho {len(src_lines)} câu thoại ({ai_lbl})...",
+        f"🌐 Building literal translation anchors for {len(src_lines)} cues ({ai_lbl})...",
+        40,
+    )
 
     translated_lines, refined_roles = cinema_translator.translate_cinema_lines_with_roles(
         lines=src_lines,
@@ -538,6 +556,7 @@ def translate_segments_multilingual(
         ai_model=ai_model,
         nmt_fallback_fn=_translate_single_chunk_gtx,
         progress_cb=_on_tr_progress,
+        status_cb=_on_tr_status,
     )
 
     enriched = []
@@ -1102,6 +1121,13 @@ def transcribe_and_translate_media(
     ai_model: str = "",
     multi_voice_cast: bool = False,
 ) -> dict:
+    # Always reset live progress at start so stale 66% / 95% from any prior job NEVER leaks into a new run!
+    set_dub_live_progress(
+        "🎙️ Đang phân tích tệp video/âm thanh & chuẩn bị nhận diện lời thoại...",
+        "🎙️ Inspecting media file & preparing speech recognition...",
+        16,
+        active=True,
+    )
     meta = probe_media_info(media_path, ffmpeg_bin=ffmpeg_bin)
     cache_dir = os.path.join("/tmp", "voxly_dub_sessions")
     os.makedirs(cache_dir, exist_ok=True)

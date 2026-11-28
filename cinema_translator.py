@@ -693,10 +693,12 @@ def _run_cloud_llm_prompt(
     sys_msg: str,
     user_msg: str,
     max_tokens: int = 2400,
+    my_job_gen: int = 0,
+    status_cb: Callable[[str, str], None] | None = None,
 ) -> str:
     """
     Pure-stdlib HTTPS caller for Pro Cloud AI Cinema Directors:
-      - gemini   (Google Gemini 3.8 Flash / Latest Pro — with HTTP 404 live model auto-discovery)
+      - gemini   (Google Gemini 3.8 Flash / Latest Pro — low-latency thinkingLevel + HTTP 404 live model auto-discovery)
       - openai   (OpenAI GPT-4o / GPT-4o-mini)
       - deepseek (DeepSeek V3 deepseek-chat — top-tier Chinese-Vietnamese screenplay)
     """
@@ -730,19 +732,30 @@ def _run_cloud_llm_prompt(
             if "gemini-3.8-flash" not in initial_models:
                 initial_models.append("gemini-3.8-flash")
 
-        # Generous output budget so Gemini 3.8 Flash thinking tokens never truncate Vietnamese output.
-        gemini_max_out = max(int(max_tokens) * 3, 8192)
-        body = json.dumps(
-            {
-                "systemInstruction": {"parts": [{"text": sys_msg}]},
-                "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
-                "generationConfig": {
-                    "temperature": 0.12,
-                    "maxOutputTokens": gemini_max_out,
+        # Generous output budget so thinking tokens never truncate Vietnamese output.
+        gemini_max_out = max(int(max_tokens) * 2, 8192)
+
+        def _build_gemini_body(mdl_id: str, include_thinking_cfg: bool = True) -> bytes:
+            gen_cfg: dict = {
+                "temperature": 0.12,
+                "maxOutputTokens": gemini_max_out,
+            }
+            if include_thinking_cfg:
+                low_m = (mdl_id or "").lower()
+                # Gemini 3.x defaults to thinkingLevel="medium" (~60s/call!); "low" is 10x faster (~4-6s/call)
+                # with identical cinema translation accuracy! Gemini 2.5 Flash supports thinkingBudget=0.
+                if re.search(r"gemini-(?:[3-9]|\d{2,})", low_m):
+                    gen_cfg["thinkingConfig"] = {"thinkingLevel": "low"}
+                elif "gemini-2.5-flash" in low_m:
+                    gen_cfg["thinkingConfig"] = {"thinkingBudget": 0}
+            return json.dumps(
+                {
+                    "systemInstruction": {"parts": [{"text": sys_msg}]},
+                    "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
+                    "generationConfig": gen_cfg,
                 },
-            },
-            ensure_ascii=False,
-        ).encode("utf-8")
+                ensure_ascii=False,
+            ).encode("utf-8")
 
         attempt_queue: list[tuple[str, str]] = []
         cached_pair = _GEMINI_RESOLVED_MODEL_CACHE.get(cache_key)
@@ -762,6 +775,8 @@ def _run_cloud_llm_prompt(
         last_err = ""
         idx = 0
         while idx < len(attempt_queue):
+            if my_job_gen > 0:
+                _check_not_cancelled(my_job_gen)
             ep_tpl, cand_mdl = attempt_queue[idx]
             idx += 1
             if (ep_tpl, cand_mdl) in tried_pairs:
@@ -769,8 +784,12 @@ def _run_cloud_llm_prompt(
             tried_pairs.add((ep_tpl, cand_mdl))
             url = ep_tpl.format(m=cand_mdl)
 
+            use_thinking_cfg = True
             hit_model_or_auth_err = False
-            for retry_i in range(4):
+            for retry_i in range(5):
+                if my_job_gen > 0:
+                    _check_not_cancelled(my_job_gen)
+                body = _build_gemini_body(cand_mdl, include_thinking_cfg=use_thinking_cfg)
                 req = urllib.request.Request(
                     url,
                     data=body,
@@ -790,8 +809,34 @@ def _run_cloud_llm_prompt(
                 except urllib.error.HTTPError as he:
                     err_body = he.read().decode("utf-8", errors="ignore")[:420]
                     last_err = f"HTTP {he.code}: {err_body}"
-                    if he.code in (429, 503) and retry_i < 3:
-                        time.sleep(3.5 * (retry_i + 1))
+                    if he.code in (429, 503) and retry_i < 4:
+                        wait_s = 4.0 * (retry_i + 1)
+                        try:
+                            ra = he.headers.get("Retry-After")
+                            if ra and float(ra) > 0:
+                                wait_s = min(35.0, max(2.0, float(ra)))
+                        except Exception:
+                            pass
+                        if status_cb is not None:
+                            try:
+                                status_cb(
+                                    f"⏳ Gemini đang giới hạn tốc độ tạm thời — tự động dịch tiếp sau {int(round(wait_s))}s...",
+                                    f"⏳ Gemini temporary rate-limit — auto-resuming in {int(round(wait_s))}s...",
+                                )
+                            except Exception:
+                                pass
+                        # Sleep in 0.5s increments so user Cancel aborts instantaneously!
+                        slept = 0.0
+                        while slept < wait_s:
+                            if my_job_gen > 0:
+                                _check_not_cancelled(my_job_gen)
+                            step_s = min(0.5, wait_s - slept)
+                            time.sleep(step_s)
+                            slept += step_s
+                        continue
+                    if he.code == 400 and use_thinking_cfg and re.search(r"thinking|unknown name|invalid_argument", err_body, re.IGNORECASE):
+                        # Automatically strip thinkingConfig on models/endpoints that don't support it
+                        use_thinking_cfg = False
                         continue
                     if he.code == 404:
                         # 1) Parse any replacement model explicitly recommended by Google in the 404 body!
@@ -818,10 +863,12 @@ def _run_cloud_llm_prompt(
                         hit_model_or_auth_err = True
                         break
                     raise RuntimeError(f"Lỗi Gemini API ({last_err})")
+                except TranslationCancelledError:
+                    raise
                 except Exception as net_e:
                     last_err = str(net_e)
                     if retry_i < 2:
-                        time.sleep(2.5)
+                        time.sleep(2.0)
                         continue
                     break
             if data is not None:
@@ -1013,6 +1060,7 @@ def translate_cinema_lines_with_roles(
     ai_model: str = "",
     nmt_fallback_fn: Callable[[str, str, str], tuple[str, str]] | None = None,
     progress_cb: Callable[[int, int], None] | None = None,
+    status_cb: Callable[[str, str], None] | None = None,
 ) -> tuple[list[str], list[str]]:
     """
     Full Pro AI Director Pipeline:
@@ -1162,6 +1210,14 @@ def translate_cinema_lines_with_roles(
                 progress_cb(0, total_lines)
             except Exception:
                 pass
+        if status_cb is not None:
+            try:
+                status_cb(
+                    f"🧠 Đang phân tích nhân vật & cách xưng hô cho {total_lines} câu thoại...",
+                    f"🧠 Analyzing characters & pronouns for {total_lines} cues...",
+                )
+            except Exception:
+                pass
 
         char_bible = _extract_character_bible(
             run_prompt_fn=run_prompt_fn,
@@ -1178,8 +1234,9 @@ def translate_cinema_lines_with_roles(
         results_txt: list[str] = list(nmt_anchors)
         results_roles: list[str] = ["DAN_CHUYEN"] * total_lines
         prev_context: list[tuple[str, str]] = []
+        total_batches = max(1, (total_lines + batch_size - 1) // batch_size)
 
-        for start_idx in range(0, total_lines, batch_size):
+        for b_idx, start_idx in enumerate(range(0, total_lines, batch_size), start=1):
             _check_not_cancelled(my_job_gen)
             end_idx = min(total_lines, start_idx + batch_size)
             b_srcs = cleaned_inputs[start_idx:end_idx]
@@ -1188,6 +1245,14 @@ def translate_cinema_lines_with_roles(
             if progress_cb is not None:
                 try:
                     progress_cb(start_idx, total_lines)
+                except Exception:
+                    pass
+            if status_cb is not None:
+                try:
+                    status_cb(
+                        f"🎙️ Đang biên dịch thuyết minh đợt {b_idx}/{total_batches} (câu {start_idx + 1}–{end_idx}/{total_lines})...",
+                        f"🎙️ Translating narration batch {b_idx}/{total_batches} (cues {start_idx + 1}–{end_idx}/{total_lines})...",
+                    )
                 except Exception:
                     pass
 
@@ -1246,8 +1311,8 @@ def translate_cinema_lines_with_roles(
                 f"Hãy biên dịch thuyết minh chuẩn xác từng từ cho đúng {len(b_srcs)} câu sau sang 100% Tiếng Việt tự nhiên "
                 f"(xuất đúng dạng `[1] ...` đến `[{len(b_srcs)}] ...`, KHÔNG thêm nhãn vai):\n{numbered_in}{lookahead}"
             )
-            est_toks = max(720, sum(len(x) for x in b_ancs) * 2 + len(b_srcs) * 24 + 260)
-            raw_out = run_prompt_fn(sys_msg, user_msg, min(3200, est_toks))
+            est_toks = max(720, sum(len(x) for x in b_ancs) * 2 + len(b_srcs) * 26 + 300)
+            raw_out = run_prompt_fn(sys_msg, user_msg, min(6400, est_toks))
 
             parsed_map: dict[int, str] = {}
             for ln in raw_out.splitlines():
@@ -1342,6 +1407,11 @@ def translate_cinema_lines_with_roles(
                     json.dump({"texts": final_texts}, qf, ensure_ascii=False)
             except Exception:
                 pass
+            if progress_cb is not None:
+                try:
+                    progress_cb(end_idx, total_lines)
+                except Exception:
+                    pass
 
         if progress_cb is not None:
             try:
@@ -1355,10 +1425,20 @@ def translate_cinema_lines_with_roles(
         mdl_lbl = (ai_model or ("gemini-3.8-flash" if prov_clean == "gemini" else ("deepseek-chat" if prov_clean == "deepseek" else "gpt-4o-mini"))).strip()
         if prov_clean == "gemini" and mdl_lbl in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
             mdl_lbl = "gemini-3.8-flash"
+        cloud_batch_sz = 55 if prov_clean == "gemini" else 36
         return _execute_director_pipeline(
-            run_prompt_fn=lambda s_m, u_m, mt: _run_cloud_llm_prompt(prov_clean, ai_api_key, mdl_lbl, s_m, u_m, max_tokens=mt),
+            run_prompt_fn=lambda s_m, u_m, mt: _run_cloud_llm_prompt(
+                prov_clean,
+                ai_api_key,
+                mdl_lbl,
+                s_m,
+                u_m,
+                max_tokens=mt,
+                my_job_gen=my_job_gen,
+                status_cb=status_cb,
+            ),
             engine_sig=f"cloud:{prov_clean}:{mdl_lbl}",
-            batch_size=18,
+            batch_size=cloud_batch_sz,
         )
 
     # Route 2: Built-in Pro Local AI Director (Qwen3-8B-4bit Fast Pro default, or Qwen3-14B-4bit when explicitly chosen!)

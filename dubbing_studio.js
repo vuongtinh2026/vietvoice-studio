@@ -525,19 +525,26 @@
           if (window.VoiceVietQuota && typeof window.VoiceVietQuota.syncFromHeaders === 'function') {
             try { window.VoiceVietQuota.syncFromHeaders(pr.headers); } catch {}
           }
+          setDubProgress(true, `${liveMsg} (${formatElapsedTimer(sec)})`, maxPct);
           return jd.data || {};
         }
 
         const pd = jd.progress || {};
-        if (pd && pd.active) {
+        const pdUpdatedMs = typeof pd.updatedAt === 'number' ? pd.updatedAt * 1000 : 0;
+        const isFreshProgress = pd && pd.active && (!pdUpdatedMs || pdUpdatedMs >= (t0 - 3000));
+        if (isFreshProgress) {
           const msgCandidate = isVi ? pd.vi : pd.en;
           if (msgCandidate) liveMsg = msgCandidate;
           if (typeof pd.pct === 'number' && pd.pct >= minPct && pd.pct <= maxPct) {
-            livePct = Math.max(livePct, pd.pct);
+            // Always reflect REAL backend progress (never jump to maxPct until job is actually done!)
+            livePct = Math.max(livePct, Math.min(maxPct - 1, pd.pct));
           }
         }
-        const fallbackPct = Math.min(maxPct, Math.max(livePct, minPct + Math.floor(sec * 0.25)));
-        setDubProgress(true, `${liveMsg} (${formatElapsedTimer(sec)})`, fallbackPct);
+        // Only apply a tiny +1..+3% initial heartbeat if no backend pct arrived yet — NEVER fake-race to 66%!
+        const shownPct = livePct > minPct
+          ? livePct
+          : Math.min(minPct + 3, minPct + Math.floor(sec / 4));
+        setDubProgress(true, `${liveMsg} (${formatElapsedTimer(sec)})`, shownPct);
       } catch (err) {
         if (err && /Lỗi|Tác vụ|Đã dừng|cancelled|Không tìm thấy|vượt quá|hết hạn|HTTP 403/i.test(String(err.message || ''))) {
           throw err;

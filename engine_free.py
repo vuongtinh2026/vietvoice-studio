@@ -1281,6 +1281,12 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
             if self.path == "/dub/youtube-transcribe-translate":
                 data = self._read_json()
                 cinema_translator.cancel_active_translations()
+                media_dubber.set_dub_live_progress(
+                    "🎬 Đang khởi tạo tải link video & nhận diện lời thoại...",
+                    "🎬 Starting online video download & transcription...",
+                    16,
+                    active=True,
+                )
                 yt_url = str(data.get("url", "")).strip()
                 dl_mode = str(data.get("downloadMode", "video")).strip() or "video"
                 out_dir = str(data.get("outDir", "/tmp/voxly_dub_sessions")).strip() or "/tmp/voxly_dub_sessions"
@@ -1291,22 +1297,25 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 ai_model = str(data.get("aiModel", "")).strip()
                 multi_voice_cast = False
 
-                dl_info = media_dubber.download_online_video_url(
-                    raw_url=yt_url,
-                    out_dir=out_dir,
-                    download_mode=dl_mode,
-                    ffmpeg_bin=FFMPEG_BIN,
-                )
-                tr_info = media_dubber.transcribe_and_translate_media(
-                    media_path=dl_info["mediaPath"],
-                    source_lang=source_lang,
-                    target_lang=target_lang,
-                    ffmpeg_bin=FFMPEG_BIN,
-                    ai_provider=ai_provider,
-                    ai_api_key=ai_api_key,
-                    ai_model=ai_model,
-                    multi_voice_cast=multi_voice_cast,
-                )
+                try:
+                    dl_info = media_dubber.download_online_video_url(
+                        raw_url=yt_url,
+                        out_dir=out_dir,
+                        download_mode=dl_mode,
+                        ffmpeg_bin=FFMPEG_BIN,
+                    )
+                    tr_info = media_dubber.transcribe_and_translate_media(
+                        media_path=dl_info["mediaPath"],
+                        source_lang=source_lang,
+                        target_lang=target_lang,
+                        ffmpeg_bin=FFMPEG_BIN,
+                        ai_provider=ai_provider,
+                        ai_api_key=ai_api_key,
+                        ai_model=ai_model,
+                        multi_voice_cast=multi_voice_cast,
+                    )
+                finally:
+                    media_dubber.set_dub_live_progress("", "", 0, active=False)
                 merged = {
                     **tr_info,
                     "mediaPath": dl_info["mediaPath"],
@@ -1321,8 +1330,15 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
             if self.path == "/dub/transcribe-translate":
                 data = self._read_json()
                 cinema_translator.cancel_active_translations()
+                media_dubber.set_dub_live_progress(
+                    "🎙️ Đang chuẩn bị nhận diện lời thoại & biên dịch thuyết minh...",
+                    "🎙️ Preparing transcription & narration translation...",
+                    16,
+                    active=True,
+                )
                 media_path = str(data.get("mediaPath", "")).strip()
                 if not media_path or not os.path.exists(media_path):
+                    media_dubber.set_dub_live_progress("", "", 0, active=False)
                     raise ValueError("Không tìm thấy file âm thanh/video cần dịch.")
                 source_lang = str(data.get("sourceLang", "auto")).strip() or "auto"
                 target_lang = str(data.get("targetLang", "vi")).strip() or "vi"
@@ -1330,16 +1346,19 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 ai_api_key = str(data.get("aiApiKey", "")).strip()
                 ai_model = str(data.get("aiModel", "")).strip()
                 multi_voice_cast = False
-                res_obj = media_dubber.transcribe_and_translate_media(
-                    media_path=media_path,
-                    source_lang=source_lang,
-                    target_lang=target_lang,
-                    ffmpeg_bin=FFMPEG_BIN,
-                    ai_provider=ai_provider,
-                    ai_api_key=ai_api_key,
-                    ai_model=ai_model,
-                    multi_voice_cast=multi_voice_cast,
-                )
+                try:
+                    res_obj = media_dubber.transcribe_and_translate_media(
+                        media_path=media_path,
+                        source_lang=source_lang,
+                        target_lang=target_lang,
+                        ffmpeg_bin=FFMPEG_BIN,
+                        ai_provider=ai_provider,
+                        ai_api_key=ai_api_key,
+                        ai_model=ai_model,
+                        multi_voice_cast=multi_voice_cast,
+                    )
+                finally:
+                    media_dubber.set_dub_live_progress("", "", 0, active=False)
                 self._send_json(200, res_obj)
                 return
 
@@ -1493,6 +1512,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                     if (multi_voice_cast and len(cast_roles_disp) >= 2)
                     else v_info.get("name", voice_id)
                 )
+                media_dubber.set_dub_live_progress("", "", 0, active=False)
                 self._send_json(
                     200,
                     {
