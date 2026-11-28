@@ -613,6 +613,79 @@ def _run_mlx_prompt(model, tokenizer, sampler, sys_msg: str, user_msg: str, max_
     return cleaned.strip()
 
 
+_GEMINI_RESOLVED_MODEL_CACHE: dict[tuple[str, str], tuple[str, str]] = {}
+_GEMINI_DISCOVERED_MODELS_CACHE: dict[str, list[str]] = {}
+
+
+def _discover_live_gemini_models(api_key: str, want_pro: bool = False) -> list[str]:
+    """
+    Query Google's live /v1beta/models endpoint using the user's own API key so
+    deprecated model IDs (e.g. gemini-2.5-flash -> gemini-3.8-flash) auto-heal
+    without ever breaking with HTTP 404.
+    """
+    key_fp = hashlib.sha256(api_key.encode("utf-8", errors="ignore")).hexdigest()[:16]
+    raw_names = _GEMINI_DISCOVERED_MODELS_CACHE.get(key_fp)
+    if raw_names is None:
+        raw_names = []
+        try:
+            req = urllib.request.Request(
+                "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100",
+                method="GET",
+                headers={"x-goog-api-key": api_key},
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            for item in payload.get("models") or []:
+                methods = item.get("supportedGenerationMethods") or []
+                if "generateContent" not in methods:
+                    continue
+                name = str(item.get("name") or "").strip()
+                if name.startswith("models/"):
+                    name = name[len("models/"):]
+                low = name.lower()
+                if not low.startswith("gemini-"):
+                    continue
+                if any(
+                    bad in low
+                    for bad in (
+                        "embedding",
+                        "tts",
+                        "image",
+                        "vision",
+                        "aqa",
+                        "audio",
+                        "live",
+                        "veo",
+                        "imagen",
+                        "robotics",
+                        "computer-use",
+                        "learnlm",
+                        "gemma",
+                        "cyber",
+                    )
+                ):
+                    continue
+                raw_names.append(name)
+        except Exception as disc_e:
+            print(f"[Gemini Auto-Discover] ListModels skipped: {disc_e}", flush=True)
+        _GEMINI_DISCOVERED_MODELS_CACHE[key_fp] = raw_names
+
+    def _model_rank(m_name: str) -> tuple[int, int, int, int, int]:
+        low = m_name.lower()
+        is_pro = 1 if "pro" in low else 0
+        is_flash = 1 if "flash" in low else 0
+        tier_match = is_pro if want_pro else is_flash
+        ver_m = re.search(r"gemini-(\d+)(?:\.(\d+))?", low)
+        maj = int(ver_m.group(1)) if ver_m else 0
+        minor = int(ver_m.group(2) or 0) if ver_m else 0
+        is_stable = 0 if any(t in low for t in ("preview", "exp", "experimental", "lite", "001", "002")) else 1
+        is_non_lite = 0 if "lite" in low else 1
+        return (tier_match, maj, minor, is_non_lite, is_stable)
+
+    ranked = sorted(dict.fromkeys(raw_names), key=_model_rank, reverse=True)
+    return ranked[:6]
+
+
 def _run_cloud_llm_prompt(
     provider: str,
     api_key: str,
@@ -623,7 +696,7 @@ def _run_cloud_llm_prompt(
 ) -> str:
     """
     Pure-stdlib HTTPS caller for Pro Cloud AI Cinema Directors:
-      - gemini   (Google Gemini 2.5 Flash / Gemini 2.5 Pro)
+      - gemini   (Google Gemini 3.8 Flash / Latest Pro — with HTTP 404 live model auto-discovery)
       - openai   (OpenAI GPT-4o / GPT-4o-mini)
       - deepseek (DeepSeek V3 deepseek-chat — top-tier Chinese-Vietnamese screenplay)
     """
@@ -633,34 +706,70 @@ def _run_cloud_llm_prompt(
         raise ValueError("Thiếu API Key cho AI Đám Mây!")
 
     if prov == "gemini":
-        mdl = (model_name or "gemini-2.5-flash").strip()
-        is_vertex_express_key = key.startswith("AQ.")
-        candidate_urls = (
-            [
-                f"https://aiplatform.googleapis.com/v1/publishers/google/models/{mdl}:generateContent",
-                f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent",
-            ]
-            if is_vertex_express_key
-            else [
-                f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent",
-                f"https://aiplatform.googleapis.com/v1/publishers/google/models/{mdl}:generateContent",
-            ]
-        )
+        req_mdl = (model_name or "gemini-3.8-flash").strip()
+        if req_mdl.startswith("models/"):
+            req_mdl = req_mdl[len("models/"):]
+        want_pro = "pro" in req_mdl.lower()
+        key_fp = hashlib.sha256(key.encode("utf-8", errors="ignore")).hexdigest()[:16]
+        cache_key = (key_fp, req_mdl)
+
+        # Build prioritized (endpoint_template, model_id) queue.
+        # Both AIza... and Google AI Studio AQ.Ab... auth keys work natively on generativelanguage.googleapis.com;
+        # aiplatform.googleapis.com stays as fallback for Vertex AI Express keys.
+        gl_tpl = "https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
+        vx_tpl = "https://aiplatform.googleapis.com/v1/publishers/google/models/{m}:generateContent"
+        endpoints = [gl_tpl, vx_tpl]
+
+        initial_models: list[str] = []
+        if req_mdl in ("", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
+            initial_models.extend(["gemini-3.8-flash", "gemini-flash-latest", req_mdl or "gemini-2.5-flash"])
+        elif req_mdl in ("gemini-2.5-pro", "gemini-pro-latest", "gemini-3-pro", "gemini-3.8-pro"):
+            initial_models.extend(["gemini-pro-latest", "gemini-2.5-pro", "gemini-3.8-flash"])
+        else:
+            initial_models.append(req_mdl)
+            if "gemini-3.8-flash" not in initial_models:
+                initial_models.append("gemini-3.8-flash")
+
+        # Generous output budget so Gemini 3.8 Flash thinking tokens never truncate Vietnamese output.
+        gemini_max_out = max(int(max_tokens) * 3, 8192)
         body = json.dumps(
             {
                 "systemInstruction": {"parts": [{"text": sys_msg}]},
                 "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
                 "generationConfig": {
                     "temperature": 0.12,
-                    "maxOutputTokens": max_tokens,
+                    "maxOutputTokens": gemini_max_out,
                 },
             },
             ensure_ascii=False,
         ).encode("utf-8")
+
+        attempt_queue: list[tuple[str, str]] = []
+        cached_pair = _GEMINI_RESOLVED_MODEL_CACHE.get(cache_key)
+        if cached_pair:
+            attempt_queue.append(cached_pair)
+        for m_cand in initial_models:
+            if not m_cand:
+                continue
+            for ep in endpoints:
+                pair = (ep, m_cand)
+                if pair not in attempt_queue:
+                    attempt_queue.append(pair)
+
+        tried_pairs: set[tuple[str, str]] = set()
+        did_live_discover = False
         data = None
         last_err = ""
-        for url in candidate_urls:
-            hit_auth_or_not_found = False
+        idx = 0
+        while idx < len(attempt_queue):
+            ep_tpl, cand_mdl = attempt_queue[idx]
+            idx += 1
+            if (ep_tpl, cand_mdl) in tried_pairs:
+                continue
+            tried_pairs.add((ep_tpl, cand_mdl))
+            url = ep_tpl.format(m=cand_mdl)
+
+            hit_model_or_auth_err = False
             for retry_i in range(4):
                 req = urllib.request.Request(
                     url,
@@ -672,17 +781,41 @@ def _run_cloud_llm_prompt(
                     },
                 )
                 try:
-                    with urllib.request.urlopen(req, timeout=65) as resp:
+                    with urllib.request.urlopen(req, timeout=90) as resp:
                         data = json.loads(resp.read().decode("utf-8"))
+                        _GEMINI_RESOLVED_MODEL_CACHE[cache_key] = (ep_tpl, cand_mdl)
+                        if cand_mdl != req_mdl:
+                            print(f"[Gemini Auto-Resolve] '{req_mdl}' -> '{cand_mdl}' OK", flush=True)
                         break
                 except urllib.error.HTTPError as he:
-                    err_body = he.read().decode("utf-8", errors="ignore")[:240]
+                    err_body = he.read().decode("utf-8", errors="ignore")[:420]
                     last_err = f"HTTP {he.code}: {err_body}"
                     if he.code in (429, 503) and retry_i < 3:
                         time.sleep(3.5 * (retry_i + 1))
                         continue
-                    if he.code in (400, 401, 403, 404):
-                        hit_auth_or_not_found = True
+                    if he.code == 404:
+                        # 1) Parse any replacement model explicitly recommended by Google in the 404 body!
+                        suggested = [m.rstrip(".,;:") for m in re.findall(r"models/([a-zA-Z0-9._-]+)", err_body)]
+                        insert_pos = idx
+                        for sug_m in suggested:
+                            if sug_m and sug_m != cand_mdl and sug_m.lower().startswith("gemini-"):
+                                for ep_s in endpoints:
+                                    p_s = (ep_s, sug_m)
+                                    if p_s not in tried_pairs and p_s not in attempt_queue:
+                                        attempt_queue.insert(insert_pos, p_s)
+                                        insert_pos += 1
+                        # 2) Query live /v1beta/models once to auto-discover every active Gemini model for this key!
+                        if not did_live_discover:
+                            did_live_discover = True
+                            for live_m in _discover_live_gemini_models(key, want_pro=want_pro):
+                                p_l = (gl_tpl, live_m)
+                                if p_l not in tried_pairs and p_l not in attempt_queue:
+                                    attempt_queue.insert(insert_pos, p_l)
+                                    insert_pos += 1
+                        hit_model_or_auth_err = True
+                        break
+                    if he.code in (400, 401, 403):
+                        hit_model_or_auth_err = True
                         break
                     raise RuntimeError(f"Lỗi Gemini API ({last_err})")
                 except Exception as net_e:
@@ -693,7 +826,7 @@ def _run_cloud_llm_prompt(
                     break
             if data is not None:
                 break
-            if not hit_auth_or_not_found:
+            if not hit_model_or_auth_err:
                 break
         if data is None:
             raise RuntimeError(f"Lỗi Gemini API ({last_err}): Vui lòng kiểm tra lại API Key hoặc hạn mức.")
@@ -1217,9 +1350,11 @@ def translate_cinema_lines_with_roles(
                 pass
         return results_txt, results_roles
 
-    # Route 1: Pro Cloud AI Director (Gemini 2.5 Flash/Pro, OpenAI GPT-4o, DeepSeek V3)
+    # Route 1: Pro Cloud AI Director (Gemini 3.8 Flash/Pro, OpenAI GPT-4o, DeepSeek V3)
     if is_vi_target and use_cloud_ai:
-        mdl_lbl = (ai_model or ("gemini-2.5-flash" if prov_clean == "gemini" else ("deepseek-chat" if prov_clean == "deepseek" else "gpt-4o-mini"))).strip()
+        mdl_lbl = (ai_model or ("gemini-3.8-flash" if prov_clean == "gemini" else ("deepseek-chat" if prov_clean == "deepseek" else "gpt-4o-mini"))).strip()
+        if prov_clean == "gemini" and mdl_lbl in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
+            mdl_lbl = "gemini-3.8-flash"
         return _execute_director_pipeline(
             run_prompt_fn=lambda s_m, u_m, mt: _run_cloud_llm_prompt(prov_clean, ai_api_key, mdl_lbl, s_m, u_m, max_tokens=mt),
             engine_sig=f"cloud:{prov_clean}:{mdl_lbl}",

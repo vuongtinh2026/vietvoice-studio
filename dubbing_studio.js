@@ -89,8 +89,8 @@
 
   const CLOUD_AI_MODELS = {
     gemini: [
-      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Nhanh & Cực Chuẩn)' },
-      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Đỉnh cao Điện Ảnh)' }
+      { value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (Mới nhất • Siêu tốc & Cực chuẩn)' },
+      { value: 'gemini-pro-latest', label: 'Gemini Pro Mới Nhất (Biên Kịch Điện Ảnh Cao Cấp)' }
     ],
     deepseek: [
       { value: 'deepseek-chat', label: 'DeepSeek V3 (Trung-Việt Siêu Chuẩn)' }
@@ -123,9 +123,18 @@
     cfgRow.classList.remove('hidden');
     const models = CLOUD_AI_MODELS[prov] || [];
     if (mdlSel) {
-      const savedMdl = (() => { try { return localStorage.getItem(`voxly_dub_ai_model_${prov}`) || ''; } catch { return ''; } })();
+      let savedMdl = (() => { try { return localStorage.getItem(`voxly_dub_ai_model_${prov}`) || ''; } catch { return ''; } })();
+      if (prov === 'gemini') {
+        if (savedMdl === 'gemini-2.5-flash' || savedMdl === 'gemini-2.0-flash') savedMdl = 'gemini-3.8-flash';
+        if (savedMdl === 'gemini-2.5-pro') savedMdl = 'gemini-pro-latest';
+      }
       mdlSel.innerHTML = models.map(m => `<option value="${m.value}">${esc(m.label)}</option>`).join('');
-      if (savedMdl && models.some(m => m.value === savedMdl)) mdlSel.value = savedMdl;
+      if (savedMdl && models.some(m => m.value === savedMdl)) {
+        mdlSel.value = savedMdl;
+      } else if (models.length) {
+        mdlSel.value = models[0].value;
+      }
+      try { localStorage.setItem(`voxly_dub_ai_model_${prov}`, mdlSel.value); } catch {}
     }
     if (keyIn) {
       const savedKey = (() => { try { return localStorage.getItem(`voxly_dub_ai_key_${prov}`) || ''; } catch { return ''; } })();
