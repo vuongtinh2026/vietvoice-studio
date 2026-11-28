@@ -241,6 +241,59 @@ _ZH_EXACT_SHORT_UTTERANCES_VI: dict[str, str] = {
     "障眼法吗": "Ảo ảnh đánh lừa sao?",
 }
 
+# Japanese colloquial contractions expanded ONLY for NMT semantic anchor (original Japanese stays intact for LLM!)
+_JA_SPOKEN_NMT_EXPAND: list[tuple[str, str]] = [
+    ("もう違うってば", "いいえ、そうではないよ"),
+    ("もう違うって", "いいえ、そうではないよ"),
+    ("違うってば", "そうではないよ"),
+    ("違うって", "そうではないよ"),
+    ("もう聞いてないんだから", "本当に私の話を聞いていないね"),
+    ("聞いてないんだから", "話を聞いていないね"),
+    ("いいじゃん", "すごくいいね"),
+    ("何言っとってんの", "何を言っているの"),
+    ("何言ってんの", "何を言っているの"),
+    ("なんて言ってん", "何と言っているの"),
+    ("チャラくないってば", "全然軽薄じゃないよ"),
+    ("チャラい", "軽薄な"),
+    ("サークル", "クラブ"),
+    ("行ってきまーす", "行ってきます"),
+    ("スノボ", "スノーボード"),
+]
+
+# Exact unambiguous short Japanese utterances
+_JA_EXACT_SHORT_UTTERANCES_VI: dict[str, str] = {
+    "え": "Hả?",
+    "えっ": "Hả?",
+    "うん": "Ừm.",
+    "はい": "Vâng.",
+    "いいえ": "Không.",
+    "ごめん": "Xin lỗi nhé.",
+    "ごめんね": "Xin lỗi nhé.",
+    "ごめんごめん": "Xin lỗi, xin lỗi.",
+    "ありがとう": "Cảm ơn.",
+    "ありがとうございます": "Cảm ơn rất nhiều.",
+    "ちょっと待って": "Đợi một chút đã!",
+    "待って": "Đợi đã!",
+    "やめて": "Dừng lại đi!",
+    "大丈夫": "Không sao đâu.",
+    "なるほど": "Hóa ra là vậy.",
+    "そうなんだ": "Ra là vậy à.",
+    "マジで": "Thật sao?",
+    "嘘でしょ": "Đùa chắc?",
+    "そうだよね": "Đúng vậy nhỉ.",
+    "そうそう": "Đúng rồi, đúng rồi.",
+}
+
+
+def _expand_ja_spoken_for_nmt(line: str) -> str:
+    # Deduplicate Japanese repetition stutter before NMT (e.g. 'やばいやばいやばい' -> 'やばい')
+    s = re.sub(r"([\u3040-\u30ff\u4e00-\u9fff]{2,8})(?:[、，,\s]*\1){2,}", r"\1", line)
+    for k, v in _JA_SPOKEN_NMT_EXPAND:
+        if k in s:
+            s = s.replace(k, v)
+    return s
+
+
 # Post-cleanup fixes (NO blind 'bạn -> ngươi' EVER!)
 _VI_POST_TERM_FIXES: list[tuple[str, str]] = [
     (r"\banh\s+ngươi\b", "anh bạn"),
@@ -345,7 +398,10 @@ def find_foreign_leaks_in_vi(text: str, genre: str = "modern_cn", is_cjk_source:
             continue
         if genre != "ancient_cn" and wl in _MODERN_LOANWORDS_ALLOW:
             continue
-        if is_cjk_source and wl in _PINYIN_LEAK_TOKENS:
+        # In Japanese dramas, capitalized romanized Japanese character/place names (Takeda, Momo, Nomu, Tokyo...) are valid!
+        if genre == "ja_cinema" and w[0].isupper() and re.fullmatch(r"[A-Za-z]{2,11}", w):
+            continue
+        if is_cjk_source and genre != "ja_cinema" and wl in _PINYIN_LEAK_TOKENS:
             if wl == "su" and not w[0].isupper():
                 continue
             leaks.append(w)
@@ -387,7 +443,9 @@ def _collapse_word_loops(text: str) -> str:
     return re.sub(r"\s{2,}", " ", s).strip()
 
 
-def detect_script_genre(lines: list[str], is_zh_source: bool) -> str:
+def detect_script_genre(lines: list[str], is_zh_source: bool, is_ja_source: bool = False) -> str:
+    if is_ja_source:
+        return "ja_cinema"
     if not is_zh_source:
         return "intl_cinema"
     joined = "\n".join(lines)
@@ -733,11 +791,27 @@ def _build_narration_system_prompt(genre: str, char_bible: str) -> str:
             "TUYỆT ĐỐI CẤM 'ngươi', 'ta', 'lão phu', 'tại hạ', 'tớ', 'mình', 'các bạn' cho người hiện đại. "
             "Từ chuẩn: 宿主=ký chủ (KHÔNG dịch chủ nhà), 系统=hệ thống, 签到=điểm danh, 绑定=liên kết, 江城=Giang Thành, 魔都=Ma Đô, 别吵了=đừng làm ồn nữa."
         )
+    elif genre == "ja_cinema":
+        return (
+            "Bạn là Biên dịch viên Thuyết minh phim Nhật Bản sang Tiếng Việt chuẩn xác từng từ.\n"
+            f"{bible_section}\n"
+            "NHIỆM VỤ: Dịch TRỰC TIẾP từ câu `Gốc` tiếng Nhật sang lời THUYẾT MINH Tiếng Việt tự nhiên, sát từng chữ (chỉ tham khảo `Gợi ý` để kiểm tra danh từ/số đếm — TUYỆT ĐỐI KHÔNG chép nguyên văn kiểu dịch máy khô cứng của Google Dịch!).\n"
+            "QUY TẮC BẮT BUỘC CHO TIẾNG NHẬT:\n"
+            "1. DỊCH CHUẨN KHẨU NGỮ NHẬT (CẤM dịch bậy theo tiếng Anh):\n"
+            "   - `同窓会` = buổi họp lớp (KHÔNG dịch 'hội đồng lớp'); `サークル` = câu lạc bộ (KHÔNG dịch 'vòng tròn'!);\n"
+            "   - `もう違うって / 違うってば` = Không phải đâu! / Đã bảo không phải rồi mà! (KHÔNG dịch 'không phải trường hợp' hay 'không còn giống nhau'!);\n"
+            "   - `もう聞いてないんだから` = Thật là, chẳng chịu nghe gì cả! (KHÔNG dịch 'chưa nhận tin tức' hay 'bởi vì bạn...');\n"
+            "   - `いいじゃん` = Hay quá còn gì! / Tuyệt quá! / Được đấy chứ!;\n"
+            "   - `行ってきます / 行ってきまーす` = Em đi đây! / Tôi đi đây! (KHÔNG dịch 'tôi sẽ đi'!);\n"
+            "   - `やばい` = Chết thật! / Nguy to rồi! / Đỉnh quá! (tùy cảnh, KHÔNG lặp 'nguy hiểm nguy hiểm');\n"
+            "   - `スノボ` = trượt tuyết; `チャラい` = ăn chơi/màu mè; `合宿` = chuyến dã ngoại/tập huấn; `旦那さん` = chồng; `美味しそう` = trông ngon quá; `〜だっけ` = ...phải không nhỉ?; `〜ってば` = đã bảo... rồi mà!.\n"
+            "2. XƯNG HÔ TỰ NHIÊN THEO MẠCH CẢNH: Đọc kỹ các câu trước & sau để dùng đúng `anh - em` (vợ chồng/người yêu), `cậu - tôi` / `anh - em` (bạn bè) — TUYỆT ĐỐI KHÔNG dùng 'bạn - tôi' cứng nhắc hay 'ngươi'/'ta', bỏ hậu tố `-san/-chan/-kun` (Momo-chan -> Momo, Takeda-san -> anh Takeda). Giữ đúng chủ ngữ (AI đang nói với AI), KHÔNG tự bịa chủ ngữ sai!\n"
+            "3. THUẦN VIỆT 100%, ĐỊNH DẠNG DUY NHẤT: `[1] Câu thuyết minh Tiếng Việt` ... `[N] Câu thuyết minh Tiếng Việt`. Không nhãn vai, không giải thích thêm."
+        )
     else:
         tone_line = (
-            "Thể loại Phim Quốc tế (Nhật/Hàn/Âu Mỹ): thuyết minh Tiếng Việt đời thường tự nhiên, sát nghĩa từng câu thoại, "
-            "đúng quan hệ (vợ-chồng: anh/em, bạn bè: cậu/tôi hoặc anh/em, cha mẹ-con). CẤM 'ngươi', 'ta'. "
-            "Bỏ hậu tố '-san/-chan/-kun' (VD: Momo-chan -> Momo, Takeda-san -> anh Takeda), dịch chuẩn thành ngữ Nhật/Anh (同窓会=họp lớp, 行ってきます=em đi đây, やばい=chết thật/nguy to rồi)."
+            "Thể loại Phim Quốc tế (Hàn/Âu Mỹ): thuyết minh Tiếng Việt đời thường tự nhiên, sát nghĩa từng câu thoại, "
+            "đúng quan hệ (vợ-chồng: anh/em, bạn bè: cậu/tôi hoặc anh/em, cha mẹ-con). CẤM 'ngươi', 'ta'."
         )
 
     return (
@@ -790,14 +864,15 @@ def translate_cinema_lines_with_roles(
     sl_lower = str(source_lang or "auto").lower()
     has_ja_kana = any(re.search(r"[\u3040-\u30ff]", x) for x in cleaned_inputs)
     has_ko_hangul = any(re.search(r"[\uac00-\ud7af]", x) for x in cleaned_inputs)
+    is_ja_source = sl_lower.startswith("ja") or has_ja_kana
     is_zh_source = sl_lower.startswith("zh") or (
         not sl_lower.startswith(("ja", "ko", "en", "vi", "fr", "de", "es", "ru", "th"))
         and not has_ja_kana
         and not has_ko_hangul
         and any(re.search(r"[\u4e00-\u9fff]", x) for x in cleaned_inputs)
     )
-    is_cjk_source = is_zh_source or sl_lower.startswith(("ja", "ko")) or has_ja_kana or has_ko_hangul
-    genre = detect_script_genre(cleaned_inputs, is_zh_source=is_zh_source)
+    is_cjk_source = is_zh_source or is_ja_source or sl_lower.startswith("ko") or has_ko_hangul
+    genre = detect_script_genre(cleaned_inputs, is_zh_source=is_zh_source, is_ja_source=is_ja_source)
 
     if is_zh_source:
         sl_query = "zh-CN"
@@ -821,9 +896,11 @@ def translate_cinema_lines_with_roles(
     if nmt_fallback_fn is not None:
         pending_nmt: list[int] = []
         for idx, src_line in enumerate(cleaned_inputs):
-            bare = src_line.strip().rstrip("。！？!?.，, ")
+            bare = src_line.strip().rstrip("。！？!?.，,、？ ")
             if is_zh_source and is_vi_target and bare in _ZH_EXACT_SHORT_UTTERANCES_VI:
                 nmt_anchors[idx] = _ZH_EXACT_SHORT_UTTERANCES_VI[bare]
+            elif is_ja_source and is_vi_target and bare in _JA_EXACT_SHORT_UTTERANCES_VI:
+                nmt_anchors[idx] = _JA_EXACT_SHORT_UTTERANCES_VI[bare]
             else:
                 pending_nmt.append(idx)
 
@@ -843,11 +920,16 @@ def translate_cinema_lines_with_roles(
         nmt_batches = [pending_nmt[i : i + 16] for i in range(0, len(pending_nmt), 16)]
 
         def _run_nmt_batch(idx_list: list[int]) -> list[tuple[int, str]]:
-            q_lines = [_expand_pure_zh_semantics(cleaned_inputs[i]) if is_zh_source else cleaned_inputs[i] for i in idx_list]
+            q_lines = [
+                _expand_pure_zh_semantics(cleaned_inputs[i])
+                if is_zh_source
+                else (_expand_ja_spoken_for_nmt(cleaned_inputs[i]) if is_ja_source else cleaned_inputs[i])
+                for i in idx_list
+            ]
             sig = hashlib.sha256(
-                json.dumps({"v": 10, "sl": sl_query, "tl": target_lang, "g": genre, "q": q_lines}, ensure_ascii=False).encode("utf-8")
+                json.dumps({"v": 11, "sl": sl_query, "tl": target_lang, "g": genre, "q": q_lines}, ensure_ascii=False).encode("utf-8")
             ).hexdigest()[:20]
-            c_path = os.path.join(cache_dir, f"tr_nmt_v10_{sig}.json")
+            c_path = os.path.join(cache_dir, f"tr_nmt_v11_{sig}.json")
             if os.path.exists(c_path):
                 try:
                     cached = json.load(open(c_path, "r", encoding="utf-8"))
@@ -938,7 +1020,7 @@ def translate_cinema_lines_with_roles(
             q_sig = hashlib.sha256(
                 json.dumps(
                     {
-                        "v": 15,
+                        "v": 17,
                         "eng": engine_sig,
                         "g": genre,
                         "bh": bible_hash,
@@ -949,7 +1031,7 @@ def translate_cinema_lines_with_roles(
                     ensure_ascii=False,
                 ).encode("utf-8")
             ).hexdigest()[:20]
-            q_cache_file = os.path.join(cache_dir, f"tr_nar_v15_{q_sig}.json")
+            q_cache_file = os.path.join(cache_dir, f"tr_nar_v17_{q_sig}.json")
 
             if os.path.exists(q_cache_file):
                 try:
@@ -979,8 +1061,9 @@ def translate_cinema_lines_with_roles(
             if end_idx < total_lines:
                 lookahead = f'\n\n(Câu tiếp theo để nắm ngữ cảnh, KHÔNG dịch: "{cleaned_inputs[end_idx]}")'
 
+            ref_lbl = "Gợi ý" if genre == "ja_cinema" else "Nghĩa sát"
             numbered_in = "\n".join(
-                f"[{k + 1}] Gốc: {b_srcs[k]}\n    Nghĩa sát: {b_ancs[k]}"
+                f"[{k + 1}] Gốc: {b_srcs[k]}\n    {ref_lbl}: {b_ancs[k]}"
                 for k in range(len(b_srcs))
             )
             user_msg = (
@@ -1031,8 +1114,15 @@ def translate_cinema_lines_with_roles(
                         chosen = re.sub(r"\b1\s*tỷ\b", "100 triệu", chosen, flags=re.IGNORECASE)
                     if "宿主" in b_srcs[k] and re.search(r"\bchủ\s+nhà\b", chosen, flags=re.IGNORECASE):
                         chosen = re.sub(r"\bchủ\s+nhà\b", "ký chủ", chosen, flags=re.IGNORECASE)
-                    if chosen and chosen[0].islower():
-                        chosen = chosen[0].upper() + chosen[1:]
+                if is_ja_source:
+                    if "サークル" in b_srcs[k] and re.search(r"\bvòng\s+tròn\b", chosen, flags=re.IGNORECASE):
+                        chosen = re.sub(r"\bvòng\s+tròn\b", "câu lạc bộ", chosen, flags=re.IGNORECASE)
+                    if re.search(r"(?:もう)?違うって", b_srcs[k]) and re.search(r"trường\s+hợp|giống\s+nhau", chosen, flags=re.IGNORECASE):
+                        chosen = "Đã bảo không phải rồi mà!"
+                    if "行ってきます" in b_srcs[k] and re.search(r"\btôi\s+sẽ\s+đi\b", chosen, flags=re.IGNORECASE):
+                        chosen = re.sub(r"\btôi\s+sẽ\s+đi\b", "tôi đi đây", chosen, flags=re.IGNORECASE)
+                if chosen and chosen[0].islower():
+                    chosen = chosen[0].upper() + chosen[1:]
 
                 # Repair ANY foreign leak OR archaic 'ngươi' in modern_cn
                 if genre == "modern_cn" and _ARCHAIC_NGUOI_RE.search(chosen):
