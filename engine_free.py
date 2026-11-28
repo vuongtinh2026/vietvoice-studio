@@ -1295,6 +1295,9 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 ai_provider = str(data.get("aiProvider", "local")).strip() or "local"
                 ai_api_key = str(data.get("aiApiKey", "")).strip()
                 ai_model = str(data.get("aiModel", "")).strip()
+                start_sec = float(data.get("startSec", 0.0) or 0.0)
+                end_sec = float(data.get("endSec", 0.0) or 0.0)
+                range_mode = str(data.get("rangeMode", "trim") or "trim").strip()
                 multi_voice_cast = False
 
                 try:
@@ -1313,12 +1316,15 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                         ai_api_key=ai_api_key,
                         ai_model=ai_model,
                         multi_voice_cast=multi_voice_cast,
+                        start_sec=start_sec,
+                        end_sec=end_sec,
+                        range_mode=range_mode,
                     )
                 finally:
                     media_dubber.set_dub_live_progress("", "", 0, active=False)
                 merged = {
                     **tr_info,
-                    "mediaPath": dl_info["mediaPath"],
+                    "mediaPath": tr_info.get("effectiveMediaPath") or dl_info["mediaPath"],
                     "title": dl_info.get("title", "YouTube Video"),
                     "uploader": dl_info.get("uploader", ""),
                     "thumbnail": dl_info.get("thumbnail", ""),
@@ -1345,6 +1351,9 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 ai_provider = str(data.get("aiProvider", "local")).strip() or "local"
                 ai_api_key = str(data.get("aiApiKey", "")).strip()
                 ai_model = str(data.get("aiModel", "")).strip()
+                start_sec = float(data.get("startSec", 0.0) or 0.0)
+                end_sec = float(data.get("endSec", 0.0) or 0.0)
+                range_mode = str(data.get("rangeMode", "trim") or "trim").strip()
                 multi_voice_cast = False
                 try:
                     res_obj = media_dubber.transcribe_and_translate_media(
@@ -1356,6 +1365,9 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                         ai_api_key=ai_api_key,
                         ai_model=ai_model,
                         multi_voice_cast=multi_voice_cast,
+                        start_sec=start_sec,
+                        end_sec=end_sec,
+                        range_mode=range_mode,
                     )
                 finally:
                     media_dubber.set_dub_live_progress("", "", 0, active=False)
@@ -1400,6 +1412,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 auto_fit = bool(data.get("autoFitTiming", True))
                 orig_volume = float(data.get("origVolume", 0.40))
                 smart_ducking = bool(data.get("smartDucking", True))
+                narration_window = data.get("narrationWindow")
                 out_dir = str(data.get("outDir", "/tmp/voxly_dub_sessions")).strip() or "/tmp/voxly_dub_sessions"
                 out_id = str(data.get("outId", f"out_{int(time.time() * 1000)}")).strip()
                 os.makedirs(out_dir, exist_ok=True)
@@ -1495,6 +1508,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                     orig_volume=orig_volume,
                     smart_ducking=smart_ducking,
                     ffmpeg_bin=FFMPEG_BIN,
+                    narration_window=narration_window,
                 )
 
                 v_info = (
@@ -1540,6 +1554,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                 is_video = bool(data.get("isVideo", False))
                 orig_volume = float(data.get("origVolume", 0.40))
                 smart_ducking = bool(data.get("smartDucking", True))
+                narration_window = data.get("narrationWindow")
                 out_dir = str(data.get("outDir", "/tmp/voxly_dub_sessions")).strip() or "/tmp/voxly_dub_sessions"
                 out_id = str(data.get("outId", f"remix_{int(time.time() * 1000)}")).strip()
                 os.makedirs(out_dir, exist_ok=True)
@@ -1559,6 +1574,7 @@ class EngineDaemonHandler(BaseHTTPRequestHandler):
                     orig_volume=orig_volume,
                     smart_ducking=smart_ducking,
                     ffmpeg_bin=FFMPEG_BIN,
+                    narration_window=narration_window,
                 )
                 self._send_json(
                     200,

@@ -935,6 +935,66 @@
               </button>
             </div>
 
+            <!-- Custom Time Range Selection (Start -> End) for Selective Video Narration -->
+            <div id="dubTimeRangeBox" class="p-3 rounded-xl bg-[#050811]/90 border border-amber-400/35 flex flex-col gap-2.5">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <label class="text-xs font-bold text-amber-200 flex items-center gap-1.5">
+                  <i class="fa-solid fa-scissors text-amber-400"></i>
+                  <span class="lang-only-vi">Chọn Khoảng Thời Gian Cần Thuyết Minh (Tùy chọn — bỏ trống để dịch cả video):</span>
+                  <span class="lang-only-global hidden">Select Narration Time Range (Optional — leave blank for full video):</span>
+                </label>
+                <div class="flex items-center gap-1.5">
+                  <span id="dubTimeRangeBadge" class="px-2.5 py-0.5 rounded-lg bg-amber-500/15 border border-amber-400/40 text-amber-200 font-mono text-[11px] font-bold">Toàn bộ video</span>
+                  <button type="button" id="btnDubResetRange" class="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-[10px] font-bold text-slate-300 cursor-pointer transition">
+                    <i class="fa-solid fa-rotate-left mr-0.5"></i><span class="lang-only-vi">Toàn bộ</span><span class="lang-only-global hidden">Full</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                <div class="sm:col-span-3 flex flex-col gap-1">
+                  <label for="dubStartTimeInput" class="text-[10px] font-bold text-slate-400 uppercase">
+                    <span class="lang-only-vi">Bắt đầu (mm:ss hoặc hh:mm:ss)</span>
+                    <span class="lang-only-global hidden">Start Time (mm:ss / hh:mm:ss)</span>
+                  </label>
+                  <div class="flex items-center gap-1">
+                    <input type="text" id="dubStartTimeInput" autocomplete="off" placeholder="00:00" class="w-full min-w-0 bg-slate-950 border border-amber-400/35 rounded-lg px-2.5 py-1.5 text-xs font-mono text-amber-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-400" />
+                    <button type="button" id="btnDubCaptureStart" class="px-2 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-200 text-[10px] font-bold shrink-0 cursor-pointer transition" title="Lấy mốc thời gian video gốc đang phát">
+                      <i class="fa-solid fa-location-crosshairs"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="sm:col-span-3 flex flex-col gap-1">
+                  <label for="dubEndTimeInput" class="text-[10px] font-bold text-slate-400 uppercase">
+                    <span class="lang-only-vi">Kết thúc (mm:ss hoặc hh:mm:ss)</span>
+                    <span class="lang-only-global hidden">End Time (mm:ss / hh:mm:ss)</span>
+                  </label>
+                  <div class="flex items-center gap-1">
+                    <input type="text" id="dubEndTimeInput" autocomplete="off" placeholder="Hết video" class="w-full min-w-0 bg-slate-950 border border-amber-400/35 rounded-lg px-2.5 py-1.5 text-xs font-mono text-amber-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-400" />
+                    <button type="button" id="btnDubCaptureEnd" class="px-2 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-amber-200 text-[10px] font-bold shrink-0 cursor-pointer transition" title="Lấy mốc thời gian video gốc đang phát">
+                      <i class="fa-solid fa-location-crosshairs"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="sm:col-span-6 flex flex-col gap-1">
+                  <label for="dubRangeModeSelect" class="text-[10px] font-bold text-slate-400 uppercase">
+                    <span class="lang-only-vi">Chế độ xuất đoạn đã chọn</span>
+                    <span class="lang-only-global hidden">Selected Range Export Mode</span>
+                  </label>
+                  <select id="dubRangeModeSelect" class="w-full bg-slate-950 border border-white/15 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-100 font-semibold focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer">
+                    <option value="trim">✂️ Cắt đúng đoạn đã chọn (Chỉ xuất từ Bắt đầu → Kết thúc)</option>
+                    <option value="keep_full">🎬 Giữ nguyên toàn bộ video gốc (Chỉ thuyết minh trong đoạn chọn)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="text-[10px] text-slate-400">
+                <span class="lang-only-vi">💡 Mẹo: Bạn có thể gõ trực tiếp (VD: <code class="text-amber-300">01:30</code> → <code class="text-amber-300">04:15</code> hoặc <code class="text-amber-300">1:05:00</code>) hoặc bấm nút <i class="fa-solid fa-location-crosshairs text-amber-300"></i> để lấy ngay đúng giây đang phát trên video gốc!</span>
+                <span class="lang-only-global hidden">💡 Tip: Type directly (e.g. <code class="text-amber-300">01:30</code> → <code class="text-amber-300">04:15</code>) or click <i class="fa-solid fa-location-crosshairs text-amber-300"></i> to capture the exact playback timestamp from the source preview!</span>
+              </div>
+            </div>
+
             <!-- Interactive Original Audio Volume Slider (0% - 100%) -->
             <div class="p-3 rounded-xl bg-[#050811]/90 border border-white/10 flex flex-col gap-2.5">
               <div class="flex flex-wrap items-center justify-between gap-2">
@@ -2786,7 +2846,7 @@ B: [cười] Đúng vậy Huyền... thời gian trôi nhanh thật đấy!"
   <!-- Pro Studio Extensions (Private Vault, 110 Countries, Multi-Speaker Stem Studio, VietQR) -->
   <script src="studio_pro.js?v=9.7"></script>
   <!-- Multilingual Audio & Video AI Narration Studio (MP3 / MP4 / YouTube / Douyin) -->
-  <script src="dubbing_studio.js?v=10.5"></script>
+  <script src="dubbing_studio.js?v=10.6"></script>
   <!-- Option 2 License Key, HWID Lock, Real Order/Bank Checkout & Owner Admin Console -->
   <script src="license_client_ui.js?v=9.7"></script>
 </body>

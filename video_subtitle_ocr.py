@@ -468,13 +468,22 @@ def extract_hard_subtitles(
     ffmpeg_bin: str = "ffmpeg",
     ffprobe_bin: str = "ffprobe",
     progress_cb: Callable[[int, int], None] | None = None,
+    start_sec: float = 0.0,
+    end_sec: float = 0.0,
 ) -> dict:
     """
     Extracts burned-in subtitles across short videos OR multi-hour movies (in 10-min streaming chunks)
     with Dominant Subtitle Y-Band Auto-Locking to eliminate floating channel watermarks!
+    Supports optional `[start_sec, end_sec]` windowing so partial-range narration never scans outside the window.
     """
     ocr_bin = ensure_ocr_binary()
     if not ocr_bin or duration_sec <= 0.4:
+        return {"usable": False, "avgConf": 0.0, "coverageRatio": 0.0, "segments": []}
+
+    scan_start = max(0.0, float(start_sec or 0.0))
+    scan_end = min(duration_sec, float(end_sec)) if (end_sec and float(end_sec) > 0.0) else duration_sec
+    scan_dur = max(0.0, scan_end - scan_start)
+    if scan_dur <= 0.4:
         return {"usable": False, "avgConf": 0.0, "coverageRatio": 0.0, "segments": []}
 
     width, height = _probe_video_dimensions(media_path, ffprobe_bin=ffprobe_bin)
@@ -482,7 +491,7 @@ def extract_hard_subtitles(
     is_zh_hint = (source_lang or "auto").lower() in ("auto", "zh", "zh-cn", "zh-tw")
     lang_csv = _vision_langs_for_source(source_lang)
 
-    fps = 3.5 if duration_sec <= 1200 else 2.5
+    fps = 3.5 if scan_dur <= 1200 else 2.5
     step_sec = 1.0 / fps
 
     # Tighter bottom 22% band on landscape (78%..100%) cuts off channel logos sitting at 70-78%!
@@ -492,8 +501,8 @@ def extract_hard_subtitles(
         vf_filter = f"crop=iw:ih*0.22:0:ih*0.78,fps={fps},scale='min(1024,iw)':-2"
 
     # Quick probe for multi-hour movies (> 20 min): skip immediately if no crisp burned-in subs exist
-    if duration_sec > 1200:
-        probe_start = min(180.0, duration_sec * 0.12)
+    if scan_dur > 1200:
+        probe_start = scan_start + min(180.0, scan_dur * 0.12)
         with tempfile.TemporaryDirectory(prefix="voxly_ocr_probe_") as pdir:
             subprocess.run(
                 [
@@ -520,12 +529,12 @@ def extract_hard_subtitles(
                 return {"usable": False, "avgConf": 0.0, "coverageRatio": 0.0, "segments": []}
 
     chunk_sec = 600.0
-    n_chunks = max(1, int((duration_sec + chunk_sec - 0.01) // chunk_sec))
+    n_chunks = max(1, int((scan_dur + chunk_sec - 0.01) // chunk_sec))
     raw_frames: list[tuple[float, list[dict]]] = []
 
     for c_idx in range(n_chunks):
-        t0 = c_idx * chunk_sec
-        t_len = min(chunk_sec, duration_sec - t0)
+        t0 = scan_start + c_idx * chunk_sec
+        t_len = min(chunk_sec, scan_end - t0)
         if t_len <= 0.2:
             break
         if progress_cb is not None:
@@ -628,7 +637,7 @@ def extract_hard_subtitles(
     avg_conf = sum(s["conf"] for s in segments) / max(1, len(segments))
     first_t = segments[0]["start"]
     last_t = segments[-1]["end"]
-    span_cov = (last_t - first_t) / max(1.0, duration_sec)
+    span_cov = (last_t - first_t) / max(1.0, scan_dur)
 
     usable = bool(avg_conf >= 0.56 and len(segments) >= 2)
     return {

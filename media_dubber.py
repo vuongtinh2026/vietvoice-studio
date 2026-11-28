@@ -171,17 +171,104 @@ def probe_media_info(media_path: str, ffmpeg_bin: str = "ffmpeg") -> dict:
         }
 
 
-def extract_16k_wav(media_path: str, out_wav_path: str, ffmpeg_bin: str = "ffmpeg", timeout_sec: int = 600) -> None:
+def trim_media_clip(
+    media_path: str,
+    out_clip_path: str,
+    start_sec: float,
+    end_sec: float,
+    has_video: bool,
+    ffmpeg_bin: str = "ffmpeg",
+    timeout_sec: int = 900,
+) -> str:
+    """
+    Frame-accurate fast media clipper for user-selected `[start_sec, end_sec]` narration ranges.
+    Uses hardware-accelerated Apple Silicon `h264_videotoolbox` when available (with `libx264` fallback)
+    so cuts never suffer keyframe black-screen drift and sync 100% accurately to the millisecond.
+    """
+    st = max(0.0, float(start_sec or 0.0))
+    en = max(0.0, float(end_sec or 0.0))
+    dur_args = ["-t", f"{max(0.5, en - st):.3f}"] if en > st + 0.05 else []
+    seek_args = ["-ss", f"{st:.3f}"] if st > 0.01 else []
+
+    if has_video:
+        # Try hardware-accelerated macOS VideoToolbox first (10x faster than software H.264!)
+        hw_cmd = [
+            ffmpeg_bin, "-nostdin", "-y",
+            *seek_args,
+            "-i", media_path,
+            *dur_args,
+            "-map", "0:v:0",
+            "-map", "0:a:0?",
+            "-c:v", "h264_videotoolbox", "-q:v", "64", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+            "-movflags", "+faststart",
+            out_clip_path,
+        ]
+        p_hw = subprocess.run(hw_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=max(240, timeout_sec))
+        if p_hw.returncode == 0 and os.path.exists(out_clip_path) and os.path.getsize(out_clip_path) > 1000:
+            return out_clip_path
+
+        sw_cmd = [
+            ffmpeg_bin, "-nostdin", "-y",
+            *seek_args,
+            "-i", media_path,
+            *dur_args,
+            "-map", "0:v:0",
+            "-map", "0:a:0?",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+            "-movflags", "+faststart",
+            out_clip_path,
+        ]
+        p_sw = subprocess.run(sw_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=max(240, timeout_sec))
+        if p_sw.returncode != 0 or not os.path.exists(out_clip_path) or os.path.getsize(out_clip_path) < 1000:
+            err_txt = p_sw.stderr.decode("utf-8", errors="ignore")[-320:]
+            raise RuntimeError(f"Không thể cắt đoạn video đã chọn ({err_txt.strip() or 'FFmpeg error'}).")
+        return out_clip_path
+
+    aud_cmd = [
+        ffmpeg_bin, "-nostdin", "-y",
+        *seek_args,
+        "-i", media_path,
+        *dur_args,
+        "-vn",
+        "-ac", "2", "-ar", "48000",
+        "-c:a", "aac", "-b:a", "192k",
+        out_clip_path,
+    ]
+    p_a = subprocess.run(aud_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=max(180, timeout_sec))
+    if p_a.returncode != 0 or not os.path.exists(out_clip_path) or os.path.getsize(out_clip_path) < 500:
+        err_txt = p_a.stderr.decode("utf-8", errors="ignore")[-320:]
+        raise RuntimeError(f"Không thể cắt đoạn âm thanh đã chọn ({err_txt.strip() or 'FFmpeg error'}).")
+    return out_clip_path
+
+
+def extract_16k_wav(
+    media_path: str,
+    out_wav_path: str,
+    ffmpeg_bin: str = "ffmpeg",
+    timeout_sec: int = 600,
+    start_sec: float = 0.0,
+    end_sec: float = 0.0,
+) -> None:
     """
     Extracts mono 16kHz PCM with broadcast dynamic vocal leveling (`dynaudnorm`) so soft,
     whispered, or indoor conversational Japanese/English/Chinese dialogue (-34 dBFS) is lifted
     clearly into speech recognition range without clipping loud scenes — preventing VAD dropouts!
+    Supports optional `[start_sec, end_sec]` windowing for instant partial-range extraction.
     """
+    st = max(0.0, float(start_sec or 0.0))
+    en = max(0.0, float(end_sec or 0.0))
+    seek_args = ["-ss", f"{st:.3f}"] if st > 0.01 else []
+    dur_args = ["-t", f"{max(0.5, en - st):.3f}"] if en > st + 0.05 else []
+
     cmd_norm = [
         ffmpeg_bin,
         "-nostdin",
         "-y",
+        *seek_args,
         "-i", media_path,
+        *dur_args,
         "-vn",
         "-af", "highpass=f=70,dynaudnorm=f=250:g=21:p=0.88:m=6:s=12",
         "-ac", "1",
@@ -197,7 +284,9 @@ def extract_16k_wav(media_path: str, out_wav_path: str, ffmpeg_bin: str = "ffmpe
         ffmpeg_bin,
         "-nostdin",
         "-y",
+        *seek_args,
         "-i", media_path,
+        *dur_args,
         "-vn",
         "-ac", "1",
         "-ar", "16000",
@@ -1099,10 +1188,17 @@ def _transcribe_audio_precision(audio_f32: np.ndarray, source_lang: str, duratio
     return whisper_segs, detected_lang, total_d
 
 
-def _compute_media_fast_fingerprint(media_path: str, source_lang: str) -> str:
+def _compute_media_fast_fingerprint(
+    media_path: str,
+    source_lang: str,
+    start_sec: float = 0.0,
+    end_sec: float = 0.0,
+    range_mode: str = "trim",
+) -> str:
     st = os.stat(media_path)
     h = hashlib.sha256()
-    h.update(f"v7_cinema:{st.st_size}:{source_lang}:".encode("utf-8"))
+    range_tag = f":{round(start_sec, 2)}:{round(end_sec, 2)}:{range_mode}" if (start_sec > 0.05 or end_sec > 0.05) else ""
+    h.update(f"v7_cinema:{st.st_size}:{source_lang}{range_tag}:".encode("utf-8"))
     with open(media_path, "rb") as f:
         h.update(f.read(65536))
         if st.st_size > 131072:
@@ -1120,6 +1216,9 @@ def transcribe_and_translate_media(
     ai_api_key: str = "",
     ai_model: str = "",
     multi_voice_cast: bool = False,
+    start_sec: float = 0.0,
+    end_sec: float = 0.0,
+    range_mode: str = "trim",
 ) -> dict:
     # Always reset live progress at start so stale 66% / 95% from any prior job NEVER leaks into a new run!
     set_dub_live_progress(
@@ -1129,9 +1228,69 @@ def transcribe_and_translate_media(
         active=True,
     )
     meta = probe_media_info(media_path, ffmpeg_bin=ffmpeg_bin)
+    full_dur = float(meta.get("durationSec") or 0.0)
     cache_dir = os.path.join("/tmp", "voxly_dub_sessions")
     os.makedirs(cache_dir, exist_ok=True)
-    fp_key = _compute_media_fast_fingerprint(media_path, source_lang or "auto")
+
+    # Validate & normalize optional [start_sec, end_sec] time range
+    req_start = max(0.0, float(start_sec or 0.0))
+    req_end = max(0.0, float(end_sec or 0.0))
+    rmode = "keep_full" if str(range_mode or "").strip().lower() == "keep_full" else "trim"
+
+    if full_dur > 0.5 and req_start >= full_dur - 0.35:
+        raise ValueError(
+            f"Thời gian bắt đầu ({format_timestamp_sec(req_start)}) vượt quá thời lượng video ({format_timestamp_sec(full_dur)})!"
+        )
+    eff_end = min(full_dur, req_end) if (req_end > 0.05 and full_dur > 0.5) else (req_end if req_end > 0.05 else full_dur)
+    if req_end > 0.05 and eff_end <= req_start + 0.4:
+        raise ValueError(
+            f"Thời gian kết thúc ({format_timestamp_sec(req_end)}) phải lớn hơn thời gian bắt đầu ({format_timestamp_sec(req_start)})!"
+        )
+
+    has_custom_range = bool(req_start > 0.05 or (req_end > 0.05 and (full_dur <= 0.5 or eff_end < full_dur - 0.35)))
+    effective_media_path = media_path
+    narration_window: list[float] | None = None
+    scan_start_sec = 0.0
+    scan_end_sec = 0.0
+
+    if has_custom_range:
+        lbl_range = f"{format_timestamp_sec(req_start)} → {format_timestamp_sec(eff_end) if eff_end > 0 else 'hết'}"
+        if rmode == "trim":
+            # Frame-accurate clip so OCR, Whisper, AI translation, TTS & MP4 export all match the exact slice!
+            clip_sig = _compute_media_fast_fingerprint(media_path, "clip", req_start, eff_end, "trim")
+            clip_ext = ".mp4" if meta.get("hasVideo") else ".m4a"
+            clip_path = os.path.join(cache_dir, f"clip_{clip_sig}{clip_ext}")
+            if not (os.path.exists(clip_path) and os.path.getsize(clip_path) > 1000):
+                set_dub_live_progress(
+                    f"✂️ Đang cắt chuẩn xác đoạn {lbl_range} để thuyết minh...",
+                    f"✂️ Trimming exact clip {lbl_range} for narration...",
+                    17,
+                )
+                trim_timeout = max(300, int(max(30.0, (eff_end - req_start) if eff_end > req_start else full_dur) * 0.6) + 180)
+                trim_media_clip(
+                    media_path=media_path,
+                    out_clip_path=clip_path,
+                    start_sec=req_start,
+                    end_sec=eff_end if eff_end > req_start + 0.4 else 0.0,
+                    has_video=bool(meta.get("hasVideo")),
+                    ffmpeg_bin=ffmpeg_bin,
+                    timeout_sec=trim_timeout,
+                )
+            effective_media_path = clip_path
+            meta = probe_media_info(effective_media_path, ffmpeg_bin=ffmpeg_bin)
+        else:
+            # keep_full: keep full original media untouched, only transcribe/translate/narrate inside [req_start, eff_end]!
+            scan_start_sec = req_start
+            scan_end_sec = eff_end
+            narration_window = [round(req_start, 2), round(eff_end if eff_end > req_start else full_dur, 2)]
+
+    fp_key = _compute_media_fast_fingerprint(
+        effective_media_path,
+        source_lang or "auto",
+        start_sec=scan_start_sec,
+        end_sec=scan_end_sec,
+        range_mode=rmode if has_custom_range else "full",
+    )
     stt_cache_path = os.path.join(cache_dir, f"stt_v11_turbo_precision_{fp_key}.json")
 
     cached_stt = None
@@ -1154,7 +1313,7 @@ def transcribe_and_translate_media(
         # Step 1 (Video): Hardware-accelerated Vision hard-subtitle extraction (100% exact spelling, zero homophones!)
         if meta.get("hasVideo") and duration_sec > 0.5:
             def _on_ocr_prog(c_idx: int, n_chunks: int) -> None:
-                p_ocr = 16 + int((c_idx / max(1, n_chunks)) * 18)
+                p_ocr = 18 + int((c_idx / max(1, n_chunks)) * 16)
                 if n_chunks > 1:
                     set_dub_live_progress(
                         f"📖 Đang quét phụ đề gốc trên khung hình (phần {c_idx + 1}/{n_chunks})...",
@@ -1170,12 +1329,14 @@ def transcribe_and_translate_media(
 
             try:
                 ocr_res = video_subtitle_ocr.extract_hard_subtitles(
-                    media_path=media_path,
+                    media_path=effective_media_path,
                     duration_sec=duration_sec,
                     source_lang=source_lang,
                     ffmpeg_bin=ffmpeg_bin,
                     ffprobe_bin=resolve_ffprobe(ffmpeg_bin),
                     progress_cb=_on_ocr_prog,
+                    start_sec=scan_start_sec,
+                    end_sec=scan_end_sec,
                 )
             except Exception:
                 ocr_res = {"usable": False, "avgConf": 0.0, "coverageRatio": 0.0, "segments": []}
@@ -1195,23 +1356,51 @@ def transcribe_and_translate_media(
             detected_lang = _detect_script_lang_from_text(plain_source, hint=source_lang)
         else:
             # Step 2 (Audio / Unsubtitled Video / Partial-Sub Video): Whisper Large-v3-Turbo + VAD-seam repair
-            tmp_wav = f"{media_path}.16k.wav"
+            tmp_wav = f"{effective_media_path}.{fp_key[:8]}.16k.wav"
             try:
                 set_dub_live_progress(
                     "🎙️ Đang tách âm thanh & nhận diện lời thoại bằng Whisper Large-v3-Turbo...",
                     "🎙️ Extracting audio & transcribing dialogue via Whisper Large-v3-Turbo...",
                     28,
                 )
-                wav_timeout = max(240, int(duration_sec * 0.25) + 240)
-                extract_16k_wav(media_path, tmp_wav, ffmpeg_bin=ffmpeg_bin, timeout_sec=wav_timeout)
+                slice_dur_est = (
+                    max(1.0, scan_end_sec - scan_start_sec)
+                    if (scan_end_sec > scan_start_sec + 0.4)
+                    else max(1.0, duration_sec - scan_start_sec)
+                )
+                wav_timeout = max(240, int(slice_dur_est * 0.25) + 240)
+                extract_16k_wav(
+                    effective_media_path,
+                    tmp_wav,
+                    ffmpeg_bin=ffmpeg_bin,
+                    timeout_sec=wav_timeout,
+                    start_sec=scan_start_sec,
+                    end_sec=scan_end_sec,
+                )
                 with wave.open(tmp_wav, "rb") as wf:
                     raw_pcm = wf.readframes(wf.getnframes())
                 audio_f32 = np.frombuffer(raw_pcm, dtype=np.int16).astype(np.float32) / 32768.0
-                whisper_segs, detected_lang, duration_sec = _transcribe_audio_precision(
+                whisper_segs, detected_lang, slice_dur = _transcribe_audio_precision(
                     audio_f32=audio_f32,
                     source_lang=source_lang,
-                    duration_sec=duration_sec,
+                    duration_sec=slice_dur_est if (scan_start_sec > 0.01 or scan_end_sec > 0.01) else duration_sec,
                 )
+                if scan_start_sec > 0.01:
+                    # Shift slice-relative Whisper timestamps back to exact full-video coordinates!
+                    shifted = []
+                    for ws in whisper_segs:
+                        s_abs = round(float(ws["start"]) + scan_start_sec, 2)
+                        e_abs = round(float(ws["end"]) + scan_start_sec, 2)
+                        if scan_end_sec > scan_start_sec + 0.4:
+                            if s_abs >= scan_end_sec:
+                                continue
+                            e_abs = min(round(scan_end_sec, 2), e_abs)
+                        if e_abs > s_abs + 0.15:
+                            shifted.append({"start": s_abs, "end": e_abs, "text": ws["text"]})
+                    whisper_segs = shifted
+                elif duration_sec <= 0.1:
+                    duration_sec = slice_dur
+
                 if ocr_res.get("usable") and ocr_res.get("segments"):
                     segs = _fuse_ocr_and_whisper_segments(ocr_res["segments"], whisper_segs)
                 else:
@@ -1225,6 +1414,11 @@ def transcribe_and_translate_media(
                         pass
 
         if not plain_source or not segs:
+            if has_custom_range:
+                raise ValueError(
+                    f"Không phát hiện lời thoại trong khoảng {format_timestamp_sec(req_start)} → {format_timestamp_sec(eff_end)}. "
+                    f"Vui lòng mở rộng khoảng thời gian hoặc kiểm tra lại đoạn video!"
+                )
             raise ValueError("Không nhận diện được lời thoại hoặc phụ đề trong file này. Vui lòng kiểm tra lại video/âm thanh!")
 
         try:
@@ -1266,6 +1460,12 @@ def transcribe_and_translate_media(
         "translatedText": formatted_translated,
         "segments": tr_segs,
         "segmentsCount": len(tr_segs),
+        "effectiveMediaPath": effective_media_path,
+        "rangeApplied": has_custom_range,
+        "rangeMode": rmode if has_custom_range else "full",
+        "rangeStartSec": round(req_start, 2) if has_custom_range else 0.0,
+        "rangeEndSec": round(eff_end, 2) if has_custom_range else round(duration_sec, 2),
+        "narrationWindow": narration_window,
         "aiEngineUsed": (
             ai_provider
             if (ai_provider not in ("local", "local_fast", "local_14b") and ai_api_key)
@@ -1580,12 +1780,16 @@ def mix_and_export_dubbed_outputs(
     orig_volume: float = 0.40,
     smart_ducking: bool = True,
     ffmpeg_bin: str = "ffmpeg",
+    narration_window: list[float] | tuple[float, float] | None = None,
 ) -> dict:
     """
     Mixes the 48kHz synced AI voice track with the original media audio using:
     - Adjustable Original Audio Volume (0.0 .. 1.0)
     - Smart Dynamic Auto-Ducking: full `orig_volume` during music/SFX/laughter/non-speech scenes,
-      smoothly ducking to `orig_volume * 0.25` during dubbed speech with broadcast Hann fades!
+      smoothly ducking to `orig_volume * 0.18` during dubbed speech with broadcast Hann fades!
+    - Optional `narration_window = (start_sec, end_sec)` for Keep-Full partial narration:
+      keeps original audio at 100% untouched outside `[start_sec, end_sec]` and applies `orig_volume`
+      + smart ducking smoothly inside `[start_sec, end_sec]`!
     Exports .WAV (48kHz), .MP3 (128kbps), and .MP4 (stream-copied video + 192kbps AAC).
     """
     sr = 48000
@@ -1594,6 +1798,15 @@ def mix_and_export_dubbed_outputs(
     orig_meta = probe_media_info(orig_media_path, ffmpeg_bin=ffmpeg_bin) if has_orig else {"hasAudio": False, "durationSec": 0.0}
     vid_dur = float(orig_meta.get("durationSec") or 0.0)
 
+    win_pair: tuple[float, float] | None = None
+    if isinstance(narration_window, (list, tuple)) and len(narration_window) >= 2:
+        try:
+            w0 = max(0.0, float(narration_window[0]))
+            w1 = max(w0 + 0.2, float(narration_window[1]))
+            win_pair = (w0, w1)
+        except Exception:
+            win_pair = None
+
     voice_dur_probe = probe_media_info(pure_voice_wav_path, ffmpeg_bin=ffmpeg_bin).get("durationSec") or 0.0
     approx_total_sec = max(vid_dur, voice_dur_probe)
     dyn_timeout = max(300, int(approx_total_sec * 0.45) + 240)
@@ -1601,10 +1814,15 @@ def mix_and_export_dubbed_outputs(
     # Constant-RAM FFmpeg streaming mix for multi-hour movies (> 25 minutes = 1500s)
     if approx_total_sec > 1500:
         target_frames = int(round(max(approx_total_sec, 1.0) * sr))
-        if has_orig and orig_meta.get("hasAudio") and orig_vol > 0.005:
+        if has_orig and orig_meta.get("hasAudio") and (orig_vol > 0.005 or win_pair is not None):
+            if win_pair is not None:
+                w0, w1 = win_pair
+                bg_vol_filter = f"volume='if(between(t,{w0:.2f},{w1:.2f}),{orig_vol:.3f},1.0)':eval=frame"
+            else:
+                bg_vol_filter = f"volume={orig_vol:.3f}"
             if smart_ducking:
                 fc = (
-                    f"[0:a]aresample=48000,aformat=channel_layouts=stereo,volume={orig_vol:.3f}[bg];"
+                    f"[0:a]aresample=48000,aformat=channel_layouts=stereo,{bg_vol_filter}[bg];"
                     f"[1:a]aresample=48000,aformat=channel_layouts=stereo,volume=1.08,asplit=2[sc][vo];"
                     f"[bg][sc]sidechaincompress=threshold=0.018:ratio=8:attack=35:release=420[bgduck];"
                     f"[bgduck][vo]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,"
@@ -1612,7 +1830,7 @@ def mix_and_export_dubbed_outputs(
                 )
             else:
                 fc = (
-                    f"[0:a]aresample=48000,aformat=channel_layouts=stereo,volume={orig_vol:.3f}[bg];"
+                    f"[0:a]aresample=48000,aformat=channel_layouts=stereo,{bg_vol_filter}[bg];"
                     f"[1:a]aresample=48000,aformat=channel_layouts=stereo,volume=1.08[vo];"
                     f"[bg][vo]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,"
                     f"alimiter=limit=0.96[outa]"
@@ -1648,12 +1866,12 @@ def mix_and_export_dubbed_outputs(
         else:
             voice_aligned = voice_mono[:target_frames]
 
-        if has_orig and orig_meta.get("hasAudio") and orig_vol > 0.005:
+        if has_orig and orig_meta.get("hasAudio") and (orig_vol > 0.005 or win_pair is not None):
             orig_stereo = _decode_stereo_48k_pcm(orig_media_path, ffmpeg_bin=ffmpeg_bin)
         else:
             orig_stereo = np.zeros((0, 2), dtype=np.float32)
 
-        if orig_stereo.shape[0] > 0 and orig_vol > 0.005:
+        if orig_stereo.shape[0] > 0 and (orig_vol > 0.005 or win_pair is not None):
             if orig_stereo.shape[0] < target_frames:
                 pad_len = target_frames - orig_stereo.shape[0]
                 orig_aligned = np.pad(orig_stereo, ((0, pad_len), (0, 0)))
@@ -1663,7 +1881,15 @@ def mix_and_export_dubbed_outputs(
             # Build 100Hz control envelope with anti-pumping dialogue bridge (< 1.85s gap stays smoothly ducked!)
             ctrl_hz = 100
             n_ctrl = max(4, int(np.ceil((target_frames / sr) * ctrl_hz)) + 1)
-            env_ctrl = np.full(n_ctrl, orig_vol, dtype=np.float32)
+            if win_pair is not None:
+                # Keep-Full partial narration: original audio stays 100% outside [w0, w1], drops to orig_vol inside!
+                env_ctrl = np.full(n_ctrl, 1.0, dtype=np.float32)
+                wc0 = max(0, int(np.floor(win_pair[0] * ctrl_hz)))
+                wc1 = min(n_ctrl, int(np.ceil(win_pair[1] * ctrl_hz)))
+                if wc1 > wc0:
+                    env_ctrl[wc0:wc1] = orig_vol
+            else:
+                env_ctrl = np.full(n_ctrl, orig_vol, dtype=np.float32)
 
             if smart_ducking and speech_intervals:
                 merged_ivs: list[list[float]] = []
@@ -1683,7 +1909,8 @@ def mix_and_export_dubbed_outputs(
                     if c1 > c0:
                         env_ctrl[c0:c1] = duck_level
 
-                # Smooth with 410ms Hann cinema fader window so scene swells sound musical, never abrupt
+            # Smooth transitions with 410ms Hann cinema fader window whenever envelope varies
+            if (smart_ducking and speech_intervals) or win_pair is not None:
                 win_len = 41
                 if n_ctrl > win_len:
                     kernel = np.hanning(win_len).astype(np.float32)

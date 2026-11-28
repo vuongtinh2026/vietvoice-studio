@@ -1302,6 +1302,9 @@ const server = http.createServer(async (req, res) => {
       const aiProvider = String(payload.aiProvider || 'local').trim() || 'local';
       const aiApiKey = String(payload.aiApiKey || '').trim();
       const aiModel = String(payload.aiModel || '').trim();
+      const startSec = Math.max(0, Number(payload.startSec || 0) || 0);
+      const endSec = Math.max(0, Number(payload.endSec || 0) || 0);
+      const rangeMode = String(payload.rangeMode || 'trim').trim() === 'keep_full' ? 'keep_full' : 'trim';
       const multiVoiceCast = false;
       const isAsync = parsedUrl.searchParams.get('async') === '1' || Boolean(payload.async);
 
@@ -1321,6 +1324,9 @@ const server = http.createServer(async (req, res) => {
           aiProvider,
           aiApiKey,
           aiModel,
+          startSec,
+          endSec,
+          rangeMode,
           multiVoiceCast
         });
         const data = dRes.data || {};
@@ -1329,16 +1335,21 @@ const server = http.createServer(async (req, res) => {
         }
 
         const sessionId = `ytdub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const downloadedBasename = path.basename(data.mediaPath || '');
+        const effMediaPath = data.effectiveMediaPath || data.mediaPath;
+        const downloadedBasename = path.basename(effMediaPath || '');
         fs.writeFileSync(
           path.join(dubDir, `${sessionId}_meta.json`),
           JSON.stringify({
             sessionId,
-            origPath: data.mediaPath,
+            origPath: effMediaPath,
             origName: `${data.title || 'youtube_video'}${data.isVideo ? '.mp4' : '.m4a'}`,
             isVideo: Boolean(data.isVideo),
             hasOrigAudio: data.hasOrigAudio !== false,
             durationSec: data.durationSec || 0,
+            narrationWindow: Array.isArray(data.narrationWindow) ? data.narrationWindow : null,
+            rangeMode: data.rangeMode || 'full',
+            rangeStartSec: Number(data.rangeStartSec || 0),
+            rangeEndSec: Number(data.rangeEndSec || 0),
             segments: Array.isArray(data.segments) ? data.segments : [],
             createdAt: Date.now()
           }),
@@ -1392,6 +1403,9 @@ const server = http.createServer(async (req, res) => {
     const aiProvider = String(req.headers['x-ai-provider'] || 'local').trim() || 'local';
     const aiApiKey = String(req.headers['x-ai-api-key'] || '').trim();
     const aiModel = String(req.headers['x-ai-model'] || '').trim();
+    const startSec = Math.max(0, Number(req.headers['x-start-sec'] || 0) || 0);
+    const endSec = Math.max(0, Number(req.headers['x-end-sec'] || 0) || 0);
+    const rangeMode = String(req.headers['x-range-mode'] || 'trim').trim() === 'keep_full' ? 'keep_full' : 'trim';
     const multiVoiceCast = false;
     const isAsync = parsedUrl.searchParams.get('async') === '1';
     const sessionId = `dub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -1424,6 +1438,9 @@ const server = http.createServer(async (req, res) => {
           aiProvider,
           aiApiKey,
           aiModel,
+          startSec,
+          endSec,
+          rangeMode,
           multiVoiceCast
         });
         const data = dRes.data || {};
@@ -1431,15 +1448,20 @@ const server = http.createServer(async (req, res) => {
           throw new Error(data.error || `Lỗi nhận diện giọng nói (HTTP ${dRes.status})`);
         }
 
+        const effMediaPath = data.effectiveMediaPath || mediaPath;
         fs.writeFileSync(
           path.join(dubDir, `${sessionId}_meta.json`),
           JSON.stringify({
             sessionId,
-            origPath: mediaPath,
+            origPath: effMediaPath,
             origName: rawName,
             isVideo: Boolean(data.isVideo),
             hasOrigAudio: data.hasOrigAudio !== false,
             durationSec: data.durationSec || 0,
+            narrationWindow: Array.isArray(data.narrationWindow) ? data.narrationWindow : null,
+            rangeMode: data.rangeMode || 'full',
+            rangeStartSec: Number(data.rangeStartSec || 0),
+            rangeEndSec: Number(data.rangeEndSec || 0),
             segments: Array.isArray(data.segments) ? data.segments : [],
             createdAt: Date.now()
           }),
@@ -1623,6 +1645,7 @@ const server = http.createServer(async (req, res) => {
           autoFitTiming,
           origVolume: origVolumePct / 100.0,
           smartDucking,
+          narrationWindow: Array.isArray(meta.narrationWindow) ? meta.narrationWindow : null,
           outDir: dubDir,
           outId
         }, renderHeaders);
@@ -1710,6 +1733,7 @@ const server = http.createServer(async (req, res) => {
         isVideo: Boolean(meta.isVideo),
         origVolume: origVolumePct / 100.0,
         smartDucking,
+        narrationWindow: Array.isArray(meta.narrationWindow) ? meta.narrationWindow : null,
         outDir: dubDir,
         outId
       });

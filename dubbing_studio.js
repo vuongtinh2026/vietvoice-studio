@@ -108,6 +108,92 @@
     return { aiProvider: provider, aiApiKey: apiKey, aiModel: model, multiVoiceCast: false };
   }
 
+  let selectedMediaDurationSec = 0;
+
+  function parseFlexibleTimeToSec(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return null;
+    if (/^\d+(?:\.\d+)?$/.test(s)) {
+      return Number(s);
+    }
+    const parts = s.split(':').map(p => p.trim());
+    if (parts.length < 2 || parts.length > 3) return NaN;
+    const nums = parts.map(p => (/^\d+(?:\.\d+)?$/.test(p) ? Number(p) : NaN));
+    if (nums.some(n => !Number.isFinite(n) || n < 0)) return NaN;
+    if (nums.length === 2) {
+      return nums[0] * 60 + nums[1];
+    }
+    return nums[0] * 3600 + nums[1] * 60 + nums[2];
+  }
+
+  function formatSecToTimeInput(sec) {
+    const s = Math.max(0, Math.floor(Number(sec) || 0));
+    const hrs = Math.floor(s / 3600);
+    const mins = Math.floor((s % 3600) / 60);
+    const rem = s % 60;
+    if (hrs > 0) {
+      return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
+    }
+    return `${String(mins).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
+  }
+
+  function getSelectedTimeRangeConfig() {
+    const startRaw = (document.getElementById('dubStartTimeInput')?.value || '').trim();
+    const endRaw = (document.getElementById('dubEndTimeInput')?.value || '').trim();
+    const rangeMode = document.getElementById('dubRangeModeSelect')?.value === 'keep_full' ? 'keep_full' : 'trim';
+
+    const parsedStart = parseFlexibleTimeToSec(startRaw);
+    const parsedEnd = parseFlexibleTimeToSec(endRaw);
+    const invalidStart = startRaw !== '' && !Number.isFinite(parsedStart);
+    const invalidEnd = endRaw !== '' && !Number.isFinite(parsedEnd);
+
+    const startSec = Number.isFinite(parsedStart) ? Math.max(0, parsedStart) : 0;
+    const endSec = Number.isFinite(parsedEnd) ? Math.max(0, parsedEnd) : 0;
+    const hasCustomRange = Boolean(startSec > 0.05 || endSec > 0.05);
+
+    return { startRaw, endRaw, startSec, endSec, rangeMode, hasCustomRange, invalidStart, invalidEnd };
+  }
+
+  function syncTimeRangeBadge() {
+    const badge = document.getElementById('dubTimeRangeBadge');
+    if (!badge) return;
+    const isVi = isViLang();
+    const cfg = getSelectedTimeRangeConfig();
+
+    if (cfg.invalidStart || cfg.invalidEnd) {
+      badge.textContent = isVi ? '⚠️ Sai định dạng (nhập mm:ss)' : '⚠️ Invalid format (use mm:ss)';
+      return;
+    }
+    if (cfg.endSec > 0.05 && cfg.endSec <= cfg.startSec + 0.4) {
+      badge.textContent = isVi ? '⚠️ Kết thúc phải > Bắt đầu' : '⚠️ End must be > Start';
+      return;
+    }
+    if (!cfg.hasCustomRange) {
+      const durHint = selectedMediaDurationSec > 0.5 ? ` (${formatSecToTimeInput(selectedMediaDurationSec)})` : '';
+      badge.textContent = isVi ? `Toàn bộ video${durHint}` : `Full media${durHint}`;
+      return;
+    }
+    const stLbl = formatSecToTimeInput(cfg.startSec);
+    const effEnd = cfg.endSec > 0.05 ? cfg.endSec : selectedMediaDurationSec;
+    const enLbl = cfg.endSec > 0.05
+      ? formatSecToTimeInput(cfg.endSec)
+      : (selectedMediaDurationSec > 0.5 ? formatSecToTimeInput(selectedMediaDurationSec) : (isVi ? 'Hết' : 'End'));
+    const spanLbl = effEnd > cfg.startSec + 0.4 ? ` • ${formatElapsedTimer(effEnd - cfg.startSec)}` : '';
+    const icon = cfg.rangeMode === 'keep_full' ? '🎬' : '✂️';
+    badge.textContent = `${icon} ${stLbl} → ${enLbl}${spanLbl}`;
+  }
+
+  function invalidateCachedSessionOnRangeChange() {
+    currentMediaSessionId = '';
+    const srcBox = document.getElementById('dubSourceTranscript');
+    const trBox = document.getElementById('dubTranslatedScript');
+    if (srcBox) srcBox.value = '';
+    if (trBox) trBox.value = '';
+    document.getElementById('dubScriptsEditorCard')?.classList.add('hidden');
+    document.getElementById('dubOutputCard')?.classList.add('hidden');
+    document.getElementById('btnDubQuickRemix')?.classList.add('hidden');
+  }
+
   function syncAiProviderUi() {
     const provSel = document.getElementById('dubAiProviderSelect');
     const cfgRow = document.getElementById('dubAiCloudConfigRow');
@@ -430,7 +516,9 @@
     lastYoutubeKey = '';
     lastYoutubeTitle = '';
     selectedIsVideo = isVideoFilename(file.name, file.type);
+    selectedMediaDurationSec = 0;
     currentMediaSessionId = '';
+    syncTimeRangeBadge();
     document.getElementById('dubYoutubeBar')?.classList.remove('ring-1', 'ring-rose-400/60');
     document.getElementById('dubYoutubeStatusBadge')?.classList.add('hidden');
     document.getElementById('btnDubQuickRemix')?.classList.add('hidden');
@@ -580,20 +668,46 @@
     const srcLang = document.getElementById('dubSourceLang')?.value || 'auto';
     const tgtLang = document.getElementById('dubTargetLang')?.value || 'en';
     const aiCfg = getProAiConfig();
+    const rangeCfg = getSelectedTimeRangeConfig();
+    if (rangeCfg.invalidStart || rangeCfg.invalidEnd) {
+      throw new Error(
+        isVi
+          ? 'Định dạng thời gian Bắt đầu / Kết thúc chưa đúng! Hãy nhập theo dạng mm:ss (VD: 01:30) hoặc hh:mm:ss.'
+          : 'Invalid Start / End time format! Please use mm:ss (e.g. 01:30) or hh:mm:ss.'
+      );
+    }
+    if (rangeCfg.endSec > 0.05 && rangeCfg.endSec <= rangeCfg.startSec + 0.4) {
+      throw new Error(
+        isVi
+          ? 'Thời gian kết thúc phải lớn hơn thời gian bắt đầu ít nhất 1 giây!'
+          : 'End time must be greater than Start time!'
+      );
+    }
+    if (selectedMediaDurationSec > 0.5 && rangeCfg.startSec >= selectedMediaDurationSec - 0.4) {
+      throw new Error(
+        isVi
+          ? `Thời gian bắt đầu (${formatSecToTimeInput(rangeCfg.startSec)}) vượt quá thời lượng video (${formatSecToTimeInput(selectedMediaDurationSec)})!`
+          : `Start time (${formatSecToTimeInput(rangeCfg.startSec)}) exceeds media duration (${formatSecToTimeInput(selectedMediaDurationSec)})!`
+      );
+    }
+
     const isDouyinLink = /(?:douyin\.com|iesdouyin\.com)/i.test(ytUrl);
     const platName = isDouyinLink ? 'Douyin' : 'YouTube';
+    const rangeSummaryTag = rangeCfg.hasCustomRange
+      ? ` [${formatSecToTimeInput(rangeCfg.startSec)} → ${rangeCfg.endSec > 0.05 ? formatSecToTimeInput(rangeCfg.endSec) : (isVi ? 'hết' : 'end')}]`
+      : '';
 
     const baseStep1Msg = useYoutube
       ? (isVi
           ? (ytMode === 'video'
-              ? `🎬 Bước 1/2: Đang tải Video từ ${platName}, bóc lời & biên dịch thuyết minh chuẩn từng từ...`
-              : `🎵 Bước 1/2: Đang trích xuất Âm thanh từ ${platName}, bóc lời & biên dịch thuyết minh...`)
+              ? `🎬 Bước 1/2: Đang tải Video từ ${platName}${rangeSummaryTag}, bóc lời & biên dịch thuyết minh chuẩn từng từ...`
+              : `🎵 Bước 1/2: Đang trích xuất Âm thanh từ ${platName}${rangeSummaryTag}, bóc lời & biên dịch thuyết minh...`)
           : (ytMode === 'video'
-              ? `🎬 Step 1/2: Downloading ${platName} video, extracting speech & translating exact narration...`
-              : `🎵 Step 1/2: Extracting ${platName} audio, transcribing & translating exact narration...`))
+              ? `🎬 Step 1/2: Downloading ${platName} video${rangeSummaryTag}, extracting speech & translating exact narration...`
+              : `🎵 Step 1/2: Extracting ${platName} audio${rangeSummaryTag}, transcribing & translating exact narration...`))
       : (isVi
-          ? '🎙️ Bước 1/2: AI đang tải tệp, nhận diện lời thoại & biên dịch thuyết minh chuẩn từng từ...'
-          : '🎙️ Step 1/2: Uploading media, extracting speech & translating exact narration...');
+          ? `🎙️ Bước 1/2: AI đang xử lý${rangeSummaryTag}, nhận diện lời thoại & biên dịch thuyết minh chuẩn từng từ...`
+          : `🎙️ Step 1/2: Processing media${rangeSummaryTag}, extracting speech & translating exact narration...`);
 
     setDubProgress(true, baseStep1Msg, 14);
 
@@ -611,6 +725,9 @@
           aiProvider: aiCfg.aiProvider,
           aiApiKey: aiCfg.aiApiKey,
           aiModel: aiCfg.aiModel,
+          startSec: rangeCfg.startSec,
+          endSec: rangeCfg.endSec,
+          rangeMode: rangeCfg.rangeMode,
           multiVoiceCast: aiCfg.multiVoiceCast
         })
       });
@@ -622,6 +739,9 @@
         'X-Target-Lang': tgtLang,
         'X-Ai-Provider': aiCfg.aiProvider,
         'X-Ai-Model': aiCfg.aiModel,
+        'X-Start-Sec': String(rangeCfg.startSec || 0),
+        'X-End-Sec': String(rangeCfg.endSec || 0),
+        'X-Range-Mode': rangeCfg.rangeMode,
         'X-Multi-Voice': aiCfg.multiVoiceCast ? '1' : '0'
       };
       if (aiCfg.aiApiKey) upHeaders['X-Ai-Api-Key'] = aiCfg.aiApiKey;
@@ -688,9 +808,12 @@
     if (trBox) trBox.value = data.translatedText || '';
     if (detBadge) {
       const segCnt = data.segmentsCount || 0;
+      const rangeInfo = data.rangeApplied
+        ? ` • ${data.rangeMode === 'keep_full' ? '🎬' : '✂️'} ${formatSecToTimeInput(data.rangeStartSec || 0)}→${formatSecToTimeInput(data.rangeEndSec || data.durationSec || 0)}`
+        : '';
       detBadge.textContent = isVi
-        ? `Ngôn ngữ gốc: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} câu thuyết minh`
-        : `Detected: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s • ${segCnt} cues`;
+        ? `Ngôn ngữ gốc: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s${rangeInfo} • ${segCnt} câu thuyết minh`
+        : `Detected: ${(data.detectedLang || '').toUpperCase()} • ${data.durationSec || 0}s${rangeInfo} • ${segCnt} cues`;
     }
     if (scriptsCard) scriptsCard.classList.remove('hidden');
 
@@ -1001,7 +1124,103 @@
     const btnClearYt = document.getElementById('btnClearYoutubeUrl');
     const origVolRange = document.getElementById('dubOrigVolRange');
     const outOrigVolRange = document.getElementById('dubOutOrigVolRange');
+    const startTimeIn = document.getElementById('dubStartTimeInput');
+    const endTimeIn = document.getElementById('dubEndTimeInput');
+    const rangeModeSel = document.getElementById('dubRangeModeSelect');
+    const btnCaptureStart = document.getElementById('btnDubCaptureStart');
+    const btnCaptureEnd = document.getElementById('btnDubCaptureEnd');
+    const btnResetRange = document.getElementById('btnDubResetRange');
+    const origVidEl = document.getElementById('dubOrigVideoPreview');
+    const origAudEl = document.getElementById('dubOrigAudioPreview');
     const btnQuickRemix = document.getElementById('btnDubQuickRemix');
+
+    const getActiveOrigPlayerTime = () => {
+      if (origVidEl && !origVidEl.classList.contains('hidden') && Number.isFinite(origVidEl.currentTime)) {
+        return origVidEl.currentTime;
+      }
+      if (origAudEl && !origAudEl.classList.contains('hidden') && Number.isFinite(origAudEl.currentTime)) {
+        return origAudEl.currentTime;
+      }
+      return null;
+    };
+
+    if (origVidEl) {
+      origVidEl.addEventListener('loadedmetadata', () => {
+        if (Number.isFinite(origVidEl.duration) && origVidEl.duration > 0) {
+          selectedMediaDurationSec = origVidEl.duration;
+          syncTimeRangeBadge();
+        }
+      });
+    }
+    if (origAudEl) {
+      origAudEl.addEventListener('loadedmetadata', () => {
+        if (Number.isFinite(origAudEl.duration) && origAudEl.duration > 0) {
+          selectedMediaDurationSec = origAudEl.duration;
+          syncTimeRangeBadge();
+        }
+      });
+    }
+
+    const onRangeInputEdited = () => {
+      syncTimeRangeBadge();
+      invalidateCachedSessionOnRangeChange();
+    };
+    if (startTimeIn) startTimeIn.addEventListener('input', onRangeInputEdited);
+    if (endTimeIn) endTimeIn.addEventListener('input', onRangeInputEdited);
+    if (rangeModeSel) rangeModeSel.addEventListener('change', onRangeInputEdited);
+
+    if (btnCaptureStart && startTimeIn) {
+      btnCaptureStart.addEventListener('click', () => {
+        const curT = getActiveOrigPlayerTime();
+        if (curT === null) {
+          if (typeof window.showToast === 'function') {
+            window.showToast(
+              isViLang() ? 'Hãy chọn file video/audio trước rồi phát tới giây muốn bắt đầu!' : 'Load a video/audio file first to capture its current playback timestamp!',
+              'warning'
+            );
+          }
+          return;
+        }
+        startTimeIn.value = formatSecToTimeInput(curT);
+        onRangeInputEdited();
+        if (typeof window.showToast === 'function') {
+          window.showToast(
+            isViLang() ? `📍 Đã đặt mốc Bắt đầu: ${startTimeIn.value}` : `📍 Set Start Time: ${startTimeIn.value}`,
+            'info'
+          );
+        }
+      });
+    }
+    if (btnCaptureEnd && endTimeIn) {
+      btnCaptureEnd.addEventListener('click', () => {
+        const curT = getActiveOrigPlayerTime();
+        if (curT === null) {
+          if (typeof window.showToast === 'function') {
+            window.showToast(
+              isViLang() ? 'Hãy chọn file video/audio trước rồi phát tới giây muốn kết thúc!' : 'Load a video/audio file first to capture its current playback timestamp!',
+              'warning'
+            );
+          }
+          return;
+        }
+        endTimeIn.value = formatSecToTimeInput(curT);
+        onRangeInputEdited();
+        if (typeof window.showToast === 'function') {
+          window.showToast(
+            isViLang() ? `📍 Đã đặt mốc Kết thúc: ${endTimeIn.value}` : `📍 Set End Time: ${endTimeIn.value}`,
+            'info'
+          );
+        }
+      });
+    }
+    if (btnResetRange) {
+      btnResetRange.addEventListener('click', () => {
+        if (startTimeIn) startTimeIn.value = '';
+        if (endTimeIn) endTimeIn.value = '';
+        onRangeInputEdited();
+      });
+    }
+    syncTimeRangeBadge();
     const btnOutApplyRemix = document.getElementById('btnDubOutApplyRemix');
     const tgtSel = document.getElementById('dubTargetLang');
     const showAllChk = document.getElementById('dubShowAllVoicesChk');
