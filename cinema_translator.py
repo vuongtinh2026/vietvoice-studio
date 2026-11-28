@@ -243,6 +243,9 @@ _ZH_EXACT_SHORT_UTTERANCES_VI: dict[str, str] = {
 
 # Japanese colloquial contractions expanded ONLY for NMT semantic anchor (original Japanese stays intact for LLM!)
 _JA_SPOKEN_NMT_EXPAND: list[tuple[str, str]] = [
+    ("そういえば行ってたよな", "そういえば言ってたよな"),
+    ("行ってなかったっけ", "言ってなかったっけ"),
+    ("チャラくないっては", "全然軽薄じゃないよ"),
     ("もう違うってば", "いいえ、そうではないよ"),
     ("もう違うって", "いいえ、そうではないよ"),
     ("違うってば", "そうではないよ"),
@@ -657,25 +660,41 @@ def _run_cloud_llm_prompt(
         data = None
         last_err = ""
         for url in candidate_urls:
-            req = urllib.request.Request(
-                url,
-                data=body,
-                method="POST",
-                headers={
-                    "Content-Type": "application/json; charset=utf-8",
-                    "x-goog-api-key": key,
-                },
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
+            hit_auth_or_not_found = False
+            for retry_i in range(4):
+                req = urllib.request.Request(
+                    url,
+                    data=body,
+                    method="POST",
+                    headers={
+                        "Content-Type": "application/json; charset=utf-8",
+                        "x-goog-api-key": key,
+                    },
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=65) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        break
+                except urllib.error.HTTPError as he:
+                    err_body = he.read().decode("utf-8", errors="ignore")[:240]
+                    last_err = f"HTTP {he.code}: {err_body}"
+                    if he.code in (429, 503) and retry_i < 3:
+                        time.sleep(3.5 * (retry_i + 1))
+                        continue
+                    if he.code in (400, 401, 403, 404):
+                        hit_auth_or_not_found = True
+                        break
+                    raise RuntimeError(f"Lỗi Gemini API ({last_err})")
+                except Exception as net_e:
+                    last_err = str(net_e)
+                    if retry_i < 2:
+                        time.sleep(2.5)
+                        continue
                     break
-            except urllib.error.HTTPError as he:
-                err_body = he.read().decode("utf-8", errors="ignore")[:240]
-                last_err = f"HTTP {he.code}: {err_body}"
-                if he.code in (400, 401, 403, 404):
-                    continue
-                raise RuntimeError(f"Lỗi Gemini API ({last_err})")
+            if data is not None:
+                break
+            if not hit_auth_or_not_found:
+                break
         if data is None:
             raise RuntimeError(f"Lỗi Gemini API ({last_err}): Vui lòng kiểm tra lại API Key hoặc hạn mức.")
         cands = data.get("candidates") or []

@@ -615,6 +615,7 @@ function createDubAsyncJob(runnerFn) {
     })
     .catch(err => {
       if (job.cancelled) return;
+      console.error(`[DubAsyncJob Error - ${jobId}]:`, err.message || err);
       job.status = 'error';
       job.updatedAt = Date.now();
       job.statusCode = err.status || 500;

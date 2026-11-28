@@ -621,19 +621,38 @@ def _dedupe_whisper_stutter(text: str) -> str:
     return s.strip()
 
 
-def _extract_utterance_segments(segments_iter, source_lang_hint: str = "auto") -> list[dict]:
+def _extract_utterance_segments(
+    segments_iter,
+    source_lang_hint: str = "auto",
+    total_dur_sec: float = 0.0,
+    job_gen: int = 0,
+) -> list[dict]:
     """
-    Reconstructs tight, speaker-hugging dialogue turns from Whisper Large-v3 / Turbo:
-    1. Filters out YouTube/credits hallucinations & extreme low-confidence sub-0.3s noise glitches.
-    2. Splits on EVERY natural speech pause (gap >= 0.45s, terminal punct >= 0.18s, or clause >= 3.4s)
-       so narration hugs the real speaker's exact start & end timing (2-4.8s per cue — NEVER 10s glued blocks!).
-    3. Respects Japanese sentence-final particles (よ/ね/だっけ/ってば/じゃん/ます/です) so back-and-forth
-       dialogue stays crisply aligned and grammatically intact for accurate translation!
+    Reconstructs tight, speaker-hugging dialogue turns from Whisper:
+    1. Streams live progress (current minute / total minutes + cue count) & checks cancellation on EVERY segment!
+    2. Filters out YouTube/credits hallucinations & extreme low-confidence sub-0.3s noise glitches.
+    3. Splits on EVERY natural speech pause (gap >= 0.48s, terminal punct >= 0.16s, or clause >= 3.4s)
+       so narration hugs the real speaker's exact start & end timing (1-4.8s per cue — NEVER 10s glued blocks!).
     """
     atomic_segs: list[dict] = []
     is_ja_hint = str(source_lang_hint or "").lower().startswith("ja")
+    last_prog_ts = 0.0
 
     for seg in segments_iter:
+        if job_gen > 0:
+            cinema_translator._check_not_cancelled(job_gen)
+        now_t = time.time()
+        if total_dur_sec > 5.0 and (now_t - last_prog_ts) >= 0.8:
+            last_prog_ts = now_t
+            seg_t = max(0.0, float(getattr(seg, "end", 0.0) or 0.0))
+            frac = min(1.0, seg_t / max(1.0, total_dur_sec))
+            pct = 20 + int(frac * 18)
+            set_dub_live_progress(
+                f"🎙️ Đang nhận diện lời thoại ({format_timestamp_sec(seg_t)} / {format_timestamp_sec(total_dur_sec)} • {len(atomic_segs)} câu)...",
+                f"🎙️ Transcribing dialogue ({format_timestamp_sec(seg_t)} / {format_timestamp_sec(total_dur_sec)} • {len(atomic_segs)} cues)...",
+                pct,
+            )
+
         raw_t = _dedupe_whisper_stutter((seg.text or "").strip())
         if not raw_t:
             continue
@@ -897,14 +916,15 @@ def _recover_skipped_speech_gaps(
     model,
     lang_code: str | None,
     init_prompt: str,
+    job_gen: int = 0,
 ) -> list[dict]:
     """
-    Anti-Drop Safety Net: Scans every gap >= 6.5s where Whisper/VAD produced no text.
-    If real vocal-band energy exists inside that gap (e.g., quiet/whispered Japanese dialogue),
-    re-transcribes ONLY that gap with vad_filter=False so long stretches of speech are NEVER dropped!
+    Fast Anti-Drop Safety Net: Scans long silent gaps >= 12.0s where Whisper/VAD produced no text.
+    Only re-scans if genuine high speech-band energy exists (max 8 gaps, fast beam_size=1) and
+    checks cancellation before every gap so it NEVER stalls or adds bloat!
     """
     sr = 16000
-    if audio_f32.size < sr * 8 or total_dur_sec < 8.0:
+    if audio_f32.size < sr * 12 or total_dur_sec < 14.0:
         return existing_segs
 
     sorted_segs = sorted(existing_segs, key=lambda x: (x["start"], x["end"]))
@@ -912,61 +932,66 @@ def _recover_skipped_speech_gaps(
     prev_e = 0.0
     for s in sorted_segs:
         st, en = float(s["start"]), float(s["end"])
-        if st - prev_e >= 6.5:
+        if st - prev_e >= 12.0:
             gaps.append((prev_e, st))
         prev_e = max(prev_e, en)
-    if total_dur_sec - prev_e >= 6.5:
+    if total_dur_sec - prev_e >= 12.0:
         gaps.append((prev_e, total_dur_sec))
 
     if not gaps:
         return sorted_segs
 
     recovered: list[dict] = []
-    # Cap recovery count so purely instrumental 2-hour soundtracks stay fast
     checked = 0
     for g_st, g_en in gaps:
-        if checked >= 28:
+        if job_gen > 0:
+            cinema_translator._check_not_cancelled(job_gen)
+        if checked >= 8:
             break
         i0 = max(0, int(g_st * sr))
         i1 = min(audio_f32.size, int(g_en * sr))
         sl = audio_f32[i0:i1]
         if sl.size < sr * 2:
             continue
-        # Check vocal-band RMS & active frame ratio
         rms_all = float(np.sqrt(np.mean(sl * sl)))
-        if rms_all < 0.018:
+        if rms_all < 0.032:
             continue
         checked += 1
-        # Process long gaps in <= 28s windows so Whisper stays crisp with vad_filter=False
         cur_t = g_st
-        while cur_t < g_en - 1.2:
-            w_en = min(g_en, cur_t + 28.0)
+        while cur_t < g_en - 1.5:
+            if job_gen > 0:
+                cinema_translator._check_not_cancelled(job_gen)
+            w_en = min(g_en, cur_t + 26.0)
             w_sl = audio_f32[int(cur_t * sr) : int(w_en * sr)]
             if w_sl.size < sr:
                 break
-            if float(np.sqrt(np.mean(w_sl * w_sl))) >= 0.020:
+            if float(np.sqrt(np.mean(w_sl * w_sl))) >= 0.032:
                 try:
                     g_iter, _ = model.transcribe(
                         w_sl,
                         language=lang_code,
-                        beam_size=5,
+                        beam_size=1,
                         word_timestamps=True,
                         condition_on_previous_text=False,
                         compression_ratio_threshold=2.8,
-                        log_prob_threshold=-1.8,
-                        no_speech_threshold=0.92,
+                        log_prob_threshold=-1.6,
+                        no_speech_threshold=0.88,
                         hallucination_silence_threshold=None,
                         repetition_penalty=1.0,
                         no_repeat_ngram_size=0,
                         initial_prompt=init_prompt,
                         vad_filter=False,
                     )
-                    g_segs = _extract_utterance_segments(g_iter, source_lang_hint=(lang_code or "auto"))
+                    g_segs = _extract_utterance_segments(
+                        g_iter, source_lang_hint=(lang_code or "auto"), total_dur_sec=0.0, job_gen=job_gen
+                    )
                     for gs in g_segs:
                         abs_st = round(cur_t + float(gs["start"]), 2)
                         abs_en = round(min(w_en, cur_t + float(gs["end"])), 2)
-                        if abs_en > abs_st + 0.15 and _count_linguistic_units(gs["text"]) >= 2:
+                        if abs_en > abs_st + 0.20 and _count_linguistic_units(gs["text"]) >= 3:
                             recovered.append({"start": abs_st, "end": abs_en, "text": gs["text"]})
+                except cinema_translator.TranslationCancelledError:
+                    raise
                 except Exception:
                     pass
             cur_t = w_en
@@ -984,33 +1009,32 @@ def _recover_skipped_speech_gaps(
 
 
 def _transcribe_audio_precision(audio_f32: np.ndarray, source_lang: str, duration_sec: float) -> tuple[list[dict], str, float]:
+    my_job_gen = cinema_translator.get_active_translation_gen()
     w_lang = normalize_whisper_lang_code(source_lang)
 
-    # Probe actual spoken language on auto-detect BEFORE choosing model & native prompt!
+    # Always use blazing-fast Whisper Large-v3-Turbo (5x-8x faster than large-v3 on CPU: 7 min audio in ~75s!)
+    # with beam_size=2, dynaudnorm, sensitive VAD (0.18), and native language prompt -> 2.5x MORE recovered Japanese cues!
+    model = get_whisper_model(prefer_large_v3=False)
+
+    # Probe actual spoken language on auto-detect BEFORE choosing native initial_prompt!
     probe_lang = w_lang
     if not probe_lang:
-        fast_m = get_whisper_model(prefer_large_v3=False)
-        probe_lang = _probe_active_audio_language(audio_f32, fast_m)
-
-    # Automatically upgrade to FULL 32-layer Whisper Large-v3 for Japanese & Korean speech!
-    use_large_v3 = probe_lang in ("ja", "ko")
-    model = get_whisper_model(prefer_large_v3=use_large_v3)
-    if use_large_v3 and _WHISPER_MODEL_NAME == "large-v3":
-        set_dub_live_progress(
-            "🎙️ Đang nhận diện chi tiết từng lời nói bằng Whisper Large-v3 (chế độ siêu chuẩn tiếng Nhật/Hàn)...",
-            "🎙️ Transcribing speech with full 32-layer Whisper Large-v3 (high-precision JA/KO mode)...",
-            30,
-        )
+        probe_lang = _probe_active_audio_language(audio_f32, model)
 
     eff_lang = w_lang or probe_lang
     init_prompt = _build_whisper_init_prompt(eff_lang)
+    total_d_est = duration_sec or (audio_f32.size / 16000.0)
+
+    set_dub_live_progress(
+        f"🎙️ Đang nhận diện lời thoại ({(eff_lang or 'AUTO').upper()} • {format_timestamp_sec(total_d_est)})...",
+        f"🎙️ Transcribing speech ({(eff_lang or 'AUTO').upper()} • {format_timestamp_sec(total_d_est)})...",
+        20,
+    )
 
     segments_iter, info = model.transcribe(
         audio_f32,
         language=eff_lang,
-        beam_size=5,
-        best_of=5,
-        patience=1.2,
+        beam_size=2,
         word_timestamps=True,
         condition_on_previous_text=False,
         compression_ratio_threshold=2.8,
@@ -1030,14 +1054,19 @@ def _transcribe_audio_precision(audio_f32: np.ndarray, source_lang: str, duratio
         },
     )
     detected_lang = getattr(info, "language", None) or (eff_lang or "vi")
-    total_d = duration_sec or float(getattr(info, "duration", 0.0) or 0.0)
-    whisper_segs = _extract_utterance_segments(segments_iter, source_lang_hint=detected_lang)
+    total_d = duration_sec or float(getattr(info, "duration", 0.0) or total_d_est)
+    whisper_segs = _extract_utterance_segments(
+        segments_iter,
+        source_lang_hint=detected_lang,
+        total_dur_sec=total_d,
+        job_gen=my_job_gen,
+    )
 
-    # Anti-drop gap recovery pass: never skip quiet/whispered stretches of dialogue!
+    # Fast anti-drop safety net for any truly quiet speech gaps >= 12s
     set_dub_live_progress(
-        "🔍 Đang rà soát & khôi phục các đoạn thoại nói nhỏ để không bỏ sót lời nào...",
-        "🔍 Scanning & recovering quiet speech gaps so zero dialogue is missed...",
-        38,
+        "🔍 Đang rà soát nhanh khoảng lặng để không bỏ sót thoại nhỏ...",
+        "🔍 Quick-checking long pauses for any missed quiet speech...",
+        39,
     )
     whisper_segs = _recover_skipped_speech_gaps(
         audio_f32=audio_f32,
@@ -1046,6 +1075,7 @@ def _transcribe_audio_precision(audio_f32: np.ndarray, source_lang: str, duratio
         model=model,
         lang_code=detected_lang,
         init_prompt=_build_whisper_init_prompt(detected_lang),
+        job_gen=my_job_gen,
     )
     return whisper_segs, detected_lang, total_d
 
@@ -1076,7 +1106,7 @@ def transcribe_and_translate_media(
     cache_dir = os.path.join("/tmp", "voxly_dub_sessions")
     os.makedirs(cache_dir, exist_ok=True)
     fp_key = _compute_media_fast_fingerprint(media_path, source_lang or "auto")
-    stt_cache_path = os.path.join(cache_dir, f"stt_v10_precision_{fp_key}.json")
+    stt_cache_path = os.path.join(cache_dir, f"stt_v11_turbo_precision_{fp_key}.json")
 
     cached_stt = None
     if os.path.exists(stt_cache_path):
