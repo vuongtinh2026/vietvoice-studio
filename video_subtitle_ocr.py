@@ -470,6 +470,7 @@ def extract_hard_subtitles(
     progress_cb: Callable[[int, int], None] | None = None,
     start_sec: float = 0.0,
     end_sec: float = 0.0,
+    cancel_check_fn: Callable[[], None] | None = None,
 ) -> dict:
     """
     Extracts burned-in subtitles across short videos OR multi-hour movies (in 10-min streaming chunks)
@@ -533,6 +534,8 @@ def extract_hard_subtitles(
     raw_frames: list[tuple[float, list[dict]]] = []
 
     for c_idx in range(n_chunks):
+        if cancel_check_fn is not None:
+            cancel_check_fn()
         t0 = scan_start + c_idx * chunk_sec
         t_len = min(chunk_sec, scan_end - t0)
         if t_len <= 0.2:

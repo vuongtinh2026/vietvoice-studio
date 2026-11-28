@@ -44,6 +44,16 @@ class TranslationCancelledError(RuntimeError):
     pass
 
 
+class CloudAuthError(RuntimeError):
+    """Raised ONLY for genuine invalid API key / auth errors (HTTP 401/403) that should be shown to the user."""
+    pass
+
+
+class CloudTransientError(RuntimeError):
+    """Raised for temporary cloud overload/503/429/timeout/safety-block so pipeline falls back cleanly without crashing."""
+    pass
+
+
 def cancel_active_translations() -> int:
     """Increments the global translation generation so any stale background job aborts cleanly."""
     global _ACTIVE_JOB_GEN
@@ -734,8 +744,18 @@ def _run_cloud_llm_prompt(
 
         # Generous output budget so thinking tokens never truncate Vietnamese output.
         gemini_max_out = max(int(max_tokens) * 2, 8192)
+        _GEMINI_SAFETY_NONE = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        ]
 
-        def _build_gemini_body(mdl_id: str, include_thinking_cfg: bool = True) -> bytes:
+        def _build_gemini_body(
+            mdl_id: str,
+            include_thinking_cfg: bool = True,
+            include_safety_cfg: bool = True,
+        ) -> bytes:
             gen_cfg: dict = {
                 "temperature": 0.12,
                 "maxOutputTokens": gemini_max_out,
@@ -748,14 +768,14 @@ def _run_cloud_llm_prompt(
                     gen_cfg["thinkingConfig"] = {"thinkingLevel": "low"}
                 elif "gemini-2.5-flash" in low_m:
                     gen_cfg["thinkingConfig"] = {"thinkingBudget": 0}
-            return json.dumps(
-                {
-                    "systemInstruction": {"parts": [{"text": sys_msg}]},
-                    "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
-                    "generationConfig": gen_cfg,
-                },
-                ensure_ascii=False,
-            ).encode("utf-8")
+            payload_obj: dict = {
+                "systemInstruction": {"parts": [{"text": sys_msg}]},
+                "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
+                "generationConfig": gen_cfg,
+            }
+            if include_safety_cfg:
+                payload_obj["safetySettings"] = _GEMINI_SAFETY_NONE
+            return json.dumps(payload_obj, ensure_ascii=False).encode("utf-8")
 
         attempt_queue: list[tuple[str, str]] = []
         cached_pair = _GEMINI_RESOLVED_MODEL_CACHE.get(cache_key)
@@ -773,6 +793,8 @@ def _run_cloud_llm_prompt(
         did_live_discover = False
         data = None
         last_err = ""
+        only_auth_errors = True
+        saw_any_err = False
         idx = 0
         while idx < len(attempt_queue):
             if my_job_gen > 0:
@@ -785,11 +807,16 @@ def _run_cloud_llm_prompt(
             url = ep_tpl.format(m=cand_mdl)
 
             use_thinking_cfg = True
-            hit_model_or_auth_err = False
-            for retry_i in range(5):
+            use_safety_cfg = True
+            should_try_next_candidate = False
+            for retry_i in range(3):
                 if my_job_gen > 0:
                     _check_not_cancelled(my_job_gen)
-                body = _build_gemini_body(cand_mdl, include_thinking_cfg=use_thinking_cfg)
+                body = _build_gemini_body(
+                    cand_mdl,
+                    include_thinking_cfg=use_thinking_cfg,
+                    include_safety_cfg=use_safety_cfg,
+                )
                 req = urllib.request.Request(
                     url,
                     data=body,
@@ -800,46 +827,63 @@ def _run_cloud_llm_prompt(
                     },
                 )
                 try:
-                    with urllib.request.urlopen(req, timeout=90) as resp:
+                    with urllib.request.urlopen(req, timeout=45) as resp:
                         data = json.loads(resp.read().decode("utf-8"))
                         _GEMINI_RESOLVED_MODEL_CACHE[cache_key] = (ep_tpl, cand_mdl)
                         if cand_mdl != req_mdl:
                             print(f"[Gemini Auto-Resolve] '{req_mdl}' -> '{cand_mdl}' OK", flush=True)
                         break
                 except urllib.error.HTTPError as he:
+                    saw_any_err = True
                     err_body = he.read().decode("utf-8", errors="ignore")[:420]
                     last_err = f"HTTP {he.code}: {err_body}"
-                    if he.code in (429, 503) and retry_i < 4:
-                        wait_s = 4.0 * (retry_i + 1)
-                        try:
-                            ra = he.headers.get("Retry-After")
-                            if ra and float(ra) > 0:
-                                wait_s = min(35.0, max(2.0, float(ra)))
-                        except Exception:
-                            pass
-                        if status_cb is not None:
+                    if he.code not in (401, 403):
+                        only_auth_errors = False
+                    if he.code in (429, 500, 502, 503, 504):
+                        if retry_i < 2:
+                            wait_s = 2.5 * (retry_i + 1)
                             try:
-                                status_cb(
-                                    f"⏳ Gemini đang giới hạn tốc độ tạm thời — tự động dịch tiếp sau {int(round(wait_s))}s...",
-                                    f"⏳ Gemini temporary rate-limit — auto-resuming in {int(round(wait_s))}s...",
-                                )
+                                ra = he.headers.get("Retry-After")
+                                if ra and float(ra) > 0:
+                                    wait_s = min(15.0, max(2.0, float(ra)))
                             except Exception:
                                 pass
-                        # Sleep in 0.5s increments so user Cancel aborts instantaneously!
-                        slept = 0.0
-                        while slept < wait_s:
-                            if my_job_gen > 0:
-                                _check_not_cancelled(my_job_gen)
-                            step_s = min(0.5, wait_s - slept)
-                            time.sleep(step_s)
-                            slept += step_s
-                        continue
+                            if status_cb is not None:
+                                try:
+                                    status_cb(
+                                        f"⏳ Gemini đang quá tải tạm thời (HTTP {he.code}) — tự thử lại sau {int(round(wait_s))}s...",
+                                        f"⏳ Gemini temporary spike (HTTP {he.code}) — auto-retrying in {int(round(wait_s))}s...",
+                                    )
+                                except Exception:
+                                    pass
+                            slept = 0.0
+                            while slept < wait_s:
+                                if my_job_gen > 0:
+                                    _check_not_cancelled(my_job_gen)
+                                step_s = min(0.5, wait_s - slept)
+                                time.sleep(step_s)
+                                slept += step_s
+                            continue
+                        # Exhausted quick retries on this overloaded model -> evict cache & try backup Gemini models!
+                        if _GEMINI_RESOLVED_MODEL_CACHE.get(cache_key) == (ep_tpl, cand_mdl):
+                            _GEMINI_RESOLVED_MODEL_CACHE.pop(cache_key, None)
+                        if not did_live_discover:
+                            did_live_discover = True
+                            insert_pos = idx
+                            for live_m in _discover_live_gemini_models(key, want_pro=want_pro):
+                                p_l = (gl_tpl, live_m)
+                                if p_l not in tried_pairs and p_l not in attempt_queue:
+                                    attempt_queue.insert(insert_pos, p_l)
+                                    insert_pos += 1
+                        should_try_next_candidate = True
+                        break
                     if he.code == 400 and use_thinking_cfg and re.search(r"thinking|unknown name|invalid_argument", err_body, re.IGNORECASE):
-                        # Automatically strip thinkingConfig on models/endpoints that don't support it
                         use_thinking_cfg = False
                         continue
+                    if he.code == 400 and use_safety_cfg and re.search(r"safety|harm|threshold|block_none", err_body, re.IGNORECASE):
+                        use_safety_cfg = False
+                        continue
                     if he.code == 404:
-                        # 1) Parse any replacement model explicitly recommended by Google in the 404 body!
                         suggested = [m.rstrip(".,;:") for m in re.findall(r"models/([a-zA-Z0-9._-]+)", err_body)]
                         insert_pos = idx
                         for sug_m in suggested:
@@ -849,7 +893,6 @@ def _run_cloud_llm_prompt(
                                     if p_s not in tried_pairs and p_s not in attempt_queue:
                                         attempt_queue.insert(insert_pos, p_s)
                                         insert_pos += 1
-                        # 2) Query live /v1beta/models once to auto-discover every active Gemini model for this key!
                         if not did_live_discover:
                             did_live_discover = True
                             for live_m in _discover_live_gemini_models(key, want_pro=want_pro):
@@ -857,29 +900,38 @@ def _run_cloud_llm_prompt(
                                 if p_l not in tried_pairs and p_l not in attempt_queue:
                                     attempt_queue.insert(insert_pos, p_l)
                                     insert_pos += 1
-                        hit_model_or_auth_err = True
+                        should_try_next_candidate = True
                         break
                     if he.code in (400, 401, 403):
-                        hit_model_or_auth_err = True
+                        should_try_next_candidate = True
                         break
-                    raise RuntimeError(f"Lỗi Gemini API ({last_err})")
+                    should_try_next_candidate = True
+                    break
                 except TranslationCancelledError:
                     raise
                 except Exception as net_e:
+                    saw_any_err = True
+                    only_auth_errors = False
                     last_err = str(net_e)
-                    if retry_i < 2:
-                        time.sleep(2.0)
+                    if retry_i < 1:
+                        time.sleep(1.5)
                         continue
+                    should_try_next_candidate = True
                     break
             if data is not None:
                 break
-            if not hit_model_or_auth_err:
+            if not should_try_next_candidate:
                 break
         if data is None:
-            raise RuntimeError(f"Lỗi Gemini API ({last_err}): Vui lòng kiểm tra lại API Key hoặc hạn mức.")
+            if saw_any_err and only_auth_errors:
+                raise CloudAuthError(f"Lỗi Gemini API ({last_err}): Vui lòng kiểm tra lại API Key!")
+            raise CloudTransientError(f"Gemini tạm thời quá tải hoặc gián đoạn ({last_err})")
         cands = data.get("candidates") or []
         parts = ((cands[0].get("content") or {}).get("parts") or []) if cands else []
         txt = "".join(str(p.get("text") or "") for p in parts if not p.get("thought"))
+        if not txt.strip():
+            f_reason = str((cands[0].get("finishReason") if cands else None) or (data.get("promptFeedback") or {}).get("blockReason") or "EMPTY")
+            raise CloudTransientError(f"Gemini trả về rỗng ({f_reason})")
     elif prov in ("openai", "deepseek"):
         if prov == "deepseek":
             url = "https://api.deepseek.com/v1/chat/completions"
@@ -899,23 +951,45 @@ def _run_cloud_llm_prompt(
             },
             ensure_ascii=False,
         ).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=body,
-            method="POST",
-            headers={
-                "Content-Type": "application/json; charset=utf-8",
-                "Authorization": f"Bearer {key}",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as he:
-            err_body = he.read().decode("utf-8", errors="ignore")[:240]
-            raise RuntimeError(f"Lỗi {prov.upper()} API (HTTP {he.code}): Kiểm tra lại API Key ({err_body})")
-        choices = data.get("choices") or []
+        data = None
+        last_err = ""
+        for retry_i in range(3):
+            if my_job_gen > 0:
+                _check_not_cancelled(my_job_gen)
+            req = urllib.request.Request(
+                url,
+                data=body,
+                method="POST",
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Authorization": f"Bearer {key}",
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=50) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    break
+            except urllib.error.HTTPError as he:
+                err_body = he.read().decode("utf-8", errors="ignore")[:240]
+                last_err = f"HTTP {he.code}: {err_body}"
+                if he.code in (401, 403):
+                    raise CloudAuthError(f"Lỗi {prov.upper()} API (HTTP {he.code}): Kiểm tra lại API Key ({err_body})")
+                if he.code in (429, 500, 502, 503, 504) and retry_i < 2:
+                    time.sleep(2.5 * (retry_i + 1))
+                    continue
+                raise CloudTransientError(f"Lỗi {prov.upper()} API tạm thời ({last_err})")
+            except TranslationCancelledError:
+                raise
+            except Exception as net_e:
+                last_err = str(net_e)
+                if retry_i < 1:
+                    time.sleep(1.5)
+                    continue
+                raise CloudTransientError(f"Kết nối {prov.upper()} bị gián đoạn ({last_err})")
+        choices = (data or {}).get("choices") or []
         txt = str(((choices[0].get("message") or {}).get("content")) or "") if choices else ""
+        if not txt.strip():
+            raise CloudTransientError(f"{prov.upper()} trả về rỗng")
     else:
         raise ValueError(f"Nhà cung cấp AI không hỗ trợ: {provider}")
 
@@ -1203,6 +1277,7 @@ def translate_cinema_lines_with_roles(
         run_prompt_fn: Callable[[str, str, int], str],
         engine_sig: str,
         batch_size: int,
+        fallback_prompt_fn: Callable[[str, str, int], str] | None = None,
     ) -> tuple[list[str], list[str]]:
         _check_not_cancelled(my_job_gen)
         if progress_cb is not None:
@@ -1219,14 +1294,54 @@ def translate_cinema_lines_with_roles(
             except Exception:
                 pass
 
-        char_bible = _extract_character_bible(
-            run_prompt_fn=run_prompt_fn,
-            engine_sig=engine_sig,
-            cleaned_inputs=cleaned_inputs,
-            nmt_anchors=nmt_anchors,
-            genre=genre,
-            cache_dir=cache_dir,
-        )
+        cloud_consecutive_fails = 0
+        prefer_fallback_rest = False
+
+        def _call_with_resilience(s_m: str, u_m: str, mt: int, stage_label: str) -> str:
+            nonlocal cloud_consecutive_fails, prefer_fallback_rest
+            if not prefer_fallback_rest:
+                try:
+                    out = run_prompt_fn(s_m, u_m, mt)
+                    cloud_consecutive_fails = 0
+                    return out
+                except (TranslationCancelledError, CloudAuthError):
+                    raise
+                except Exception as cloud_e:
+                    cloud_consecutive_fails += 1
+                    print(f"[CinemaTranslator] Primary AI transient issue ({stage_label}): {cloud_e}", flush=True)
+                    if cloud_consecutive_fails >= 2 and fallback_prompt_fn is not None:
+                        prefer_fallback_rest = True
+            if fallback_prompt_fn is not None:
+                if status_cb is not None:
+                    try:
+                        status_cb(
+                            f"⚡ Cloud AI tạm quá tải — tự động dịch tiếp ({stage_label}) bằng AI Nội Bộ 8B Pro để không bị gián đoạn!",
+                            f"⚡ Cloud AI temporarily busy — seamlessly continuing ({stage_label}) via built-in 8B Pro AI!",
+                        )
+                    except Exception:
+                        pass
+                try:
+                    return fallback_prompt_fn(s_m, u_m, mt)
+                except TranslationCancelledError:
+                    raise
+                except Exception as fb_e:
+                    print(f"[CinemaTranslator] Local fallback note ({stage_label}): {fb_e}", flush=True)
+            return ""
+
+        try:
+            char_bible = _extract_character_bible(
+                run_prompt_fn=lambda s_m, u_m, mt: _call_with_resilience(s_m, u_m, mt, "phân tích nhân vật"),
+                engine_sig=engine_sig,
+                cleaned_inputs=cleaned_inputs,
+                nmt_anchors=nmt_anchors,
+                genre=genre,
+                cache_dir=cache_dir,
+            )
+        except (TranslationCancelledError, CloudAuthError):
+            raise
+        except Exception as b_e:
+            print(f"[CinemaTranslator] Pass 0 bible fallback: {b_e}", flush=True)
+            char_bible = ""
         _check_not_cancelled(my_job_gen)
         sys_msg = _build_narration_system_prompt(genre=genre, char_bible=char_bible)
         bible_hash = hashlib.sha256(char_bible.encode("utf-8")).hexdigest()[:10]
@@ -1312,30 +1427,46 @@ def translate_cinema_lines_with_roles(
                 f"(xuất đúng dạng `[1] ...` đến `[{len(b_srcs)}] ...`, KHÔNG thêm nhãn vai):\n{numbered_in}{lookahead}"
             )
             est_toks = max(720, sum(len(x) for x in b_ancs) * 2 + len(b_srcs) * 26 + 300)
-            raw_out = run_prompt_fn(sys_msg, user_msg, min(6400, est_toks))
+            raw_out = _call_with_resilience(sys_msg, user_msg, min(6400, est_toks), f"đợt {b_idx}/{total_batches}")
 
-            parsed_map: dict[int, str] = {}
-            for ln in raw_out.splitlines():
-                m = re.match(r"^\s*\[(\d+)\]\s*(.+)$", ln.strip())
-                if not m:
-                    m = re.match(r"^\s*(\d+)[.):]\s*(.+)$", ln.strip())
-                if not m:
-                    continue
-                k_i = int(m.group(1)) - 1
-                if not (0 <= k_i < len(b_srcs)):
-                    continue
-                rest = m.group(2).strip()
-                m_r = _LEADING_ROLE_TAG_RE.match(rest)
-                if m_r and audio_speaker_analyzer.canonicalize_role_tag(m_r.group(1)):
-                    rest = m_r.group(2).strip()
-                cand_txt = _polish_vietnamese_cinema_line(rest, genre=genre, target_lang=target_lang)
-                anc_len = max(14, len(b_ancs[k_i]))
-                if (
-                    cand_txt
-                    and not cjk_leak_re.search(cand_txt)
-                    and len(cand_txt) <= max(int(anc_len * 2.4), anc_len + 65)
-                ):
-                    parsed_map[k_i] = cand_txt
+            def _parse_batch_lines(raw_text_in: str) -> dict[int, str]:
+                p_map: dict[int, str] = {}
+                for ln in (raw_text_in or "").splitlines():
+                    m = re.match(r"^\s*\[(\d+)\]\s*(.+)$", ln.strip())
+                    if not m:
+                        m = re.match(r"^\s*(\d+)[.):]\s*(.+)$", ln.strip())
+                    if not m:
+                        continue
+                    k_i = int(m.group(1)) - 1
+                    if not (0 <= k_i < len(b_srcs)):
+                        continue
+                    rest = m.group(2).strip()
+                    m_r = _LEADING_ROLE_TAG_RE.match(rest)
+                    if m_r and audio_speaker_analyzer.canonicalize_role_tag(m_r.group(1)):
+                        rest = m_r.group(2).strip()
+                    cand_txt = _polish_vietnamese_cinema_line(rest, genre=genre, target_lang=target_lang)
+                    anc_len = max(14, len(b_ancs[k_i]))
+                    if (
+                        cand_txt
+                        and not cjk_leak_re.search(cand_txt)
+                        and len(cand_txt) <= max(int(anc_len * 2.4), anc_len + 65)
+                    ):
+                        p_map[k_i] = cand_txt
+                return p_map
+
+            parsed_map = _parse_batch_lines(raw_out)
+            # If Cloud AI refused/returned <50% of cues (e.g. safety filter on mature drama), auto-heal via fallback!
+            if fallback_prompt_fn is not None and len(parsed_map) < max(1, len(b_srcs) // 2) and not prefer_fallback_rest:
+                try:
+                    fb_raw = fallback_prompt_fn(sys_msg, user_msg, min(4096, est_toks))
+                    fb_map = _parse_batch_lines(fb_raw)
+                    for k_f, v_f in fb_map.items():
+                        if k_f not in parsed_map:
+                            parsed_map[k_f] = v_f
+                except TranslationCancelledError:
+                    raise
+                except Exception:
+                    pass
 
             final_texts: list[str] = []
             for k in range(len(b_srcs)):
@@ -1388,13 +1519,15 @@ def translate_cinema_lines_with_roles(
                             f"TUYỆT ĐỐI KHÔNG chứa từ {', '.join(leaks[:5])} hay chữ Hán/Pinyin (chỉ xuất duy nhất câu dịch):"
                         )
                         try:
-                            fix_out = run_prompt_fn(sys_msg, fix_prompt, 220)
+                            fix_out = _call_with_resilience(sys_msg, fix_prompt, 220, f"sửa từ câu {start_idx + k + 1}")
                             fix_first = next((l.strip() for l in fix_out.splitlines() if l.strip()), "")
                             fix_first = re.sub(r"^\s*(?:\[\d+\]|\d+[.):])\s*", "", fix_first)
                             fix_clean = _polish_vietnamese_cinema_line(fix_first, genre=genre, target_lang=target_lang)
                             if fix_clean and not cjk_leak_re.search(fix_clean):
                                 if len(find_foreign_leaks_in_vi(fix_clean, genre=genre, is_cjk_source=is_cjk_source)) < len(leaks):
                                     chosen = fix_clean
+                        except (TranslationCancelledError, CloudAuthError):
+                            raise
                         except Exception:
                             pass
 
@@ -1421,11 +1554,23 @@ def translate_cinema_lines_with_roles(
         return results_txt, results_roles
 
     # Route 1: Pro Cloud AI Director (Gemini 3.8 Flash/Pro, OpenAI GPT-4o, DeepSeek V3)
+    # with automatic seamless Apple Silicon 8B Pro local fallback on HTTP 503 / 429 / safety blocks!
     if is_vi_target and use_cloud_ai:
         mdl_lbl = (ai_model or ("gemini-3.8-flash" if prov_clean == "gemini" else ("deepseek-chat" if prov_clean == "deepseek" else "gpt-4o-mini"))).strip()
         if prov_clean == "gemini" and mdl_lbl in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
             mdl_lbl = "gemini-3.8-flash"
-        cloud_batch_sz = 55 if prov_clean == "gemini" else 36
+        cloud_batch_sz = 36
+
+        def _lazy_local_mlx_fallback(s_m: str, u_m: str, mt: int) -> str:
+            if not _can_use_mlx_cinema_llm():
+                return ""
+            with _MLX_LOCK:
+                _check_not_cancelled(my_job_gen)
+                m_loc, tok_loc, samp_loc, _ = _get_mlx_engine(prefer_14b=False)
+                if m_loc is None or tok_loc is None:
+                    return ""
+                return _run_mlx_prompt(m_loc, tok_loc, samp_loc, s_m, u_m, max_tokens=min(2800, mt))
+
         return _execute_director_pipeline(
             run_prompt_fn=lambda s_m, u_m, mt: _run_cloud_llm_prompt(
                 prov_clean,
@@ -1439,6 +1584,7 @@ def translate_cinema_lines_with_roles(
             ),
             engine_sig=f"cloud:{prov_clean}:{mdl_lbl}",
             batch_size=cloud_batch_sz,
+            fallback_prompt_fn=_lazy_local_mlx_fallback if _can_use_mlx_cinema_llm() else None,
         )
 
     # Route 2: Built-in Pro Local AI Director (Qwen3-8B-4bit Fast Pro default, or Qwen3-14B-4bit when explicitly chosen!)

@@ -1386,13 +1386,38 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/dubbing/transcribe-translate' && req.method === 'POST') {
     const dubDir = path.join('/tmp', 'voxly_dub_sessions');
     fs.mkdirSync(dubDir, { recursive: true });
-    // Prune temp files older than 6 hours (safe for multi-hour feature film sessions)
+    // Prune old temp uploads & cap total /tmp/voxly_dub_sessions size so multi-GB videos NEVER fill disk!
     try {
-      const cutoff = Date.now() - 6 * 60 * 60 * 1000;
+      const nowMs = Date.now();
+      const cutoffSmall = nowMs - 6 * 60 * 60 * 1000;
+      const cutoffBig = nowMs - 90 * 60 * 1000;
+      const bigFiles = [];
+      let totalBigBytes = 0;
       for (const fn of fs.readdirSync(dubDir)) {
         const fp = path.join(dubDir, fn);
-        const st = fs.statSync(fp);
-        if (st.mtimeMs < cutoff) fs.unlinkSync(fp);
+        let st;
+        try { st = fs.statSync(fp); } catch { continue; }
+        const isBigMedia = st.size > 80 * 1024 * 1024 && (fn.includes('_orig.') || fn.startsWith('clip_') || fn.endsWith('.16k.wav'));
+        if (st.mtimeMs < cutoffSmall || (isBigMedia && st.mtimeMs < cutoffBig)) {
+          try { fs.unlinkSync(fp); } catch {}
+          continue;
+        }
+        if (isBigMedia) {
+          bigFiles.push({ fp, mtimeMs: st.mtimeMs, size: st.size });
+          totalBigBytes += st.size;
+        }
+      }
+      const maxCacheBytes = 8 * 1024 * 1024 * 1024;
+      if (totalBigBytes > maxCacheBytes) {
+        bigFiles.sort((a, b) => a.mtimeMs - b.mtimeMs);
+        for (const item of bigFiles) {
+          if (totalBigBytes <= maxCacheBytes) break;
+          if ((nowMs - item.mtimeMs) < 10 * 60 * 1000) continue;
+          try {
+            fs.unlinkSync(item.fp);
+            totalBigBytes -= item.size;
+          } catch {}
+        }
       }
     } catch {}
 
